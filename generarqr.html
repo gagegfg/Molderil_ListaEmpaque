@@ -11,19 +11,9 @@
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
   <style>
     @media print {
-      body * {
-        visibility: hidden;
-      }
-      #printable-label, #printable-label * {
-        visibility: visible;
-      }
-      #printable-label {
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 100%;
-        height: 100%;
-      }
+      body * { visibility: hidden; }
+      #printable-label, #printable-label * { visibility: visible; }
+      #printable-label { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
     }
   </style>
 </head>
@@ -35,14 +25,15 @@
     const { useState, useRef, useEffect } = React;
     const { createRoot } = ReactDOM;
 
-    // ##################################################################
-    // ### 1. CONFIGURACIÓN: RELLENA ESTOS 4 VALORES CON TUS DATOS ###
-    // ##################################################################
-    const GITHUB_TOKEN = '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'; // La clave que generaste
-    const USUARIO_GITHUB = 'tu-usuario-de-github';     // Tu nombre de usuario de GitHub
-    const REPO_NOMBRE = 'tu-nombre-de-repositorio';      // El nombre del repositorio
-    const RUTA_DEL_ARCHIVO = 'lotelogistica.txt';          // La ruta al archivo dentro del repo
-    // ##################################################################
+    // =================================================================
+    // ### CONFIGURACIÓN: RELLENA ESTOS 4 VALORES CON TUS DATOS ###
+    // =================================================================
+    const GITHUB_TOKEN = 'pega_aqui_tu_clave_github_pat';
+    const USUARIO_GITHUB = 'gqgrgfg'; 
+    const REPO_NOMBRE = 'Molderil_ListaEmpaque';
+    // --- CAMBIO 1: Nombre de archivo corregido ---
+    const RUTA_DEL_ARCHIVO = 'lotelogistica.txt'; 
+    // =================================================================
 
     const QrGenerator = () => {
         const [operario, setOperario] = useState('');
@@ -71,7 +62,7 @@
                     setLoteLogistico(numeroLote + 1);
                 } catch (error) {
                     console.error("Error al cargar lote logístico:", error);
-                    alert(`Error: ${error.message}\nPor favor, ingrese el lote logístico manualmente.`);
+                    alert(`Error: ${error.message}\nPor favor, ingrese el lote logístico manually.`);
                     setLoteLogistico('');
                     setIsLoteLogisticoEditable(true);
                 }
@@ -187,8 +178,10 @@
         return (
             <div className="min-h-screen bg-gray-100 p-4 flex flex-col">
                 <div className="bg-white p-6 rounded-xl shadow-lg flex-grow">
+                    {/* --- CAMBIO 2: Botón Volver al Menú restaurado --- */}
                     <div className="flex justify-between items-center mb-6">
                         <h1 className="text-3xl font-extrabold text-gray-900">Generar Etiqueta de Pallet</h1>
+                        <a href="index.html" className="bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-md hover:bg-gray-300">Volver al Menú</a>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {/* Form Column */}
@@ -223,6 +216,14 @@
                                     onChange={e => setLoteLogistico(e.target.value)}
                                     className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border ${!isLoteLogisticoEditable ? 'bg-gray-100' : ''}`}
                                 />
+                            </div>
+                             <div>
+                                <label className="block text-sm font-medium text-gray-700">Fecha de Producción</label>
+                                <input type="date" value={fechaProd} onChange={e => setFechaProd(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
+                            </div>
+                             <div>
+                                <label className="block text-sm font-medium text-gray-700">Fecha de Vencimiento</label>
+                                <input type="date" value={fechaVenc} readOnly className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border bg-gray-100" />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700">Cantidad</label>
@@ -298,4 +299,3 @@
   </script>
 </body>
 </html>
-
