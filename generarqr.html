@@ -30,32 +30,30 @@
 </head>
 <body class="bg-gray-100 font-sans">
 
-  <div id="static-loader" class="fixed inset-0 bg-gray-100 flex items-center justify-center p-4 font-sans z-50 transition-opacity duration-500">
-    <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md text-center">
-      <h1 class="text-4xl font-extrabold text-gray-900 tracking-wide mb-6" style="font-family: 'Arial', sans-serif;">
-        MOLDERIL S.A.
-      </h1>
-      <p id="loader-status" class="text-xl text-gray-600 mb-4">Cargando aplicación...</p>
-      <div class="w-full bg-gray-200 rounded-full h-4">
-        <div id="loader-progress" class="bg-indigo-600 h-4 rounded-full transition-all duration-500" style="width: 10%"></div>
-      </div>
-    </div>
-  </div>
-
   <div id="root"></div>
 
   <script type="text/babel">
     const { useState, useRef, useEffect } = React;
     const { createRoot } = ReactDOM;
 
+    // ##################################################################
+    // ### 1. CONFIGURACIÓN DE CONSTANTES (LLENA ESTOS 4 VALORES) ###
+    // ##################################################################
+    const GITHUB_TOKEN = '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'; // La clave que generaste
+    const USUARIO_GITHUB = 'tu-usuario-de-github';     // Tu nombre de usuario de GitHub
+    const REPO_NOMBRE = 'tu-nombre-de-repositorio';      // El nombre del repositorio
+    const RUTA_DEL_ARCHIVO = 'lotelogistico.txt';          // La ruta al archivo dentro del repo
+    // ##################################################################
+
+
     const QrGenerator = () => {
-        const [isAppReady, setIsAppReady] = useState(false);
         const [operario, setOperario] = useState('');
         const [articulos, setArticulos] = useState([]);
         const [searchTerm, setSearchTerm] = useState('');
         const [selectedArticulo, setSelectedArticulo] = useState(null);
-        const [lote, setLote] = useState(''); // Lote de Producción
-        const [loteLogistico, setLoteLogistico] = useState(''); // Lote Logístico para mostrar en UI
+        const [loteProduccion, setLoteProduccion] = useState('');
+        const [loteLogistico, setLoteLogistico] = useState('Cargando...');
+        const [isLoteLogisticoEditable, setIsLoteLogisticoEditable] = useState(false);
         const [fechaProd, setFechaProd] = useState(new Date().toISOString().split('T')[0]);
         const [fechaVenc, setFechaVenc] = useState('');
         const [cantidad, setCantidad] = useState('');
@@ -63,77 +61,100 @@
         const [generatedData, setGeneratedData] = useState(null);
 
         const qrCodeRef = useRef(null);
-        
-        // --- CAMBIO 1: Lógica para actualizar el Lote Logístico en la UI ---
+
+        // ### 2. LECTURA DEL LOTE AL CARGAR LA PÁGINA ###
         useEffect(() => {
-            if (operario.trim() !== '') {
-                // Genera una vista previa del ID. El ID final se crea al presionar el botón.
-                const previewId = `PALLET-${new Date().toISOString().replace(/[-:.]/g, '').slice(0, 14)}-${operario}`;
-                setLoteLogistico(previewId);
-            } else {
-                setLoteLogistico('');
-            }
-        }, [operario]);
-
-
-        useEffect(() => {
-            const staticLoader = document.getElementById('static-loader');
-            const loaderStatus = document.getElementById('loader-status');
-            const loaderProgress = document.getElementById('loader-progress');
-
-            const loadingTasks = [
-                { status: "Inicializando...", duration: 300, progress: 25 },
-                { status: "Cargando lista de artículos...", duration: 1000, progress: 75, action: async () => {
-                    try {
-                        const response = await fetch('articulos.csv');
-                        const text = await response.text();
-                        const rows = text.split('\n').slice(1);
-                        const parsedArticulos = rows.map(row => {
-                            const [tipo_articulo, codigo_articulo, descripcion] = row.split(';');
-                            return { tipo: tipo_articulo?.trim().toUpperCase(), sku: codigo_articulo, descripcion: descripcion?.trim() };
-                        }).filter(art => art.sku && art.descripcion);
-                        setArticulos(parsedArticulos);
-                    } catch (error) {
-                        console.error("Error loading articulos.csv:", error);
-                        alert("Error al cargar la lista de artículos.");
-                    }
-                }},
-                { status: "¡Listo!", duration: 500, progress: 100 }
-            ];
-
-            let currentTask = 0;
-            const runLoadingTask = () => {
-                if (currentTask < loadingTasks.length) {
-                    const task = loadingTasks[currentTask];
-                    if (loaderStatus) loaderStatus.textContent = task.status;
-                    if (loaderProgress) loaderProgress.style.width = `${task.progress}%`;
-                    if (task.action) task.action();
+            const fetchLoteLogistico = async () => {
+                const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_DEL_ARCHIVO}`;
+                
+                try {
+                    const response = await fetch(url, { cache: "no-store" });
+                    if (!response.ok) throw new Error('No se pudo obtener el lote desde GitHub.');
                     
-                    setTimeout(() => {
-                        currentTask++;
-                        runLoadingTask();
-                    }, task.duration);
-                } else {
-                    if (staticLoader) {
-                        staticLoader.classList.add('opacity-0');
-                        setTimeout(() => {
-                            staticLoader.remove();
-                        }, 500);
-                    }
-                    setIsAppReady(true);
+                    const text = await response.text();
+                    const numeroLote = parseInt(text.trim(), 10);
+                    if (isNaN(numeroLote)) throw new Error('El contenido del archivo no es un número.');
+                    
+                    setLoteLogistico(numeroLote + 1);
+                } catch (error) {
+                    console.error("Error al cargar lote logístico:", error);
+                    alert(`Error: ${error.message}\nPor favor, ingrese el lote logístico manualmente.`);
+                    setLoteLogistico('');
+                    setIsLoteLogisticoEditable(true); // Permite la edición si falla
                 }
             };
-            runLoadingTask();
+            
+            fetchLoteLogistico();
         }, []);
 
-        useEffect(() => {
-            if (fechaProd) {
-                const prodDate = new Date(fechaProd);
-                prodDate.setFullYear(prodDate.getFullYear() + 3);
-                setFechaVenc(prodDate.toISOString().split('T')[0]);
-            }
-        }, [fechaProd]);
+        // ### 3. ESCRITURA DEL LOTE EN GITHUB ###
+        const updateGitHubFile = async (nuevoContenido) => {
+            const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${RUTA_DEL_ARCHIVO}`;
+            
+            try {
+                const fileResponse = await fetch(url, {
+                    headers: { 'Authorization': `token ${GITHUB_TOKEN}` },
+                });
+                if (!fileResponse.ok) throw new Error('No se pudo obtener info del archivo de GitHub.');
+                
+                const fileData = await fileResponse.json();
+                const currentSha = fileData.sha;
 
+                const updateResponse = await fetch(url, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `token ${GITHUB_TOKEN}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        message: `Actualizando lote a ${nuevoContenido}`,
+                        content: btoa(nuevoContenido.toString()),
+                        sha: currentSha,
+                    }),
+                });
+
+                if (!updateResponse.ok) throw new Error('Falló la actualización del archivo en GitHub.');
+                console.log('Archivo en GitHub actualizado exitosamente!');
+
+            } catch (error) {
+                console.error(error);
+                alert(`ERROR: No se pudo guardar el lote en GitHub.\n\n${error.message}\n\nPor favor, actualícelo manualmente.`);
+            }
+        };
+
+        // ### 4. CONFIRMACIÓN E IMPRESIÓN ###
+        const handlePrint = () => {
+            const nuevoLoteParaGuardar = generatedData.palletId;
+            const isConfirmed = window.confirm(
+                `¿Confirma que desea usar el Lote Logístico ${nuevoLoteParaGuardar}?\n\nAl confirmar, se intentará guardar este número en GitHub.`
+            );
+
+            if (isConfirmed) {
+                updateGitHubFile(nuevoLoteParaGuardar).finally(() => {
+                    window.print();
+                });
+            }
+        };
+
+        const handleGenerateLabel = () => {
+            if (!operario || !selectedArticulo || !loteProduccion || !loteLogistico || !cantidad) {
+                alert("Por favor, complete todos los campos.");
+                return;
+            }
+            const data = {
+                palletId: loteLogistico,
+                sku: selectedArticulo.sku,
+                descripcion: selectedArticulo.descripcion,
+                lote: loteProduccion,
+                cantidad: parseFloat(cantidad.replace(',', '.')),
+                uom,
+                fechaProd,
+                fechaVenc,
+                operario
+            };
+            setGeneratedData(data);
+        };
+        
         useEffect(() => {
             if (generatedData && qrCodeRef.current) {
                 QRCode.toCanvas(qrCodeRef.current, JSON.stringify(generatedData), { width: 300, margin: 2 }, (error) => {
@@ -141,6 +162,15 @@
                 });
             }
         }, [generatedData]);
+
+        // ... (otros useEffects y funciones que no cambian)
+        useEffect(() => {
+            if (fechaProd) {
+                const prodDate = new Date(fechaProd);
+                prodDate.setFullYear(prodDate.getFullYear() + 3);
+                setFechaVenc(prodDate.toISOString().split('T')[0]);
+            }
+        }, [fechaProd]);
 
         useEffect(() => {
             if (selectedArticulo) {
@@ -152,47 +182,20 @@
                 }
             }
         }, [selectedArticulo]);
-
+        
         const filteredArticulos = searchTerm
             ? articulos.filter(art =>
                 art.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 art.descripcion.toLowerCase().includes(searchTerm.toLowerCase())
             )
             : [];
-
-        const handleGenerateLabel = () => {
-            if (!operario || !selectedArticulo || !lote || !cantidad || !uom || !fechaProd || !fechaVenc) {
-                alert("Por favor, complete todos los campos.");
-                return;
-            }
-            const palletId = `PALLET-${new Date().toISOString().replace(/[-:.]/g, '').slice(0, 14)}-${operario}`;
-            const data = {
-                palletId,
-                sku: selectedArticulo.sku,
-                descripcion: selectedArticulo.descripcion,
-                lote, // Lote de Producción
-                cantidad: parseFloat(cantidad.replace(',', '.')),
-                uom,
-                fechaProd,
-                fechaVenc,
-                operario
-            };
-            setGeneratedData(data);
-        };
-        
-        const handlePrint = () => {
-            window.print();
-        };
         
         const formatSpanishNumber = (num) => {
           if (isNaN(num)) return '';
           return new Intl.NumberFormat('es-ES').format(num);
         };
 
-        if (!isAppReady) {
-            return null;
-        }
-
+        // ... (resto del JSX)
         return (
             <div className="min-h-screen bg-gray-100 p-4 flex flex-col">
                 <div className="bg-white p-6 rounded-xl shadow-lg flex-grow">
@@ -223,17 +226,17 @@
                             </div>
                              <div>
                                 <label className="block text-sm font-medium text-gray-700">Lote de Producción</label>
-                                <input type="text" value={lote} onChange={e => setLote(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
+                                <input type="text" value={loteProduccion} onChange={e => setLoteProduccion(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
                             </div>
                             
-                            {/* --- CAMBIO 2: NUEVO CAMPO NO EDITABLE EN EL FORMULARIO --- */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700">Lote Logístico (Automático)</label>
+                                <label className="block text-sm font-medium text-gray-700">Lote Logístico (Automático desde GitHub)</label>
                                 <input 
                                     type="text" 
                                     value={loteLogistico} 
-                                    readOnly 
-                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border bg-gray-100" 
+                                    readOnly={!isLoteLogisticoEditable}
+                                    onChange={e => setLoteLogistico(e.target.value)}
+                                    className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border ${!isLoteLogisticoEditable ? 'bg-gray-100' : ''}`}
                                 />
                             </div>
 
@@ -257,7 +260,7 @@
                                 </select>
                             </div>
                             <button onClick={handleGenerateLabel} className="w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-blue-700 text-xl">
-                                Generar Etiqueta
+                                Generar Vista Previa
                             </button>
                         </div>
 
@@ -294,7 +297,7 @@
                                         <div className="grid grid-cols-3 text-center text-sm border-t-2 border-black pt-2">
                                             <div>
                                                 <p className="font-bold">Lote Logístico</p>
-                                                <p className="text-xs break-all">{generatedData.palletId}</p>
+                                                <p className="text-lg font-bold">{generatedData.palletId}</p>
                                             </div>
                                             <div>
                                                 <p className="font-bold">Fabricación</p>
@@ -314,7 +317,7 @@
                             </div>
                             {generatedData && (
                                 <button onClick={handlePrint} className="w-full mt-4 bg-green-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-green-700 text-xl">
-                                    Imprimir
+                                    Imprimir y Guardar Lote en GitHub
                                 </button>
                             )}
                         </div>
