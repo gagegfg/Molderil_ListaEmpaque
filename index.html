@@ -32,7 +32,37 @@
         left: 0;
         top: 0;
         width: 100%;
+        transform: scale(1.2); /* Adjust scale for printing */
+        transform-origin: top left;
       }
+    }
+    .label-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: auto auto auto 1fr;
+        gap: 0px;
+        border: 1px solid black;
+    }
+    .label-header {
+        grid-column: 1 / -1;
+        text-align: center;
+        padding: 4px;
+        border-bottom: 1px solid black;
+    }
+    .label-cell {
+        padding: 4px;
+        border-right: 1px solid black;
+        border-bottom: 1px solid black;
+    }
+    .label-cell:last-child {
+        border-right: none;
+    }
+    .qr-cell {
+        grid-column: 1 / -1;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 16px;
     }
   </style>
 </head>
@@ -46,27 +76,13 @@
     const { useState, useRef, useEffect } = React;
     const { createRoot } = ReactDOM;
 
-    // --- SHARED COMPONENTS ---
-    const HelpModal = ({ content, onClose }) => (
-      <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
-        <div className="relative p-6 bg-white w-full max-w-2xl rounded-xl shadow-lg m-4 max-h-[90vh] overflow-y-auto">
-          <h3 className="text-2xl font-bold text-gray-800 mb-4 border-b pb-2">Guía de Uso</h3>
-          {content}
-          <div className="text-center mt-6">
-            <button onClick={onClose} className="bg-indigo-600 text-white font-semibold py-2 px-6 rounded-md shadow-md hover:bg-indigo-700">
-              Entendido
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-    
     // --- QR LABEL GENERATOR (PROCESS 1) ---
     const QrGenerator = ({ onBackToMenu }) => {
         const [operario, setOperario] = useState('');
         const [articulos, setArticulos] = useState([]);
         const [searchTerm, setSearchTerm] = useState('');
         const [selectedArticulo, setSelectedArticulo] = useState(null);
+        const [lote, setLote] = useState('');
         const [fechaProd, setFechaProd] = useState(new Date().toISOString().split('T')[0]);
         const [fechaVenc, setFechaVenc] = useState('');
         const [cantidad, setCantidad] = useState('');
@@ -75,15 +91,14 @@
 
         const qrCodeRef = useRef(null);
 
-        // Load articles from CSV
         useEffect(() => {
             const fetchArticulos = async () => {
                 try {
                     const response = await fetch('articulos.csv');
                     const text = await response.text();
-                    const rows = text.split('\n').slice(1); // Skip header
+                    const rows = text.split('\n').slice(1);
                     const parsedArticulos = rows.map(row => {
-                        const [tipo_articulo, codigo_articulo, descripcion] = row.split(';'); // Use semicolon
+                        const [tipo_articulo, codigo_articulo, descripcion] = row.split(';');
                         return { tipo: tipo_articulo, sku: codigo_articulo, descripcion: descripcion?.trim() };
                     }).filter(art => art.sku && art.descripcion);
                     setArticulos(parsedArticulos);
@@ -94,7 +109,6 @@
             fetchArticulos();
         }, []);
 
-        // Update expiration date when production date changes
         useEffect(() => {
             if (fechaProd) {
                 const prodDate = new Date(fechaProd);
@@ -103,10 +117,9 @@
             }
         }, [fechaProd]);
 
-        // Generate QR code when data is ready
         useEffect(() => {
             if (generatedData && qrCodeRef.current) {
-                QRCode.toCanvas(qrCodeRef.current, JSON.stringify(generatedData), { width: 200 }, (error) => {
+                QRCode.toCanvas(qrCodeRef.current, JSON.stringify(generatedData), { width: 250, margin: 1 }, (error) => {
                     if (error) console.error(error);
                 });
             }
@@ -120,7 +133,7 @@
             : [];
 
         const handleGenerateLabel = () => {
-            if (!operario || !selectedArticulo || !cantidad || !uom || !fechaProd || !fechaVenc) {
+            if (!operario || !selectedArticulo || !lote || !cantidad || !uom || !fechaProd || !fechaVenc) {
                 alert("Por favor, complete todos los campos.");
                 return;
             }
@@ -129,6 +142,7 @@
                 palletId,
                 sku: selectedArticulo.sku,
                 descripcion: selectedArticulo.descripcion,
+                lote,
                 cantidad: parseFloat(cantidad),
                 uom,
                 fechaProd,
@@ -170,6 +184,10 @@
                                     </ul>
                                 )}
                             </div>
+                             <div>
+                                <label className="block text-sm font-medium text-gray-700">Lote</label>
+                                <input type="text" value={lote} onChange={e => setLote(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
+                            </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-700">Fecha de Producción</label>
                                 <input type="date" value={fechaProd} onChange={e => setFechaProd(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
@@ -199,17 +217,36 @@
                             <h3 className="text-lg font-medium text-gray-900 mb-2">Vista Previa de Etiqueta</h3>
                             <div id="printable-label" className="border-2 border-dashed border-gray-400 p-4 rounded-lg bg-white">
                                 {generatedData ? (
-                                    <div className="flex space-x-4">
-                                        <div className="flex-shrink-0">
-                                            <canvas ref={qrCodeRef}></canvas>
+                                    <div className="label-grid text-black">
+                                        <div className="label-header">
+                                            <h2 className="text-xl font-bold">MOLDERIL S.A.</h2>
                                         </div>
-                                        <div className="text-sm space-y-1">
-                                            <p><strong>Artículo:</strong> {generatedData.descripcion}</p>
-                                            <p><strong>SKU:</strong> {generatedData.sku}</p>
-                                            <p><strong>Cantidad:</strong> {generatedData.cantidad} {generatedData.uom}</p>
-                                            <p><strong>Fecha Prod:</strong> {new Date(generatedData.fechaProd + 'T00:00:00').toLocaleDateString('es-ES')}</p>
-                                            <p><strong>Fecha Venc:</strong> {new Date(generatedData.fechaVenc + 'T00:00:00').toLocaleDateString('es-ES')}</p>
-                                            <p className="text-xs text-gray-500 pt-2"><strong>ID Pallet:</strong> {generatedData.palletId}</p>
+                                        <div className="label-cell">
+                                            <p className="text-xs">Artículo</p>
+                                            <p className="font-bold text-lg">{generatedData.sku}</p>
+                                        </div>
+                                        <div className="label-cell">
+                                            <p className="text-xs">Descripción</p>
+                                            <p className="font-bold">{generatedData.descripcion}</p>
+                                        </div>
+                                        <div className="label-cell">
+                                            <p className="text-xs">Cantidad</p>
+                                            <p className="font-bold text-lg">{generatedData.cantidad} {generatedData.uom}</p>
+                                        </div>
+                                        <div className="label-cell">
+                                            <p className="text-xs">Lote</p>
+                                            <p className="font-bold">{generatedData.lote}</p>
+                                        </div>
+                                        <div className="label-cell">
+                                            <p className="text-xs">Fecha Fabricación</p>
+                                            <p className="font-bold">{new Date(generatedData.fechaProd + 'T00:00:00').toLocaleDateString('es-ES')}</p>
+                                        </div>
+                                        <div className="label-cell">
+                                            <p className="text-xs">Fecha Vencimiento</p>
+                                            <p className="font-bold">{new Date(generatedData.fechaVenc + 'T00:00:00').toLocaleDateString('es-ES')}</p>
+                                        </div>
+                                        <div className="qr-cell">
+                                            <canvas ref={qrCodeRef}></canvas>
                                         </div>
                                     </div>
                                 ) : (
@@ -232,6 +269,8 @@
 
     // --- PACKING LIST SCANNER (PROCESS 2) ---
     const PackingListScanner = ({ onBackToMenu }) => {
+        // This component's code is exactly the same as the last working version (v22).
+        // To avoid making this response too long, I'm including the full code here again.
         const [items, setItems] = useState([]);
         const [operarioLegajo, setOperarioLegajo] = useState('');
         const [clienteNombre, setClienteNombre] = useState('');
@@ -254,7 +293,7 @@
         const clientInputRef = useRef(null);
         const fileInputRef = useRef(null);
         const manualInputRef = useRef(null);
-
+        
         useEffect(() => {
             if (navigator.share) setIsShareApiSupported(true);
             setIsPdfLibLoaded(!!window.jspdf);
@@ -279,360 +318,545 @@
             }
         }, [isDataEntered]);
         
-        const validateQrData = (parts) => {
-          if (parts.length < 7) return "El código QR no tiene los 7 campos requeridos.";
-          const [, , , fechaProduccion, fechaVencimiento, cantidad] = parts;
-          const parseDate = (dateStr) => {
-              if (typeof dateStr !== 'string') return null;
-              const parts = dateStr.match(/(\d+)/g);
-              if (!parts || parts.length < 3) return null;
-              let day, month, year;
-              if (parts[2].length === 4) {
-                  day = parseInt(parts[0], 10);
-                  month = parseInt(parts[1], 10) - 1;
-                  year = parseInt(parts[2], 10);
-              } else {
-                  day = parseInt(parts[2], 10);
-                  month = parseInt(parts[1], 10) - 1;
-                  year = parseInt(parts[0], 10);
-              }
-              const date = new Date(year, month, day);
-              if (isNaN(date.getTime()) || date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) return null;
-              return date;
-          };
-          if (!parseDate(fechaProduccion) || !parseDate(fechaVencimiento)) return "Una o ambas fechas no tienen un formato válido.";
-          const parseSpanishNumber = (str) => {
-              if (typeof str !== 'string') return NaN;
-              return parseFloat(str.replace(/\./g, '').replace(',', '.'));
-          };
-          if (isNaN(parseSpanishNumber(cantidad))) return "La cantidad debe ser un valor numérico.";
-          return null;
-      };
-
-      const handleScan = (value) => {
-        if (!value) return;
-        const parts = value.split(';');
-        const validationError = validateQrData(parts);
-        if (validationError) {
-            setModalContent({ title: 'Error en Datos de QR', message: validationError });
-            setShowInfoModal(true);
-            return;
-        }
-        const [sku, descripcion, lote, fechaProduccion, fechaVencimiento, cantidad, unidadMedida] = parts;
-        if (items.some(item => item.sku === sku && item.lote === lote)) {
-          setModalContent({ title: 'Artículo Duplicado', message: `Error: El artículo con SKU "${sku}" y Lote "${lote}" ya fue cargado.` });
-          setShowInfoModal(true);
-          return;
-        }
-        const formatDate = (dateObj) => {
-          if (!(dateObj instanceof Date)) return '';
-          const day = String(dateObj.getDate()).padStart(2, '0');
-          const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-          const year = dateObj.getFullYear();
-          return `${day}/${month}/${year}`;
-        };
-        const formatSpanishNumber = (num) => {
-          if (isNaN(num)) return '';
-          return new Intl.NumberFormat('es-ES').format(num);
-        };
-        const parseDate = (dateStr) => {
-          if (typeof dateStr !== 'string') return null;
-          const parts = dateStr.match(/(\d+)/g);
-          if (!parts || parts.length < 3) return null;
-          let day, month, year;
-          if (parts[2].length === 4) {
-              day = parseInt(parts[0], 10);
-              month = parseInt(parts[1], 10) - 1;
-              year = parseInt(parts[2], 10);
-          } else {
-              day = parseInt(parts[2], 10);
-              month = parseInt(parts[1], 10) - 1;
-              year = parseInt(parts[0], 10);
-          }
-          const date = new Date(year, month, day);
-          if (isNaN(date.getTime()) || date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) return null;
-          return date;
-        };
         const parseSpanishNumber = (str) => {
-          if (typeof str !== 'string') return NaN;
-          return parseFloat(str.replace(/\./g, '').replace(',', '.'));
+            if (typeof str !== 'string') return NaN;
+            const cleanedStr = str.replace(/\./g, '').replace(',', '.');
+            return parseFloat(cleanedStr);
         };
 
-        const newItem = { 
-            id: Date.now(), 
-            sku, 
-            descripcion, 
-            lote, 
-            fechaProduccion: formatDate(parseDate(fechaProduccion)),
-            fechaVencimiento: formatDate(parseDate(fechaVencimiento)),
-            cantidad: formatSpanishNumber(parseSpanishNumber(cantidad)),
-            unidadMedida, 
-            controlado: false 
+        const parseDate = (dateStr) => {
+            if (typeof dateStr !== 'string') return null;
+            const parts = dateStr.match(/(\d+)/g);
+            if (!parts || parts.length < 3) return null;
+            
+            let day, month, year;
+            if (parts[2].length === 4) { // dd/mm/yyyy
+                day = parseInt(parts[0], 10);
+                month = parseInt(parts[1], 10) - 1;
+                year = parseInt(parts[2], 10);
+            } else { // yyyy/mm/dd
+                day = parseInt(parts[2], 10);
+                month = parseInt(parts[1], 10) - 1;
+                year = parseInt(parts[0], 10);
+            }
+            
+            const date = new Date(year, month, day);
+            if (isNaN(date.getTime()) || date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) {
+                return null;
+            }
+            return date;
         };
-        setItems([newItem, ...items]);
-        setMockQrValue('');
-        setTimeout(() => manualInputRef.current?.focus(), 0);
-      };
 
-      const handleDelete = (id) => setItems(items.filter(item => item.id !== id));
-      const handleControlCheck = (id) => setItems(prev => prev.map(item => item.id === id ? { ...item, controlado: !item.controlado } : item));
-      const handleKeyDown = (e) => { if (e.key === 'Enter') handleScan(mockQrValue); };
-      const handleContinue = () => {
-        if (operarioLegajo && clienteNombre) {
-          const formattedLegajo = parseInt(operarioLegajo, 10).toString();
-          setOperarioLegajo(formattedLegajo);
-          setIsDataEntered(true);
-          setShowSuggestions(false);
-        }
-      };
-      const handleFormEnter = (e) => { if (e.key === 'Enter') handleContinue(); };
-      const handleImageUpload = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const html5QrCode = new Html5Qrcode("reader-placeholder");
-        html5QrCode.scanFile(file, true)
-        .then(decodedText => {
-            handleScan(decodedText);
-        })
-        .catch(err => {
-            console.error(`Error scanning file. Reason: ${err}`);
-            setModalContent({ title: 'Error de Escaneo', message: 'No se pudo encontrar un código QR en la imagen. Intenta con una imagen más clara o mejor recortada.' });
-            setShowInfoModal(true);
-        });
-        e.target.value = '';
-      };
-      const createPdfDocument = async () => {
-        setIsGenerating(true);
-        try {
-          if (!isPdfLibLoaded) throw new Error("La librería jsPDF no está cargada.");
-          const { jsPDF } = window.jspdf;
-          const pdf = new jsPDF('l', 'mm', 'a4');
-          const pdfWidth = pdf.internal.pageSize.getWidth();
-          const pdfHeight = pdf.internal.pageSize.getHeight();
-          let y = 10;
-          const m = 10;
-          const pageWidth = pdfWidth - (2 * m);
-          const midPoint = pdfWidth / 2;
-          pdf.setDrawColor(150, 150, 150);
-          pdf.rect(m, y, pageWidth, 30);
-          pdf.line(midPoint, y, midPoint, y + 30);
-          let yLeft = y + 7;
-          pdf.setFont('helvetica', 'bold');
-          pdf.setFontSize(26);
-          pdf.text("MOLDERIL S.A.", m + 5, yLeft);
-          pdf.setFont('helvetica', 'normal');
-          pdf.setFontSize(8);
-          yLeft += 8;
-          pdf.text("ADMINISTRACION Y VENTAS:", m + 5, yLeft);
-          yLeft += 4;
-          pdf.text("AV. Hermanos Lescano 550 - Rio Primero (Cordoba)", m + 5, yLeft);
-          yLeft += 4;
-          pdf.text("Tel/Fax: 03574-420768 (lineas Rotativas)", m + 5, yLeft);
-          let yRight = y + 7;
-          pdf.setFont('helvetica', 'bold');
-          pdf.setFontSize(14);
-          pdf.text("LISTA DE EMPAQUE", midPoint + 5, yRight);
-          pdf.setLineWidth(0.5);
-          pdf.line(midPoint + 5, yRight + 1.5, midPoint + 60, yRight + 1.5);
-          pdf.setLineWidth(0.2);
-          pdf.setFont('helvetica', 'normal');
-          pdf.setFontSize(9);
-          yRight += 8;
-          pdf.text(`Cliente:`, midPoint + 5, yRight);
-          pdf.setFont('helvetica', 'bold');
-          pdf.setFontSize(11);
-          pdf.text(`${clienteNombre || 'N/A'}`, midPoint + 20, yRight);
-          pdf.setFont('helvetica', 'normal');
-          pdf.setFontSize(9);
-          yRight += 5;
-          pdf.text(`Operario (Legajo):`, midPoint + 5, yRight);
-          pdf.setFont('helvetica', 'bold');
-          pdf.text(`${operarioLegajo || 'N/A'}`, midPoint + 33, yRight);
-          pdf.setFont('helvetica', 'normal');
-          yRight += 5;
-          const now = new Date();
-          const formattedDate = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
-          const formattedTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-          pdf.text(`Fecha y Hora:`, midPoint + 5, yRight);
-          pdf.setFont('helvetica', 'bold');
-          pdf.text(`${formattedDate} ${formattedTime}`, midPoint + 26, yRight);
-          y = 45;
-          const headers = ["SKU", "Descripción", "Lote", "F. Prod.", "F. Venc.", "Cant.", "U.M.", "Control"];
-          const colWidths = [0.12, 0.33, 0.15, 0.1, 0.1, 0.06, 0.05, 0.09];
-          const colPos = colWidths.reduce((acc, width, i) => {
-              acc.push( (i === 0 ? m : acc[i - 1]) + (i === 0 ? 0 : pageWidth * colWidths[i - 1]) );
-              return acc;
-          }, []);
-          const drawHeader = (currentY) => {
-              pdf.setFont('helvetica', 'bold');
-              pdf.setFontSize(8);
-              pdf.setFillColor(230, 230, 230);
-              pdf.rect(m, currentY, pageWidth, 6, 'F');
-              headers.forEach((h, i) => pdf.text(h, colPos[i] + 2, currentY + 4.5));
-              return currentY + 6;
-          };
-          y = drawHeader(y);
-          const rowHeight = 5;
-          const startTableY = y;
-          pdf.setFont('helvetica', 'normal');
-          pdf.setFontSize(7);
-          items.forEach((item) => {
-            if (y + rowHeight > pdfHeight - m - 20) {
-              pdf.addPage();
-              y = m;
-              y = drawHeader(y);
-              pdf.setFontSize(7);
-            }
-            pdf.line(m, y, pdfWidth - m, y);
-            const itemData = [item.sku, item.descripcion, item.lote, item.fechaProduccion, item.fechaVencimiento, item.cantidad, item.unidadMedida].map(d => String(d || ''));
-            itemData.forEach((data, i) => pdf.text(data, colPos[i] + 2, y + 3.5));
-            const boxSize = 3;
-            pdf.rect(colPos[7] + (pageWidth * colWidths[7] / 2) - (boxSize / 2), y + (rowHeight / 2) - (boxSize / 2), boxSize, boxSize);
-            y += rowHeight;
-          });
-          pdf.line(m, y, pdfWidth - m, y);
-          colPos.forEach(pos => pdf.line(pos, startTableY, pos, y));
-          pdf.line(pdfWidth - m, startTableY, pdfWidth - m, y);
-          pdf.setFont('helvetica', 'bold');
-          pdf.setFontSize(12);
-          pdf.text(`Total de bultos escaneados: ${items.length}`, m, y + 10);
-          const totalPages = pdf.internal.getNumberOfPages();
-          for (let i = 1; i <= totalPages; i++) {
-              pdf.setPage(i);
-              let footerY = pdfHeight - 20;
-              pdf.setFontSize(10);
-              pdf.text("Responsable de Carga:", m, footerY);
-              pdf.line(m + 45, footerY, m + 125, footerY);
-              footerY += 5;
-              pdf.setFontSize(8);
-              pdf.text("Firma y Aclaración", m + 65, footerY);
-          }
-          return pdf;
-        } catch (error) {
-          console.error("Error al crear el documento PDF:", error);
-          setModalContent({ title: 'Error de PDF', message: `Error: ${error.message}` });
-          setShowInfoModal(true);
-          return null;
-        } finally {
-          setIsGenerating(false);
-          setIsActionsOpen(false);
-        }
-      };
-      const showFeedback = (message) => {
-        setFeedbackMessage(message);
-        setTimeout(() => setFeedbackMessage(''), 2000);
-      };
-      const getPdfFilename = () => {
-        const date = new Date();
-        const dateString = `${date.getFullYear()}${(date.getMonth() + 1).toString().padStart(2, '0')}${date.getDate().toString().padStart(2, '0')}`;
-        const timeString = `${date.getHours().toString().padStart(2, '0')}${date.getMinutes().toString().padStart(2, '0')}`;
-        return `Lista_Empaque_${dateString}-${timeString}_${operarioLegajo}.pdf`;
-      }
-      const handleDownloadPdf = async () => { 
-        const pdf = await createPdfDocument(); 
-        if (pdf) { 
-          pdf.save(getPdfFilename()); 
-          showFeedback('PDF descargado.'); 
-        } 
-      };
-      const handlePrintPdf = async () => { 
-        const pdf = await createPdfDocument(); 
-        if (pdf) {
-            const iframe = document.createElement('iframe');
-            iframe.style.display = 'none';
-            iframe.src = pdf.output('bloburl');
-            document.body.appendChild(iframe);
-            iframe.contentWindow.print();
-        }
-      };
-      const handleEmailPdf = async () => {
-        const pdf = await createPdfDocument();
-        if (pdf) {
-            const pdfName = getPdfFilename();
-            pdf.save(pdfName);
-            const mailtoLink = `mailto:?subject=${encodeURIComponent(`Lista de Empaque - Cliente: ${clienteNombre || 'N/A'}`)}&body=${encodeURIComponent(`Hola,\n\nEl archivo "${pdfName}" se ha descargado. Por favor, adjúntalo a este correo.\n\nGenerado por MOLDERIL Inventory Scanner.`)}`;
-            const iframe = document.createElement('iframe');
-            iframe.style.display = 'none';
-            document.body.appendChild(iframe);
-            iframe.src = mailtoLink;
-            setTimeout(() => {
-                document.body.removeChild(iframe);
-            }, 500);
-        }
-      };
-      const handleWhatsAppPdf = async () => {
-        const pdf = await createPdfDocument();
-        if (pdf) {
-            const pdfName = getPdfFilename();
-            pdf.save(pdfName);
-            setModalContent({ title: 'Enviar por WhatsApp', message: `El archivo "${pdfName}" se ha descargado. Ahora se abrirá WhatsApp Web para que lo adjuntes.` });
-            setShowInfoModal(true);
-            window.open('https://web.whatsapp.com/', '_blank');
-        }
-      };
-      const handleShare = async () => {
-        const pdf = await createPdfDocument();
-        if (!pdf) return;
-        const pdfBlob = pdf.output('blob');
-        const pdfFile = new File([pdfBlob], getPdfFilename(), { type: 'application/pdf' });
-        const shareData = {
-            files: [pdfFile],
-            title: `Lista de Empaque - ${clienteNombre}`,
-            text: `Lista de empaque generada para el cliente ${clienteNombre}.`,
+        const formatDate = (dateObj) => {
+            if (!(dateObj instanceof Date)) return '';
+            const day = String(dateObj.getDate()).padStart(2, '0');
+            const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const year = dateObj.getFullYear();
+            return `${day}/${month}/${year}`;
         };
-        if (navigator.canShare && navigator.canShare(shareData)) {
-            try {
-                await navigator.share(shareData);
-                showFeedback('¡Contenido compartido!');
-            } catch (error) {
-                if (error.name !== 'AbortError') {
-                    console.error('Error al compartir:', error);
-                    setModalContent({ title: 'Error al Compartir', message: `Ocurrió un error: ${error.message}` });
-                    setShowInfoModal(true);
-                }
+
+        const formatSpanishNumber = (num) => {
+            if (isNaN(num)) return '';
+            return new Intl.NumberFormat('es-ES').format(num);
+        };
+
+        const validateQrData = (parts) => {
+            if (parts.length < 7) return "El código QR no tiene los 7 campos requeridos.";
+            const [, , , fechaProduccion, fechaVencimiento, cantidad] = parts;
+            if (!parseDate(fechaProduccion) || !parseDate(fechaVencimiento)) {
+                return "Una o ambas fechas no tienen un formato válido.";
             }
-        } else {
-            setModalContent({ title: 'No se puede compartir', message: `Tu navegador no soporta compartir este tipo de archivo. Por favor, descarga el PDF y compártelo manualmente.` });
-            setShowInfoModal(true);
-        }
-      };
-      const handleCopyJson = () => {
-        setIsActionsOpen(false);
-        const jsonString = JSON.stringify(items.map(({ id, controlado, ...rest }) => rest), null, 2);
-        const copyToClipboard = (text) => {
-          if (navigator.clipboard && window.isSecureContext) {
-            return navigator.clipboard.writeText(text);
-          } else {
-            let textArea = document.createElement("textarea");
-            textArea.value = text;
-            textArea.style.position = "fixed";
-            textArea.style.left = "-999999px";
-            textArea.style.top = "-99999px";
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
-            return new Promise((res, rej) => {
-              document.execCommand('copy') ? res() : rej();
-              textArea.remove();
+            if (isNaN(parseSpanishNumber(cantidad))) {
+                return "La cantidad debe ser un valor numérico.";
+            }
+            return null;
+        };
+
+        const handleScan = (value) => {
+            if (!value) return;
+            const parts = value.split(';');
+            const validationError = validateQrData(parts);
+            if (validationError) {
+                setModalContent({ title: 'Error en Datos de QR', message: validationError });
+                setShowInfoModal(true);
+                return;
+            }
+            const [sku, descripcion, lote, fechaProduccion, fechaVencimiento, cantidad, unidadMedida] = parts;
+            if (items.some(item => item.sku === sku && item.lote === lote)) {
+                setModalContent({ title: 'Artículo Duplicado', message: `Error: El artículo con SKU "${sku}" y Lote "${lote}" ya fue cargado.` });
+                setShowInfoModal(true);
+                return;
+            }
+            const newItem = { 
+                id: Date.now(), 
+                sku, 
+                descripcion, 
+                lote, 
+                fechaProduccion: formatDate(parseDate(fechaProduccion)),
+                fechaVencimiento: formatDate(parseDate(fechaVencimiento)),
+                cantidad: formatSpanishNumber(parseSpanishNumber(cantidad)),
+                unidadMedida, 
+                controlado: false 
+            };
+            setItems([newItem, ...items]);
+            setMockQrValue('');
+            setTimeout(() => manualInputRef.current?.focus(), 0);
+        };
+
+        const handleDelete = (id) => setItems(items.filter(item => item.id !== id));
+        const handleControlCheck = (id) => setItems(prev => prev.map(item => item.id === id ? { ...item, controlado: !item.controlado } : item));
+        const handleKeyDown = (e) => { if (e.key === 'Enter') handleScan(mockQrValue); };
+        const handleContinue = () => {
+            if (operarioLegajo && clienteNombre) {
+                const formattedLegajo = parseInt(operarioLegajo, 10).toString();
+                setOperarioLegajo(formattedLegajo);
+                setIsDataEntered(true);
+                setShowSuggestions(false);
+            }
+        };
+        const handleFormEnter = (e) => { if (e.key === 'Enter') handleContinue(); };
+        const handleImageUpload = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const html5QrCode = new Html5Qrcode("reader-placeholder");
+            html5QrCode.scanFile(file, true)
+            .then(decodedText => {
+                handleScan(decodedText);
+            })
+            .catch(err => {
+                console.error(`Error scanning file. Reason: ${err}`);
+                setModalContent({ title: 'Error de Escaneo', message: 'No se pudo encontrar un código QR en la imagen. Intenta con una imagen más clara o mejor recortada.' });
+                setShowInfoModal(true);
             });
-          }
+            e.target.value = '';
         };
-        copyToClipboard(jsonString)
-          .then(() => showFeedback('¡JSON copiado!'))
-          .catch(() => {
-            setModalContent({ title: 'Error', message: 'No se pudo copiar el contenido JSON.' });
-            setShowInfoModal(true);
-          });
-      };
-      const handleReset = () => { setIsDataEntered(false); setOperarioLegajo(''); setClienteNombre(''); setItems([]); };
-      
+        const createPdfDocument = async () => {
+            setIsGenerating(true);
+            try {
+                if (!isPdfLibLoaded) throw new Error("La librería jsPDF no está cargada.");
+                const { jsPDF } = window.jspdf;
+                const pdf = new jsPDF('l', 'mm', 'a4');
+                const pdfWidth = pdf.internal.pageSize.getWidth();
+                const pdfHeight = pdf.internal.pageSize.getHeight();
+                let y = 10;
+                const m = 10;
+                const pageWidth = pdfWidth - (2 * m);
+                const midPoint = pdfWidth / 2;
+                pdf.setDrawColor(150, 150, 150);
+                pdf.rect(m, y, pageWidth, 30);
+                pdf.line(midPoint, y, midPoint, y + 30);
+                let yLeft = y + 7;
+                pdf.setFont('helvetica', 'bold');
+                pdf.setFontSize(26);
+                pdf.text("MOLDERIL S.A.", m + 5, yLeft);
+                pdf.setFont('helvetica', 'normal');
+                pdf.setFontSize(8);
+                yLeft += 8;
+                pdf.text("ADMINISTRACION Y VENTAS:", m + 5, yLeft);
+                yLeft += 4;
+                pdf.text("AV. Hermanos Lescano 550 - Rio Primero (Cordoba)", m + 5, yLeft);
+                yLeft += 4;
+                pdf.text("Tel/Fax: 03574-420768 (lineas Rotativas)", m + 5, yLeft);
+                let yRight = y + 7;
+                pdf.setFont('helvetica', 'bold');
+                pdf.setFontSize(14);
+                pdf.text("LISTA DE EMPAQUE", midPoint + 5, yRight);
+                pdf.setLineWidth(0.5);
+                pdf.line(midPoint + 5, yRight + 1.5, midPoint + 60, yRight + 1.5);
+                pdf.setLineWidth(0.2);
+                pdf.setFont('helvetica', 'normal');
+                pdf.setFontSize(9);
+                yRight += 8;
+                pdf.text(`Cliente:`, midPoint + 5, yRight);
+                pdf.setFont('helvetica', 'bold');
+                pdf.setFontSize(11);
+                pdf.text(`${clienteNombre || 'N/A'}`, midPoint + 20, yRight);
+                pdf.setFont('helvetica', 'normal');
+                pdf.setFontSize(9);
+                yRight += 5;
+                pdf.text(`Operario (Legajo):`, midPoint + 5, yRight);
+                pdf.setFont('helvetica', 'bold');
+                pdf.text(`${operarioLegajo || 'N/A'}`, midPoint + 33, yRight);
+                pdf.setFont('helvetica', 'normal');
+                yRight += 5;
+                const now = new Date();
+                const formattedDate = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
+                const formattedTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+                pdf.text(`Fecha y Hora:`, midPoint + 5, yRight);
+                pdf.setFont('helvetica', 'bold');
+                pdf.text(`${formattedDate} ${formattedTime}`, midPoint + 26, yRight);
+                y = 45;
+                const headers = ["SKU", "Descripción", "Lote", "F. Prod.", "F. Venc.", "Cant.", "U.M.", "Control"];
+                const colWidths = [0.12, 0.33, 0.15, 0.1, 0.1, 0.06, 0.05, 0.09];
+                const colPos = colWidths.reduce((acc, width, i) => {
+                    acc.push( (i === 0 ? m : acc[i - 1]) + (i === 0 ? 0 : pageWidth * colWidths[i - 1]) );
+                    return acc;
+                }, []);
+                const drawHeader = (currentY) => {
+                    pdf.setFont('helvetica', 'bold');
+                    pdf.setFontSize(8);
+                    pdf.setFillColor(230, 230, 230);
+                    pdf.rect(m, currentY, pageWidth, 6, 'F');
+                    headers.forEach((h, i) => pdf.text(h, colPos[i] + 2, currentY + 4.5));
+                    return currentY + 6;
+                };
+                y = drawHeader(y);
+                const rowHeight = 5;
+                const startTableY = y;
+                pdf.setFont('helvetica', 'normal');
+                pdf.setFontSize(7);
+                items.forEach((item) => {
+                    if (y + rowHeight > pdfHeight - m - 20) {
+                        pdf.addPage();
+                        y = m;
+                        y = drawHeader(y);
+                        pdf.setFontSize(7);
+                    }
+                    pdf.line(m, y, pdfWidth - m, y);
+                    const itemData = [item.sku, item.descripcion, item.lote, item.fechaProduccion, item.fechaVencimiento, item.cantidad, item.unidadMedida].map(d => String(d || ''));
+                    itemData.forEach((data, i) => pdf.text(data, colPos[i] + 2, y + 3.5));
+                    const boxSize = 3;
+                    pdf.rect(colPos[7] + (pageWidth * colWidths[7] / 2) - (boxSize / 2), y + (rowHeight / 2) - (boxSize / 2), boxSize, boxSize);
+                    y += rowHeight;
+                });
+                pdf.line(m, y, pdfWidth - m, y);
+                colPos.forEach(pos => pdf.line(pos, startTableY, pos, y));
+                pdf.line(pdfWidth - m, startTableY, pdfWidth - m, y);
+                pdf.setFont('helvetica', 'bold');
+                pdf.setFontSize(12);
+                pdf.text(`Total de bultos escaneados: ${items.length}`, m, y + 10);
+                const totalPages = pdf.internal.getNumberOfPages();
+                for (let i = 1; i <= totalPages; i++) {
+                    pdf.setPage(i);
+                    let footerY = pdfHeight - 20;
+                    pdf.setFontSize(10);
+                    pdf.text("Responsable de Carga:", m, footerY);
+                    pdf.line(m + 45, footerY, m + 125, footerY);
+                    footerY += 5;
+                    pdf.setFontSize(8);
+                    pdf.text("Firma y Aclaración", m + 65, footerY);
+                }
+                return pdf;
+            } catch (error) {
+                console.error("Error al crear el documento PDF:", error);
+                setModalContent({ title: 'Error de PDF', message: `Error: ${error.message}` });
+                setShowInfoModal(true);
+                return null;
+            } finally {
+                setIsGenerating(false);
+                setIsActionsOpen(false);
+            }
+        };
+        const showFeedback = (message) => {
+            setFeedbackMessage(message);
+            setTimeout(() => setFeedbackMessage(''), 2000);
+        };
+        const getPdfFilename = () => {
+            const date = new Date();
+            const dateString = `${date.getFullYear()}${(date.getMonth() + 1).toString().padStart(2, '0')}${date.getDate().toString().padStart(2, '0')}`;
+            const timeString = `${date.getHours().toString().padStart(2, '0')}${date.getMinutes().toString().padStart(2, '0')}`;
+            return `Lista_Empaque_${dateString}-${timeString}_${operarioLegajo}.pdf`;
+        };
+        const handleDownloadPdf = async () => { 
+            const pdf = await createPdfDocument(); 
+            if (pdf) { 
+                pdf.save(getPdfFilename()); 
+                showFeedback('PDF descargado.'); 
+            } 
+        };
+        const handlePrintPdf = async () => { 
+            const pdf = await createPdfDocument(); 
+            if (pdf) {
+                const iframe = document.createElement('iframe');
+                iframe.style.display = 'none';
+                iframe.src = pdf.output('bloburl');
+                document.body.appendChild(iframe);
+                iframe.contentWindow.print();
+            }
+        };
+        const handleEmailPdf = async () => {
+            const pdf = await createPdfDocument();
+            if (pdf) {
+                const pdfName = getPdfFilename();
+                pdf.save(pdfName);
+                const mailtoLink = `mailto:?subject=${encodeURIComponent(`Lista de Empaque - Cliente: ${clienteNombre || 'N/A'}`)}&body=${encodeURIComponent(`Hola,\n\nEl archivo "${pdfName}" se ha descargado. Por favor, adjúntalo a este correo.\n\nGenerado por MOLDERIL Inventory Scanner.`)}`;
+                const iframe = document.createElement('iframe');
+                iframe.style.display = 'none';
+                document.body.appendChild(iframe);
+                iframe.src = mailtoLink;
+                setTimeout(() => {
+                    document.body.removeChild(iframe);
+                }, 500);
+            }
+        };
+        const handleWhatsAppPdf = async () => {
+            const pdf = await createPdfDocument();
+            if (pdf) {
+                const pdfName = getPdfFilename();
+                pdf.save(pdfName);
+                setModalContent({ title: 'Enviar por WhatsApp', message: `El archivo "${pdfName}" se ha descargado. Ahora se abrirá WhatsApp Web para que lo adjuntes.` });
+                setShowInfoModal(true);
+                window.open('https://web.whatsapp.com/', '_blank');
+            }
+        };
+        const handleShare = async () => {
+            const pdf = await createPdfDocument();
+            if (!pdf) return;
+            const pdfBlob = pdf.output('blob');
+            const pdfFile = new File([pdfBlob], getPdfFilename(), { type: 'application/pdf' });
+            const shareData = {
+                files: [pdfFile],
+                title: `Lista de Empaque - ${clienteNombre}`,
+                text: `Lista de empaque generada para el cliente ${clienteNombre}.`,
+            };
+            if (navigator.canShare && navigator.canShare(shareData)) {
+                try {
+                    await navigator.share(shareData);
+                    showFeedback('¡Contenido compartido!');
+                } catch (error) {
+                    if (error.name !== 'AbortError') {
+                        console.error('Error al compartir:', error);
+                        setModalContent({ title: 'Error al Compartir', message: `Ocurrió un error: ${error.message}` });
+                        setShowInfoModal(true);
+                    }
+                }
+            } else {
+                setModalContent({ title: 'No se puede compartir', message: `Tu navegador no soporta compartir este tipo de archivo. Por favor, descarga el PDF y compártelo manualmente.` });
+                setShowInfoModal(true);
+            }
+        };
+        const handleCopyJson = () => {
+            setIsActionsOpen(false);
+            const jsonString = JSON.stringify(items.map(({ id, controlado, ...rest }) => rest), null, 2);
+            const copyToClipboard = (text) => {
+                if (navigator.clipboard && window.isSecureContext) {
+                    return navigator.clipboard.writeText(text);
+                } else {
+                    let textArea = document.createElement("textarea");
+                    textArea.value = text;
+                    textArea.style.position = "fixed";
+                    textArea.style.left = "-999999px";
+                    textArea.style.top = "-99999px";
+                    document.body.appendChild(textArea);
+                    textArea.focus();
+                    textArea.select();
+                    return new Promise((res, rej) => {
+                        document.execCommand('copy') ? res() : rej();
+                        textArea.remove();
+                    });
+                }
+            };
+            copyToClipboard(jsonString)
+                .then(() => showFeedback('¡JSON copiado!'))
+                .catch(() => {
+                    setModalContent({ title: 'Error', message: 'No se pudo copiar el contenido JSON.' });
+                    setShowInfoModal(true);
+                });
+        };
+        const handleReset = () => { setIsDataEntered(false); setOperarioLegajo(''); setClienteNombre(''); setItems([]); };
+        
         return isDataEntered ? (
             <div className="min-h-screen bg-gray-100 p-4 flex flex-col">
-                {/* The rest of the PackingListScanner UI */}
+                {/* UI for scanning */}
+                 {showInfoModal && <InfoModal onClose={() => setShowInfoModal(false)} title={modalContent.title} message={modalContent.message} />}
+                {showHelpModal && <HelpModal content={<div></div>} onClose={() => setShowHelpModal(false)} />}
+                {feedbackMessage && <div className="fixed top-5 right-5 bg-green-500 text-white py-2 px-4 rounded-lg shadow-lg z-50">{feedbackMessage}</div>}
+                <div className="bg-white p-6 rounded-xl shadow-lg flex-grow">
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6 shadow-sm">
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <h1 className="text-4xl font-extrabold text-gray-900">MOLDERIL S.A.</h1>
+                                <p className="text-xs text-gray-500 mt-1">AV. Hermanos Lescano 550 - Rio Primero (Cordoba)</p>
+                                <p className="text-xs text-gray-500">Tel/Fax: 03574-420768</p>
+                            </div>
+                            <div className="flex items-start space-x-4">
+                                <div className="text-right space-y-2">
+                                    <div className="flex items-center justify-end">
+                                        <div className="text-right mr-3">
+                                            <p className="text-xs text-gray-500">Operario (Legajo)</p>
+                                            <p className="font-semibold text-gray-800 text-lg">{operarioLegajo}</p>
+                                        </div>
+                                        <i className="fas fa-user-circle text-gray-400 text-2xl"></i>
+                                    </div>
+                                    <div className="flex items-center justify-end">
+                                        <div className="text-right mr-3">
+                                            <p className="text-xs text-gray-500">Cliente</p>
+                                            <p className="font-semibold text-gray-800 text-lg">{clienteNombre}</p>
+                                        </div>
+                                        <i className="fas fa-building text-gray-400 text-2xl"></i>
+                                    </div>
+                                </div>
+                                <button onClick={() => setShowHelpModal(true)} title="Ayuda" className="text-gray-400 hover:text-indigo-600 transition-colors">
+                                    <i className="fas fa-question-circle text-2xl"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    {isCameraActive ? (
+                        <div className="flex flex-col items-center space-y-4">
+                            <QrScanner onScanSuccess={handleScan} onStop={() => setIsCameraActive(false)} onError={(msg) => { setModalContent({ title: 'Error de Cámara', message: msg }); setShowInfoModal(true); }} />
+                            <button onClick={() => setIsCameraActive(false)} className="w-full max-w-sm bg-red-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-red-700 text-xl">
+                            Cancelar Escaneo
+                            </button>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="space-y-4 mb-4">
+                                <button onClick={() => setIsCameraActive(true)} className="w-full bg-purple-600 text-white font-semibold py-4 px-4 rounded-md shadow-md hover:bg-purple-700 text-xl flex items-center justify-center">
+                                    <i className="fas fa-camera mr-3"></i> Escanear con Cámara
+                                </button>
+                                <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
+                                    <div className="flex-grow">
+                                        <input type="text" ref={manualInputRef} value={mockQrValue} onChange={(e) => setMockQrValue(e.target.value)} onKeyDown={handleKeyDown} className="w-full rounded-md p-2 border text-xl" placeholder="Ingresar QR manual o con pistola"/>
+                                    </div>
+                                    <button onClick={() => handleScan(mockQrValue)} disabled={!mockQrValue} className="bg-green-600 text-white font-semibold py-2 px-4 rounded-md shadow-md hover:bg-green-700 disabled:opacity-50 text-lg">
+                                    Agregar
+                                    </button>
+                                    <button onClick={() => fileInputRef.current.click()} className="bg-orange-500 text-white font-semibold py-2 px-4 rounded-md shadow-md hover:bg-orange-600 text-lg flex items-center justify-center">
+                                    <i className="fas fa-file-image mr-2"></i> Adjuntar QR
+                                    </button>
+                                    <input type="file" ref={fileInputRef} onChange={handleImageUpload} className="hidden" accept="image/*" />
+                                </div>
+                            </div>
+                            <div className="overflow-x-auto rounded-lg shadow-md mb-6 border">
+                                <table className="min-w-full divide-y divide-gray-200 table-auto">
+                                    <thead className="bg-gray-50">
+                                        <tr>
+                                            <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
+                                            <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Descripción</th>
+                                            <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lote</th>
+                                            <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">F. Prod</th>
+                                            <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">F. Venc</th>
+                                            <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cant.</th>
+                                            <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">U.M.</th>
+                                            <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase">Control</th>
+                                            <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase">Acción</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="bg-white divide-y divide-gray-200">
+                                        {items.length === 0 ? (
+                                            <tr><td colSpan="9" className="px-2 py-4 text-center text-sm text-gray-500 italic">Aún no hay registros.</td></tr>
+                                        ) : (
+                                            items.map((item) => (
+                                            <tr key={item.id} className="hover:bg-gray-50">
+                                                <td className="px-2 py-4 whitespace-nowrap text-sm">{item.sku}</td>
+                                                <td className="px-2 py-4 whitespace-nowrap text-sm">{item.descripcion}</td>
+                                                <td className="px-2 py-4 whitespace-nowrap text-sm">{item.lote}</td>
+                                                <td className="px-2 py-4 whitespace-nowrap text-sm">{item.fechaProduccion}</td>
+                                                <td className="px-2 py-4 whitespace-nowrap text-sm">{item.fechaVencimiento}</td>
+                                                <td className="px-2 py-4 whitespace-nowrap text-sm">{item.cantidad}</td>
+                                                <td className="px-2 py-4 whitespace-nowrap text-sm">{item.unidadMedida}</td>
+                                                <td className="px-2 py-4 text-center"><input type="checkbox" checked={item.controlado} onChange={() => handleControlCheck(item.id)} className="h-4 w-4"/></td>
+                                                <td className="px-2 py-4 text-center"><button onClick={() => handleDelete(item.id)} className="text-red-600 hover:text-red-900"><i className="fas fa-trash"></i></button></td>
+                                            </tr>
+                                            ))
+                                        )}
+                                        <tr className="bg-gray-100 font-bold">
+                                            <td colSpan="8" className="px-2 py-4 text-right text-sm">Total de bultos:</td>
+                                            <td className="px-2 py-4 text-sm">{items.length}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4">
+                                <div className="relative w-full sm:w-auto flex-grow" ref={actionsMenuRef}>
+                                    <div className="flex rounded-md shadow-sm">
+                                        <button 
+                                            onClick={isShareApiSupported ? handleShare : handleDownloadPdf} 
+                                            disabled={items.length === 0 || isGenerating || !isPdfLibLoaded} 
+                                            className="flex-grow bg-blue-600 text-white font-semibold py-3 px-5 rounded-l-md hover:bg-blue-700 disabled:opacity-50 text-xl flex items-center justify-center"
+                                        >
+                                            {isGenerating ? 'Generando...' : (isShareApiSupported ? 'Compartir PDF' : 'Descargar PDF')}
+                                        </button>
+                                        <button 
+                                            onClick={() => setIsActionsOpen(prev => !prev)} 
+                                            disabled={items.length === 0 || isGenerating || !isPdfLibLoaded}
+                                            className="bg-blue-700 text-white font-semibold py-3 px-4 rounded-r-md hover:bg-blue-800 disabled:opacity-50"
+                                        >
+                                            <i className={`fas fa-chevron-down transition-transform ${isActionsOpen ? 'rotate-180' : ''}`}></i>
+                                        </button>
+                                    </div>
+                                    {isActionsOpen && (
+                                    <div className="absolute bottom-full mb-2 w-full bg-white rounded-md shadow-lg border z-20">
+                                        <ul className="text-gray-700">
+                                        {isShareApiSupported && (
+                                            <li><button onClick={handleShare} className="w-full text-left font-bold text-indigo-600 hover:bg-indigo-50 p-3 flex items-center"><i className="fas fa-share-alt w-6 mr-2"></i>Compartir PDF</button></li>
+                                        )}
+                                        <li><button onClick={handleDownloadPdf} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-download w-6 mr-2"></i>Descargar PDF</button></li>
+                                        <li><button onClick={handlePrintPdf} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-print w-6 mr-2"></i>Imprimir PDF</button></li>
+                                        <li><button onClick={handleEmailPdf} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-envelope w-6 mr-2"></i>Enviar por Correo</button></li>
+                                        <li><button onClick={handleWhatsAppPdf} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fab fa-whatsapp w-6 mr-2"></i>Enviar por WhatsApp</button></li>
+                                        <li><hr className="my-1"/></li>
+                                        <li><button onClick={handleCopyJson} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-copy w-6 mr-2"></i>Copiar JSON</button></li>
+                                        </ul>
+                                    </div>
+                                    )}
+                                </div>
+                                <button onClick={handleReset} className="w-full sm:w-auto bg-gray-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-gray-700 text-xl">
+                                    Nuevo Escaneo
+                                </button>
+                            </div>
+                        </>
+                    )}
+                </div>
             </div>
         ) : (
             <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
-                {/* The initial login form */}
+                {showInfoModal && <InfoModal onClose={() => setShowInfoModal(false)} title={modalContent.title} message={modalContent.message} />}
+                {showHelpModal && <HelpModal onClose={() => setShowHelpModal(false)} />}
+                <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md relative">
+                <button onClick={() => setShowHelpModal(true)} title="Ayuda" className="absolute top-4 right-4 text-gray-400 hover:text-indigo-600 transition-colors">
+                    <i className="fas fa-question-circle text-2xl"></i>
+                </button>
+                <h1 className="text-4xl font-extrabold text-center text-gray-900 mb-6">MOLDERIL S.A.</h1>
+                <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">Lista de Empaque</h2>
+                <div className="space-y-4">
+                    <div>
+                    <label htmlFor="legajo" className="block text-xl font-medium text-gray-700">Legajo</label>
+                    <input 
+                        type="text" 
+                        id="legajo" 
+                        ref={legajoInputRef} 
+                        value={operarioLegajo} 
+                        onChange={(e) => {
+                            const value = e.target.value.replace(/[^0-9]/g, '');
+                            setOperarioLegajo(value);
+                        }} 
+                        onKeyDown={handleFormEnter} 
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border text-2xl" 
+                        placeholder="Ej: 12345"
+                    />
+                    </div>
+                    <div className="relative" ref={clientInputRef}>
+                    <label htmlFor="cliente" className="block text-xl font-medium text-gray-700">Cliente</label>
+                    <input 
+                        type="text" 
+                        id="cliente" 
+                        value={clienteNombre} 
+                        onChange={(e) => { 
+                            setClienteNombre(e.target.value.toUpperCase()); 
+                            setShowSuggestions(true); 
+                        }} 
+                        onKeyDown={handleFormEnter} 
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border text-2xl" 
+                        placeholder="Buscar cliente..." 
+                        autoComplete="off"
+                    />
+                    {showSuggestions && clientList.filter(c => c.includes(clienteNombre)).length > 0 && (
+                        <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">
+                        {clientList.filter(c => c.includes(clienteNombre)).map(client => (
+                            <li key={client} className="p-2 hover:bg-indigo-100 cursor-pointer text-xl" onClick={() => { setClienteNombre(client); setShowSuggestions(false); }}>
+                            {client}
+                            </li>
+                        ))}
+                        </ul>
+                    )}
+                    </div>
+                    <button onClick={handleContinue} disabled={!operarioLegajo || !clienteNombre} className="w-full bg-indigo-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-indigo-700 disabled:opacity-50 text-xl">
+                    Continuar
+                    </button>
+                </div>
+                </div>
             </div>
         );
     };
@@ -643,9 +867,7 @@
         const [isAppReady, setIsAppReady] = useState(false);
 
         useEffect(() => {
-          // This effect now only manages the static loader visibility
           const staticLoader = document.getElementById('static-loader');
-          // Simulate loading time
           setTimeout(() => {
               if (staticLoader) {
                   staticLoader.classList.add('opacity-0');
@@ -654,11 +876,11 @@
                   }, 500);
               }
               setIsAppReady(true);
-          }, 2000); // Keep the loader for 2 seconds
+          }, 2000);
         }, []);
 
         if (!isAppReady) {
-            return null; // Static loader is visible
+            return null;
         }
 
         if (currentView === 'generator') {
@@ -669,7 +891,6 @@
             return <PackingListScanner onBackToMenu={() => setCurrentView('menu')} />;
         }
 
-        // Main Menu View
         return (
             <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
                 <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md text-center">
