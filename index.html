@@ -20,30 +20,26 @@
 </head>
 <body class="bg-gray-100 font-sans">
 
+  <!-- Static loader shown immediately -->
+  <div id="static-loader" class="fixed inset-0 bg-gray-100 flex items-center justify-center p-4 font-sans z-50">
+    <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md text-center">
+      <h1 class="text-4xl font-extrabold text-gray-900 tracking-wide mb-6" style="font-family: 'Arial', sans-serif;">
+        MOLDERIL S.A.
+      </h1>
+      <p id="loader-status" class="text-xl text-gray-600 mb-4">Cargando aplicación...</p>
+      <div class="w-full bg-gray-200 rounded-full h-4">
+        <div id="loader-progress" class="bg-indigo-600 h-4 rounded-full transition-all duration-500" style="width: 10%"></div>
+      </div>
+    </div>
+  </div>
+
   <div id="root"></div>
+  <div id="reader-placeholder" className="hidden"></div>
 
   <!-- Main application script. Uses type="text/babel" to let Babel compile JSX -->
   <script type="text/babel">
     const { useState, useRef, useEffect } = React;
     const { createRoot } = ReactDOM;
-
-    // --- LOADING SCREEN COMPONENT ---
-    const LoadingScreen = ({ status, progress }) => (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 font-sans">
-        <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md text-center">
-          <h1 className="text-4xl font-extrabold text-gray-900 tracking-wide mb-6" style={{ fontFamily: 'Arial, sans-serif' }}>
-            MOLDERIL
-          </h1>
-          <p className="text-xl text-gray-600 mb-4">{status}</p>
-          <div className="w-full bg-gray-200 rounded-full h-4">
-            <div
-              className="bg-indigo-600 h-4 rounded-full transition-all duration-500"
-              style={{ width: `${progress}%` }}
-            ></div>
-          </div>
-        </div>
-      </div>
-    );
 
     // --- QR SCANNER COMPONENT ---
     const QrScanner = ({ onScanSuccess, onStop, onError }) => {
@@ -91,28 +87,28 @@
               <p>Al iniciar, la aplicación te pedirá dos datos para comenzar:</p>
               <ul className="list-disc list-inside ml-4 mt-1">
                 <li><strong>Legajo de Operario:</strong> Tu número de identificación.</li>
-                <li><strong>Nombre del Cliente:</strong> La empresa o persona para la que estás preparando la lista. La aplicación recordará los clientes que ingreses para sugerírtelos en el futuro.</li>
+                <li><strong>Nombre del Cliente:</strong> Busca y selecciona el cliente de la lista.</li>
               </ul>
             </div>
 
             <div>
               <h4 className="font-semibold text-lg text-indigo-600">2. Escaneo de Artículos</h4>
-              <p>Una vez registrado, accederás al panel de escaneo. Tienes dos formas de agregar artículos a la lista:</p>
+              <p>Una vez registrado, accederás al panel de escaneo. Tienes tres formas de agregar artículos a la lista:</p>
               <ul className="list-disc list-inside ml-4 mt-1">
-                <li><strong>Escanear QR:</strong> Pulsa el botón <span className="font-mono bg-purple-100 text-purple-700 rounded px-1">Escanear</span> para activar la cámara de tu dispositivo y leer los códigos QR de los bultos.</li>
-                <li><strong>Ingreso Manual:</strong> Si un código no se puede leer, puedes escribir o pegar la información del QR en el campo de texto y pulsar <span className="font-mono bg-green-100 text-green-700 rounded px-1">Agregar</span>.</li>
+                <li><strong>Escanear con Cámara:</strong> Pulsa el botón principal <span className="font-mono bg-purple-100 text-purple-700 rounded px-1">Escanear con Cámara</span> para activar la cámara de tu dispositivo.</li>
+                <li><strong>Ingreso Manual o con Pistola:</strong> Escribe o pega la información del QR en el campo de texto y pulsa <span className="font-mono bg-green-100 text-green-700 rounded px-1">Agregar</span>. También funciona con pistolas de escaneo USB.</li>
+                <li><strong>Adjuntar Imagen de QR:</strong> Pulsa <span className="font-mono bg-orange-100 text-orange-700 rounded px-1">Adjuntar QR</span> para seleccionar una imagen de un código QR desde tu dispositivo.</li>
               </ul>
               <p className="mt-2">Puedes marcar cada artículo como "Controlado" usando la casilla de verificación o eliminarlo con el ícono de la papelera.</p>
             </div>
 
             <div>
               <h4 className="font-semibold text-lg text-indigo-600">3. Acciones y Exportación</h4>
-              <p>Cuando hayas terminado de escanear, pulsa el botón <span className="font-mono bg-blue-100 text-blue-700 rounded px-1">Acciones</span> para desplegar las opciones:</p>
+              <p>Cuando hayas terminado de escanear, el botón principal es <span className="font-mono bg-blue-100 text-blue-700 rounded px-1">Compartir PDF</span> (o Descargar). Al lado, una flecha despliega <span className="font-mono bg-gray-100 text-gray-700 rounded px-1">Más Acciones</span>:</p>
               <ul className="list-disc list-inside ml-4 mt-1">
                 <li><strong>Compartir:</strong> (Recomendado en móviles) Abre el menú de tu teléfono para enviar el PDF directamente a WhatsApp, Gmail, etc.</li>
                 <li><strong>Descargar PDF:</strong> Guarda el archivo PDF en tu dispositivo.</li>
                 <li><strong>Imprimir PDF:</strong> Abre la ventana de impresión de tu navegador.</li>
-                <li><strong>Enviar por Correo/WhatsApp:</strong> Descarga el PDF y abre la aplicación correspondiente para que lo adjuntes.</li>
                 <li><strong>Copiar JSON:</strong> Copia todos los datos de la lista en formato de texto (JSON) a tu portapapeles.</li>
               </ul>
             </div>
@@ -130,9 +126,7 @@
     // --- MAIN APP COMPONENT ---
     const App = () => {
       // Loading state
-      const [isLoading, setIsLoading] = useState(true);
-      const [loadingStatus, setLoadingStatus] = useState('Inicializando...');
-      const [loadingProgress, setLoadingProgress] = useState(0);
+      const [isAppReady, setIsAppReady] = useState(false);
 
       // Application state
       const [items, setItems] = useState([]);
@@ -150,16 +144,22 @@
       const [feedbackMessage, setFeedbackMessage] = useState('');
       const [isShareApiSupported, setIsShareApiSupported] = useState(false);
       
-      // Client history state
-      const [clientHistory, setClientHistory] = useState([]);
+      // Client list state
+      const [clientList, setClientList] = useState([]);
       const [showSuggestions, setShowSuggestions] = useState(false);
 
       const legajoInputRef = useRef(null);
       const actionsMenuRef = useRef(null);
       const clientInputRef = useRef(null);
+      const fileInputRef = useRef(null);
+      const manualInputRef = useRef(null);
       
       // Effect for the loading sequence and feature detection
       useEffect(() => {
+        const staticLoader = document.getElementById('static-loader');
+        const loaderStatus = document.getElementById('loader-status');
+        const loaderProgress = document.getElementById('loader-progress');
+
         if (navigator.share) {
             setIsShareApiSupported(true);
         }
@@ -167,12 +167,16 @@
         const loadingTasks = [
           { status: "Inicializando aplicación...", duration: 500, progress: 25 },
           { status: "Cargando librerías...", duration: 800, progress: 50, action: () => setIsPdfLibLoaded(!!window.jspdf) },
-          { status: "Recuperando historial...", duration: 600, progress: 75, action: () => {
+          { status: "Cargando lista de clientes...", duration: 600, progress: 75, action: async () => {
               try {
-                const storedClients = localStorage.getItem('molderilClientHistory');
-                if (storedClients) setClientHistory(JSON.parse(storedClients));
+                const response = await fetch('clientes.txt');
+                const text = await response.text();
+                const clients = text.split('\n').map(client => client.trim().toUpperCase()).filter(Boolean);
+                setClientList(clients);
               } catch (error) {
-                console.error("Failed to load client history:", error);
+                console.error("Failed to load client list:", error);
+                setModalContent({ title: 'Error', message: 'No se pudo cargar la lista de clientes (clientes.txt).' });
+                setShowInfoModal(true);
               }
             }
           },
@@ -183,8 +187,8 @@
         const runLoadingTask = () => {
           if (currentTask < loadingTasks.length) {
             const task = loadingTasks[currentTask];
-            setLoadingStatus(task.status);
-            setLoadingProgress(task.progress);
+            if (loaderStatus) loaderStatus.textContent = task.status;
+            if (loaderProgress) loaderProgress.style.width = `${task.progress}%`;
             if(task.action) task.action();
             
             setTimeout(() => {
@@ -192,7 +196,13 @@
               runLoadingTask();
             }, task.duration);
           } else {
-            setIsLoading(false);
+            if (staticLoader) {
+                staticLoader.classList.add('opacity-0');
+                setTimeout(() => {
+                    staticLoader.remove();
+                }, 500);
+            }
+            setIsAppReady(true);
           }
         };
 
@@ -202,11 +212,20 @@
 
       // Effect to focus on legajo field after loading
       useEffect(() => {
-        if (!isLoading && !isDataEntered && legajoInputRef.current) {
+        if (isAppReady && !isDataEntered && legajoInputRef.current) {
           legajoInputRef.current.focus();
         }
-      }, [isLoading, isDataEntered]);
+      }, [isAppReady, isDataEntered]);
       
+      // Effect to focus on manual input after login
+      useEffect(() => {
+        if (isDataEntered && manualInputRef.current) {
+          setTimeout(() => {
+            manualInputRef.current.focus();
+          }, 100); 
+        }
+      }, [isDataEntered]);
+
       // Effect to close dropdowns when clicking outside
       useEffect(() => {
         const handleClickOutside = (event) => {
@@ -217,22 +236,97 @@
         return () => document.removeEventListener("mousedown", handleClickOutside);
       }, []);
 
+      // --- DATA PARSING AND VALIDATION ---
+      const parseSpanishNumber = (str) => {
+          if (typeof str !== 'string') return NaN;
+          const cleanedStr = str.replace(/\./g, '').replace(',', '.');
+          return parseFloat(cleanedStr);
+      };
+
+      const parseDate = (dateStr) => {
+          if (typeof dateStr !== 'string') return null;
+          const parts = dateStr.match(/(\d+)/g);
+          if (!parts || parts.length < 3) return null;
+          
+          let day, month, year;
+          if (parts[2].length === 4) { // dd/mm/yyyy
+              day = parseInt(parts[0], 10);
+              month = parseInt(parts[1], 10) - 1;
+              year = parseInt(parts[2], 10);
+          } else { // yyyy/mm/dd (less common, but good to handle)
+              day = parseInt(parts[2], 10);
+              month = parseInt(parts[1], 10) - 1;
+              year = parseInt(parts[0], 10);
+          }
+          
+          const date = new Date(year, month, day);
+          if (isNaN(date.getTime()) || date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) {
+              return null;
+          }
+          return date;
+      };
+
+      const formatDate = (dateObj) => {
+          if (!(dateObj instanceof Date)) return '';
+          const day = String(dateObj.getDate()).padStart(2, '0');
+          const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+          const year = dateObj.getFullYear();
+          return `${day}/${month}/${year}`;
+      };
+
+      const formatSpanishNumber = (num) => {
+          if (isNaN(num)) return '';
+          return new Intl.NumberFormat('es-ES').format(num);
+      };
+
+      const validateQrData = (parts) => {
+          if (parts.length < 7) return "El código QR no tiene los 7 campos requeridos.";
+          
+          const [, , , fechaProduccion, fechaVencimiento, cantidad] = parts;
+          
+          if (!parseDate(fechaProduccion) || !parseDate(fechaVencimiento)) {
+              return "Una o ambas fechas no tienen un formato válido.";
+          }
+
+          if (isNaN(parseSpanishNumber(cantidad))) {
+              return "La cantidad debe ser un valor numérico.";
+          }
+
+          return null;
+      };
+
       const handleScan = (value) => {
         if (!value) return;
         const parts = value.split(';');
-        if (parts.length < 7) {
-          setModalContent({ title: 'Error de Formato', message: `El código QR no tiene el formato correcto (SKU;Descripcion;Lote;F.Prod;F.Venc;Cantidad;U.M.).` });
-          setShowInfoModal(true);
-          return;
+        
+        const validationError = validateQrData(parts);
+        if (validationError) {
+            setModalContent({ title: 'Error en Datos de QR', message: validationError });
+            setShowInfoModal(true);
+            return;
         }
+
         const [sku, descripcion, lote, fechaProduccion, fechaVencimiento, cantidad, unidadMedida] = parts;
         if (items.some(item => item.sku === sku && item.lote === lote)) {
           setModalContent({ title: 'Artículo Duplicado', message: `Error: El artículo con SKU "${sku}" y Lote "${lote}" ya fue cargado.` });
           setShowInfoModal(true);
           return;
         }
-        setItems([ { id: Date.now(), sku, descripcion, lote, fechaProduccion, fechaVencimiento, cantidad, unidadMedida, controlado: false }, ...items]);
+
+        const newItem = { 
+            id: Date.now(), 
+            sku, 
+            descripcion, 
+            lote, 
+            fechaProduccion: formatDate(parseDate(fechaProduccion)),
+            fechaVencimiento: formatDate(parseDate(fechaVencimiento)),
+            cantidad: formatSpanishNumber(parseSpanishNumber(cantidad)),
+            unidadMedida, 
+            controlado: false 
+        };
+        setItems([newItem, ...items]);
         setMockQrValue('');
+        setTimeout(() => manualInputRef.current?.focus(), 0);
       };
 
       const handleDelete = (id) => setItems(items.filter(item => item.id !== id));
@@ -243,11 +337,8 @@
 
       const handleContinue = () => {
         if (operarioLegajo && clienteNombre) {
-          if (!clientHistory.includes(clienteNombre.trim())) {
-            const updatedHistory = [clienteNombre.trim(), ...clientHistory].slice(0, 10);
-            setClientHistory(updatedHistory);
-            localStorage.setItem('molderilClientHistory', JSON.stringify(updatedHistory));
-          }
+          const formattedLegajo = parseInt(operarioLegajo, 10).toString();
+          setOperarioLegajo(formattedLegajo);
           setIsDataEntered(true);
           setShowSuggestions(false);
         }
@@ -255,6 +346,22 @@
 
       const handleFormEnter = (e) => { if (e.key === 'Enter') handleContinue(); };
       
+      const handleImageUpload = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const html5QrCode = new Html5Qrcode("reader-placeholder");
+        html5QrCode.scanFile(file, true)
+        .then(decodedText => {
+            handleScan(decodedText);
+        })
+        .catch(err => {
+            console.error(`Error scanning file. Reason: ${err}`);
+            setModalContent({ title: 'Error de Escaneo', message: 'No se pudo encontrar un código QR en la imagen. Intenta con una imagen más clara o mejor recortada.' });
+            setShowInfoModal(true);
+        });
+        e.target.value = '';
+      };
+
       const createPdfDocument = async () => {
         setIsGenerating(true);
         try {
@@ -275,7 +382,7 @@
           let yLeft = y + 7;
           pdf.setFont('helvetica', 'bold');
           pdf.setFontSize(26);
-          pdf.text("MOLDERIL", m + 5, yLeft);
+          pdf.text("MOLDERIL S.A.", m + 5, yLeft);
           pdf.setFont('helvetica', 'normal');
           pdf.setFontSize(8);
           yLeft += 8;
@@ -289,24 +396,31 @@
           pdf.setFont('helvetica', 'bold');
           pdf.setFontSize(14);
           pdf.text("LISTA DE EMPAQUE", midPoint + 5, yRight);
-          pdf.line(midPoint + 5, yRight + 1, midPoint + 60, yRight + 1);
+          pdf.setLineWidth(0.5);
+          pdf.line(midPoint + 5, yRight + 1.5, midPoint + 60, yRight + 1.5);
+          pdf.setLineWidth(0.2);
 
           pdf.setFont('helvetica', 'normal');
           pdf.setFontSize(9);
           yRight += 8;
           pdf.text(`Cliente:`, midPoint + 5, yRight);
           pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(11);
           pdf.text(`${clienteNombre || 'N/A'}`, midPoint + 20, yRight);
           pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(9);
           yRight += 5;
           pdf.text(`Operario (Legajo):`, midPoint + 5, yRight);
           pdf.setFont('helvetica', 'bold');
           pdf.text(`${operarioLegajo || 'N/A'}`, midPoint + 33, yRight);
           pdf.setFont('helvetica', 'normal');
           yRight += 5;
+          const now = new Date();
+          const formattedDate = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
+          const formattedTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
           pdf.text(`Fecha y Hora:`, midPoint + 5, yRight);
           pdf.setFont('helvetica', 'bold');
-          pdf.text(`${new Date().toLocaleString()}`, midPoint + 26, yRight);
+          pdf.text(`${formattedDate} ${formattedTime}`, midPoint + 26, yRight);
           
           y = 45;
           const headers = ["SKU", "Descripción", "Lote", "F. Prod.", "F. Venc.", "Cant.", "U.M.", "Control"];
@@ -318,10 +432,10 @@
           
           const drawHeader = (currentY) => {
               pdf.setFont('helvetica', 'bold');
-              pdf.setFontSize(7);
+              pdf.setFontSize(8);
               pdf.setFillColor(230, 230, 230);
               pdf.rect(m, currentY, pageWidth, 6, 'F');
-              headers.forEach((h, i) => pdf.text(h, colPos[i] + 2, currentY + 4));
+              headers.forEach((h, i) => pdf.text(h, colPos[i] + 2, currentY + 4.5));
               return currentY + 6;
           };
           y = drawHeader(y);
@@ -332,7 +446,7 @@
           pdf.setFontSize(7);
 
           items.forEach((item) => {
-            if (y + rowHeight > pdfHeight - m - 15) {
+            if (y + rowHeight > pdfHeight - m - 20) {
               pdf.addPage();
               y = m;
               y = drawHeader(y);
@@ -349,19 +463,22 @@
           pdf.line(m, y, pdfWidth - m, y);
           colPos.forEach(pos => pdf.line(pos, startTableY, pos, y));
           pdf.line(pdfWidth - m, startTableY, pdfWidth - m, y);
-
-          y += 8;
+          
           pdf.setFont('helvetica', 'bold');
           pdf.setFontSize(12);
-          pdf.text(`Total de bultos escaneados: ${items.length}`, m, y);
+          pdf.text(`Total de bultos escaneados: ${items.length}`, m, y + 10);
           
-          y = pdfHeight - 20;
-          pdf.setFontSize(10);
-          pdf.text("Responsable de Carga:", m, y);
-          pdf.line(m + 45, y, m + 125, y);
-          y += 5;
-          pdf.setFontSize(8);
-          pdf.text("Firma y Aclaración", m + 65, y);
+          const totalPages = pdf.internal.getNumberOfPages();
+          for (let i = 1; i <= totalPages; i++) {
+              pdf.setPage(i);
+              let footerY = pdfHeight - 20;
+              pdf.setFontSize(10);
+              pdf.text("Responsable de Carga:", m, footerY);
+              pdf.line(m + 45, footerY, m + 125, footerY);
+              footerY += 5;
+              pdf.setFontSize(8);
+              pdf.text("Firma y Aclaración", m + 65, footerY);
+          }
 
           return pdf;
         } catch (error) {
@@ -466,12 +583,10 @@
         setIsActionsOpen(false);
         const jsonString = JSON.stringify(items.map(({ id, controlado, ...rest }) => rest), null, 2);
 
-        // Fallback for copying to clipboard
         const copyToClipboard = (text) => {
           if (navigator.clipboard && window.isSecureContext) {
             return navigator.clipboard.writeText(text);
           } else {
-            // Fallback for insecure contexts or older browsers
             let textArea = document.createElement("textarea");
             textArea.value = text;
             textArea.style.position = "fixed";
@@ -509,12 +624,12 @@
         </div>
       );
       
-      if (isLoading) {
-        return <LoadingScreen status={loadingStatus} progress={loadingProgress} />;
+      if (!isAppReady) {
+        return null;
       }
 
       if (!isDataEntered) {
-        const filteredSuggestions = clientHistory.filter(client => clienteNombre && client.toLowerCase().includes(clienteNombre.toLowerCase()));
+        const filteredSuggestions = clientList.filter(client => clienteNombre && client.toLowerCase().includes(clienteNombre.toLowerCase()));
         return (
           <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
             {showInfoModal && <InfoModal onClose={() => setShowInfoModal(false)} title={modalContent.title} message={modalContent.message} />}
@@ -523,16 +638,40 @@
               <button onClick={() => setShowHelpModal(true)} title="Ayuda" className="absolute top-4 right-4 text-gray-400 hover:text-indigo-600 transition-colors">
                   <i className="fas fa-question-circle text-2xl"></i>
               </button>
-              <h1 className="text-4xl font-extrabold text-center text-gray-900 mb-6">MOLDERIL</h1>
+              <h1 className="text-4xl font-extrabold text-center text-gray-900 mb-6">MOLDERIL S.A.</h1>
               <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">Lista de Empaque</h2>
               <div className="space-y-4">
                 <div>
                   <label htmlFor="legajo" className="block text-xl font-medium text-gray-700">Legajo</label>
-                  <input type="number" id="legajo" ref={legajoInputRef} value={operarioLegajo} onChange={(e) => setOperarioLegajo(e.target.value)} onKeyDown={handleFormEnter} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border text-2xl" placeholder="Ej: 12345"/>
+                  <input 
+                    type="text" 
+                    id="legajo" 
+                    ref={legajoInputRef} 
+                    value={operarioLegajo} 
+                    onChange={(e) => {
+                        const value = e.target.value.replace(/[^0-9]/g, '');
+                        setOperarioLegajo(value);
+                    }} 
+                    onKeyDown={handleFormEnter} 
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border text-2xl" 
+                    placeholder="Ej: 12345"
+                  />
                 </div>
                 <div className="relative" ref={clientInputRef}>
                   <label htmlFor="cliente" className="block text-xl font-medium text-gray-700">Cliente</label>
-                  <input type="text" id="cliente" value={clienteNombre} onChange={(e) => { setClienteNombre(e.target.value); setShowSuggestions(true); }} onKeyDown={handleFormEnter} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border text-2xl" placeholder="Ej: Empresa ABC" autoComplete="off"/>
+                  <input 
+                    type="text" 
+                    id="cliente" 
+                    value={clienteNombre} 
+                    onChange={(e) => { 
+                        setClienteNombre(e.target.value.toUpperCase()); 
+                        setShowSuggestions(true); 
+                    }} 
+                    onKeyDown={handleFormEnter} 
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border text-2xl" 
+                    placeholder="Buscar cliente..." 
+                    autoComplete="off"
+                  />
                   {showSuggestions && filteredSuggestions.length > 0 && (
                     <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">
                       {filteredSuggestions.map(client => (
@@ -560,13 +699,13 @@
           <div className="bg-white p-6 rounded-xl shadow-lg flex-grow">
             
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6 shadow-sm">
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between items-start">
                 <div>
-                  <h1 className="text-3xl font-extrabold text-gray-900">MOLDERIL</h1>
+                  <h1 className="text-4xl font-extrabold text-gray-900">MOLDERIL S.A.</h1>
                   <p className="text-xs text-gray-500 mt-1">AV. Hermanos Lescano 550 - Rio Primero (Cordoba)</p>
                   <p className="text-xs text-gray-500">Tel/Fax: 03574-420768</p>
                 </div>
-                <div className="flex items-center space-x-4">
+                <div className="flex items-start space-x-4">
                     <div className="text-right space-y-2">
                       <div className="flex items-center justify-end">
                         <div className="text-right mr-3">
@@ -583,7 +722,7 @@
                         <i className="fas fa-building text-gray-400 text-2xl"></i>
                       </div>
                     </div>
-                    <button onClick={() => setShowHelpModal(true)} title="Ayuda" className="text-gray-400 hover:text-indigo-600 transition-colors self-start">
+                    <button onClick={() => setShowHelpModal(true)} title="Ayuda" className="text-gray-400 hover:text-indigo-600 transition-colors">
                         <i className="fas fa-question-circle text-2xl"></i>
                     </button>
                 </div>
@@ -599,14 +738,22 @@
               </div>
             ) : (
               <>
-                <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 mb-4">
-                  <input type="text" value={mockQrValue} onChange={(e) => setMockQrValue(e.target.value)} onKeyDown={handleKeyDown} className="flex-grow rounded-md p-2 border text-xl" placeholder="Simular escaneo QR o pegar valor"/>
-                  <button onClick={() => handleScan(mockQrValue)} disabled={!mockQrValue} className="bg-green-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-green-700 disabled:opacity-50 text-xl">
-                    Agregar
+                <div className="space-y-4 mb-4">
+                  <button onClick={() => setIsCameraActive(true)} className="w-full bg-purple-600 text-white font-semibold py-4 px-4 rounded-md shadow-md hover:bg-purple-700 text-xl flex items-center justify-center">
+                      <i className="fas fa-camera mr-3"></i> Escanear con Cámara
                   </button>
-                  <button onClick={() => setIsCameraActive(true)} className="bg-purple-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-purple-700 text-xl flex items-center justify-center">
-                    <i className="fas fa-camera mr-2"></i> Escanear
-                  </button>
+                  <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
+                    <div className="flex-grow">
+                      <input type="text" ref={manualInputRef} value={mockQrValue} onChange={(e) => setMockQrValue(e.target.value)} onKeyDown={handleKeyDown} className="w-full rounded-md p-2 border text-xl" placeholder="Ingresar QR manual o con pistola"/>
+                    </div>
+                    <button onClick={() => handleScan(mockQrValue)} disabled={!mockQrValue} className="bg-green-600 text-white font-semibold py-2 px-4 rounded-md shadow-md hover:bg-green-700 disabled:opacity-50 text-lg">
+                      Agregar
+                    </button>
+                    <button onClick={() => fileInputRef.current.click()} className="bg-orange-500 text-white font-semibold py-2 px-4 rounded-md shadow-md hover:bg-orange-600 text-lg flex items-center justify-center">
+                      <i className="fas fa-file-image mr-2"></i> Adjuntar QR
+                    </button>
+                    <input type="file" ref={fileInputRef} onChange={handleImageUpload} className="hidden" accept="image/*" />
+                  </div>
                 </div>
 
                 <div className="overflow-x-auto rounded-lg shadow-md mb-6 border">
@@ -652,17 +799,27 @@
 
                 <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4">
                   <div className="relative w-full sm:w-auto flex-grow" ref={actionsMenuRef}>
-                    <button onClick={() => setIsActionsOpen(prev => !prev)} disabled={items.length === 0 || isGenerating || !isPdfLibLoaded} className="w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-blue-700 disabled:opacity-50 text-xl flex items-center justify-center">
-                      {isGenerating ? `Generando...` : 'Acciones'} <i className={`fas fa-chevron-down ml-2 transition-transform ${isActionsOpen ? 'rotate-180' : ''}`}></i>
-                    </button>
+                    <div className="flex rounded-md shadow-sm">
+                        <button 
+                            onClick={isShareApiSupported ? handleShare : handleDownloadPdf} 
+                            disabled={items.length === 0 || isGenerating || !isPdfLibLoaded} 
+                            className="flex-grow bg-blue-600 text-white font-semibold py-3 px-5 rounded-l-md hover:bg-blue-700 disabled:opacity-50 text-xl flex items-center justify-center"
+                        >
+                            {isGenerating ? 'Generando...' : (isShareApiSupported ? 'Compartir PDF' : 'Descargar PDF')}
+                        </button>
+                        <button 
+                            onClick={() => setIsActionsOpen(prev => !prev)} 
+                            disabled={items.length === 0 || isGenerating || !isPdfLibLoaded}
+                            className="bg-blue-700 text-white font-semibold py-3 px-4 rounded-r-md hover:bg-blue-800 disabled:opacity-50"
+                        >
+                            <i className={`fas fa-chevron-down transition-transform ${isActionsOpen ? 'rotate-180' : ''}`}></i>
+                        </button>
+                    </div>
                     {isActionsOpen && (
                       <div className="absolute bottom-full mb-2 w-full bg-white rounded-md shadow-lg border z-20">
                         <ul className="text-gray-700">
                           {isShareApiSupported && (
-                            <>
-                              <li><button onClick={handleShare} className="w-full text-left font-bold text-indigo-600 hover:bg-indigo-50 p-3 flex items-center"><i className="fas fa-share-alt w-6 mr-2"></i>Compartir</button></li>
-                              <li><hr className="my-1"/></li>
-                            </>
+                            <li><button onClick={handleShare} className="w-full text-left font-bold text-indigo-600 hover:bg-indigo-50 p-3 flex items-center"><i className="fas fa-share-alt w-6 mr-2"></i>Compartir PDF</button></li>
                           )}
                           <li><button onClick={handleDownloadPdf} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-download w-6 mr-2"></i>Descargar PDF</button></li>
                           <li><button onClick={handlePrintPdf} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-print w-6 mr-2"></i>Imprimir PDF</button></li>
@@ -674,7 +831,7 @@
                       </div>
                     )}
                   </div>
-                  <button onClick={handleReset} className="w-full sm:w-auto flex-grow bg-gray-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-gray-700 text-xl">
+                  <button onClick={handleReset} className="w-full sm:w-auto bg-gray-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-gray-700 text-xl">
                     Nuevo Escaneo
                   </button>
                 </div>
