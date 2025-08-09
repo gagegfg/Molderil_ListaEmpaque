@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MOLDERIL - Sistema de Gestión</title>
+  <title>MOLDERIL S.A. - Sistema de Gestión</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Font Awesome for icons -->
@@ -17,11 +17,16 @@
     }
   </style>
 </head>
-<body class="font-sans">
+<body class="bg-gray-100 font-sans">
 
-  <div class="min-h-screen flex items-center justify-center p-4">
-    <div class="bg-white bg-opacity-80 backdrop-blur-sm p-8 rounded-2xl shadow-2xl w-full max-w-md text-center">
-      <img src="logo.png" alt="Logo Molderil" class="mx-auto h-20 w-auto mb-6">
+  <div class="min-h-screen flex flex-col items-center justify-center bg-black bg-opacity-50 p-4">
+    <!-- MODIFICATION: Added classes for glassmorphism effect -->
+    <div class="bg-white/20 backdrop-blur-md border border-white/30 p-8 rounded-xl shadow-2xl w-full max-w-md text-center">
+      <!-- MODIFICATION: Increased logo size (h-32) and added drop-shadow for bevel effect -->
+      <img src="logo.jpg" alt="Logo Molderil" class="mx-auto mb-6 h-32 [filter:drop-shadow(2px_2px_4px_rgba(0,0,0,0.4))_drop-shadow(-2px_-2px_4px_rgba(255,255,255,0.6))]">
+      
+      <h1 class="text-4xl font-extrabold text-gray-900 mb-8 [text-shadow:_1px_1px_2px_rgba(255,255,255,0.5)]">Sistema de Gestión</h1>
+      
       <div class="space-y-4">
         <a href="generarqr.html" class="block w-full bg-blue-600 text-white font-semibold py-4 px-4 rounded-md shadow-md hover:bg-blue-700 text-2xl transition-transform transform hover:scale-105">
           <i class="fas fa-qrcode mr-3"></i>
