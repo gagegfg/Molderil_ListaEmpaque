@@ -54,7 +54,8 @@
         const [articulos, setArticulos] = useState([]);
         const [searchTerm, setSearchTerm] = useState('');
         const [selectedArticulo, setSelectedArticulo] = useState(null);
-        const [lote, setLote] = useState('');
+        const [lote, setLote] = useState(''); // Lote de Producción
+        const [loteLogistico, setLoteLogistico] = useState(''); // Lote Logístico para mostrar en UI
         const [fechaProd, setFechaProd] = useState(new Date().toISOString().split('T')[0]);
         const [fechaVenc, setFechaVenc] = useState('');
         const [cantidad, setCantidad] = useState('');
@@ -62,6 +63,18 @@
         const [generatedData, setGeneratedData] = useState(null);
 
         const qrCodeRef = useRef(null);
+        
+        // --- CAMBIO 1: Lógica para actualizar el Lote Logístico en la UI ---
+        useEffect(() => {
+            if (operario.trim() !== '') {
+                // Genera una vista previa del ID. El ID final se crea al presionar el botón.
+                const previewId = `PALLET-${new Date().toISOString().replace(/[-:.]/g, '').slice(0, 14)}-${operario}`;
+                setLoteLogistico(previewId);
+            } else {
+                setLoteLogistico('');
+            }
+        }, [operario]);
+
 
         useEffect(() => {
             const staticLoader = document.getElementById('static-loader');
@@ -157,7 +170,7 @@
                 palletId,
                 sku: selectedArticulo.sku,
                 descripcion: selectedArticulo.descripcion,
-                lote, // Este es ahora el Lote de Producción
+                lote, // Lote de Producción
                 cantidad: parseFloat(cantidad.replace(',', '.')),
                 uom,
                 fechaProd,
@@ -209,10 +222,21 @@
                                 )}
                             </div>
                              <div>
-                                {/* --- CAMBIO 1: ETIQUETA DEL FORMULARIO --- */}
                                 <label className="block text-sm font-medium text-gray-700">Lote de Producción</label>
                                 <input type="text" value={lote} onChange={e => setLote(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
                             </div>
+                            
+                            {/* --- CAMBIO 2: NUEVO CAMPO NO EDITABLE EN EL FORMULARIO --- */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Lote Logístico (Automático)</label>
+                                <input 
+                                    type="text" 
+                                    value={loteLogistico} 
+                                    readOnly 
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border bg-gray-100" 
+                                />
+                            </div>
+
                             <div>
                                 <label className="block text-sm font-medium text-gray-700">Fecha de Producción</label>
                                 <input type="date" value={fechaProd} onChange={e => setFechaProd(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
@@ -247,7 +271,6 @@
                                             <h2 className="text-2xl font-bold">MOLDERIL S.A.</h2>
                                         </div>
                                         
-                                        {/* --- CAMBIO 2: ETIQUETA VISTA PREVIA (ARRIBA) --- */}
                                         <div className="border-b-2 border-black p-2">
                                             <p className="text-sm">Artículo</p>
                                             <p className="font-bold text-[2.7rem] leading-tight">{generatedData.descripcion}</p>
@@ -268,7 +291,6 @@
                                             </div>
                                         </div>
 
-                                        {/* --- CAMBIO 3: ETIQUETA VISTA PREVIA (ABAJO) --- */}
                                         <div className="grid grid-cols-3 text-center text-sm border-t-2 border-black pt-2">
                                             <div>
                                                 <p className="font-bold">Lote Logístico</p>
