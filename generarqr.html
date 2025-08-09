@@ -4,16 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MOLDERIL - Generar Etiqueta QR</title>
-  <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- React and ReactDOM CDNs for browser usage -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <!-- Babel CDN to compile JSX in the browser -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <!-- qrcode.js for QR generation -->
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
-  <!-- Font Awesome for icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
   <style>
     @media print {
@@ -35,7 +30,6 @@
 </head>
 <body class="bg-gray-100 font-sans">
 
-  <!-- Static loader shown immediately -->
   <div id="static-loader" class="fixed inset-0 bg-gray-100 flex items-center justify-center p-4 font-sans z-50 transition-opacity duration-500">
     <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md text-center">
       <h1 class="text-4xl font-extrabold text-gray-900 tracking-wide mb-6" style="font-family: 'Arial', sans-serif;">
@@ -50,7 +44,6 @@
 
   <div id="root"></div>
 
-  <!-- Main application script -->
   <script type="text/babel">
     const { useState, useRef, useEffect } = React;
     const { createRoot } = ReactDOM;
@@ -164,7 +157,7 @@
                 palletId,
                 sku: selectedArticulo.sku,
                 descripcion: selectedArticulo.descripcion,
-                lote,
+                lote, // Este es ahora el Lote de Producción
                 cantidad: parseFloat(cantidad.replace(',', '.')),
                 uom,
                 fechaProd,
@@ -216,7 +209,8 @@
                                 )}
                             </div>
                              <div>
-                                <label className="block text-sm font-medium text-gray-700">Lote</label>
+                                {/* --- CAMBIO 1: ETIQUETA DEL FORMULARIO --- */}
+                                <label className="block text-sm font-medium text-gray-700">Lote de Producción</label>
                                 <input type="text" value={lote} onChange={e => setLote(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
                             </div>
                             <div>
@@ -252,22 +246,42 @@
                                         <div className="text-center border-b-2 border-black pb-2">
                                             <h2 className="text-2xl font-bold">MOLDERIL S.A.</h2>
                                         </div>
+                                        
+                                        {/* --- CAMBIO 2: ETIQUETA VISTA PREVIA (ARRIBA) --- */}
                                         <div className="border-b-2 border-black p-2">
                                             <p className="text-sm">Artículo</p>
-                                            <p className="font-bold text-4xl leading-tight">{generatedData.descripcion}</p>
-                                            <p className="font-semibold text-md">{generatedData.sku}</p>
+                                            <p className="font-bold text-[2.7rem] leading-tight">{generatedData.descripcion}</p>
+                                            <div className="flex justify-between items-end mt-1">
+                                                <span className="font-semibold text-md">SKU: {generatedData.sku}</span>
+                                                <span className="font-semibold text-md">Lote Prod: {generatedData.lote}</span>
+                                            </div>
                                         </div>
+
                                         <div className="border-b-2 border-black p-2">
                                             <p className="text-sm">Cantidad</p>
                                             <p className="font-bold text-5xl">{formatSpanishNumber(generatedData.cantidad)} <span className="text-3xl">{generatedData.uom}</span></p>
                                         </div>
-                                        <div className="flex-grow flex justify-center items-center py-4">
-                                            <canvas ref={qrCodeRef}></canvas>
+                                        
+                                        <div className="flex-grow flex justify-center items-center">
+                                            <div style={{ height: '80%', width: '80%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                                                <canvas ref={qrCodeRef} style={{ maxWidth: '100%', maxHeight: '100%' }}></canvas>
+                                            </div>
                                         </div>
+
+                                        {/* --- CAMBIO 3: ETIQUETA VISTA PREVIA (ABAJO) --- */}
                                         <div className="grid grid-cols-3 text-center text-sm border-t-2 border-black pt-2">
-                                            <div><p className="font-bold">Lote</p><p>{generatedData.lote}</p></div>
-                                            <div><p className="font-bold">Fabricación</p><p>{new Date(generatedData.fechaProd + 'T00:00:00').toLocaleDateString('es-ES')}</p></div>
-                                            <div><p className="font-bold">Vencimiento</p><p>{new Date(generatedData.fechaVenc + 'T00:00:00').toLocaleDateString('es-ES')}</p></div>
+                                            <div>
+                                                <p className="font-bold">Lote Logístico</p>
+                                                <p className="text-xs break-all">{generatedData.palletId}</p>
+                                            </div>
+                                            <div>
+                                                <p className="font-bold">Fabricación</p>
+                                                <p>{new Date(generatedData.fechaProd + 'T00:00:00').toLocaleDateString('es-ES')}</p>
+                                            </div>
+                                            <div>
+                                                <p className="font-bold">Vencimiento</p>
+                                                <p>{new Date(generatedData.fechaVenc + 'T00:00:00').toLocaleDateString('es-ES')}</p>
+                                            </div>
                                         </div>
                                     </div>
                                 ) : (
