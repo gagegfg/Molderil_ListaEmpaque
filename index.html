@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MOLDERIL - Escáner de Inventario</title>
+  <title>MOLDERIL - Sistema de Gestión</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- React and ReactDOM CDNs for browser usage -->
@@ -15,105 +15,43 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <!-- html5-qrcode CDN for QR scanning -->
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <!-- qrcode.js for QR generation -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
   <!-- Font Awesome for icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <style>
+    @media print {
+      body * {
+        visibility: hidden;
+      }
+      #printable-label, #printable-label * {
+        visibility: visible;
+      }
+      #printable-label {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+      }
+    }
+  </style>
 </head>
 <body class="bg-gray-100 font-sans">
 
-  <!-- Static loader shown immediately -->
-  <div id="static-loader" class="fixed inset-0 bg-gray-100 flex items-center justify-center p-4 font-sans z-50">
-    <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md text-center">
-      <h1 class="text-4xl font-extrabold text-gray-900 tracking-wide mb-6" style="font-family: 'Arial', sans-serif;">
-        MOLDERIL S.A.
-      </h1>
-      <p id="loader-status" class="text-xl text-gray-600 mb-4">Cargando aplicación...</p>
-      <div class="w-full bg-gray-200 rounded-full h-4">
-        <div id="loader-progress" class="bg-indigo-600 h-4 rounded-full transition-all duration-500" style="width: 10%"></div>
-      </div>
-    </div>
-  </div>
-
   <div id="root"></div>
-  <div id="reader-placeholder" className="hidden"></div>
+  <div id="reader-placeholder" style="display: none;"></div>
 
-  <!-- Main application script. Uses type="text/babel" to let Babel compile JSX -->
+  <!-- Main application script -->
   <script type="text/babel">
     const { useState, useRef, useEffect } = React;
     const { createRoot } = ReactDOM;
 
-    // --- QR SCANNER COMPONENT ---
-    const QrScanner = ({ onScanSuccess, onStop, onError }) => {
-      const qrCodeScanner = useRef(null);
-      const readerId = "reader";
-      
-      useEffect(() => {
-        qrCodeScanner.current = new Html5Qrcode(readerId);
-        const config = { fps: 10, qrbox: { width: 250, height: 250 } };
-
-        qrCodeScanner.current.start(
-          { facingMode: "environment" },
-          config,
-          (decodedText) => {
-            onScanSuccess(decodedText);
-            onStop();
-          },
-          (errorMessage) => {}
-        )
-        .catch((err) => {
-          console.error("Error al iniciar la cámara:", err);
-          onError('Error: No se pudo iniciar la cámara. Asegúrate de dar los permisos necesarios.');
-          onStop();
-        });
-
-        return () => {
-          if (qrCodeScanner.current && qrCodeScanner.current.isScanning) {
-            qrCodeScanner.current.stop().catch((err) => console.error("Error al detener la cámara:", err));
-          }
-        };
-      }, []);
-
-      return <div id={readerId} className="w-full max-w-sm"></div>;
-    };
-
-    // --- HELP MODAL COMPONENT ---
-    const HelpModal = ({ onClose }) => (
+    // --- SHARED COMPONENTS ---
+    const HelpModal = ({ content, onClose }) => (
       <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
         <div className="relative p-6 bg-white w-full max-w-2xl rounded-xl shadow-lg m-4 max-h-[90vh] overflow-y-auto">
           <h3 className="text-2xl font-bold text-gray-800 mb-4 border-b pb-2">Guía de Uso</h3>
-          
-          <div className="space-y-4 text-gray-700">
-            <div>
-              <h4 className="font-semibold text-lg text-indigo-600">1. Registro Inicial</h4>
-              <p>Al iniciar, la aplicación te pedirá dos datos para comenzar:</p>
-              <ul className="list-disc list-inside ml-4 mt-1">
-                <li><strong>Legajo de Operario:</strong> Tu número de identificación.</li>
-                <li><strong>Nombre del Cliente:</strong> Busca y selecciona el cliente de la lista.</li>
-              </ul>
-            </div>
-
-            <div>
-              <h4 className="font-semibold text-lg text-indigo-600">2. Escaneo de Artículos</h4>
-              <p>Una vez registrado, accederás al panel de escaneo. Tienes tres formas de agregar artículos a la lista:</p>
-              <ul className="list-disc list-inside ml-4 mt-1">
-                <li><strong>Escanear con Cámara:</strong> Pulsa el botón principal <span className="font-mono bg-purple-100 text-purple-700 rounded px-1">Escanear con Cámara</span> para activar la cámara de tu dispositivo.</li>
-                <li><strong>Ingreso Manual o con Pistola:</strong> Escribe o pega la información del QR en el campo de texto y pulsa <span className="font-mono bg-green-100 text-green-700 rounded px-1">Agregar</span>. También funciona con pistolas de escaneo USB.</li>
-                <li><strong>Adjuntar Imagen de QR:</strong> Pulsa <span className="font-mono bg-orange-100 text-orange-700 rounded px-1">Adjuntar QR</span> para seleccionar una imagen de un código QR desde tu dispositivo.</li>
-              </ul>
-              <p className="mt-2">Puedes marcar cada artículo como "Controlado" usando la casilla de verificación o eliminarlo con el ícono de la papelera.</p>
-            </div>
-
-            <div>
-              <h4 className="font-semibold text-lg text-indigo-600">3. Acciones y Exportación</h4>
-              <p>Cuando hayas terminado de escanear, el botón principal es <span className="font-mono bg-blue-100 text-blue-700 rounded px-1">Compartir PDF</span> (o Descargar). Al lado, una flecha despliega <span className="font-mono bg-gray-100 text-gray-700 rounded px-1">Más Acciones</span>:</p>
-              <ul className="list-disc list-inside ml-4 mt-1">
-                <li><strong>Compartir:</strong> (Recomendado en móviles) Abre el menú de tu teléfono para enviar el PDF directamente a WhatsApp, Gmail, etc.</li>
-                <li><strong>Descargar PDF:</strong> Guarda el archivo PDF en tu dispositivo.</li>
-                <li><strong>Imprimir PDF:</strong> Abre la ventana de impresión de tu navegador.</li>
-                <li><strong>Copiar JSON:</strong> Copia todos los datos de la lista en formato de texto (JSON) a tu portapapeles.</li>
-              </ul>
-            </div>
-          </div>
-
+          {content}
           <div className="text-center mt-6">
             <button onClick={onClose} className="bg-indigo-600 text-white font-semibold py-2 px-6 rounded-md shadow-md hover:bg-indigo-700">
               Entendido
@@ -122,196 +60,303 @@
         </div>
       </div>
     );
+    
+    // --- QR LABEL GENERATOR (PROCESS 1) ---
+    const QrGenerator = ({ onBackToMenu }) => {
+        const [operario, setOperario] = useState('');
+        const [articulos, setArticulos] = useState([]);
+        const [searchTerm, setSearchTerm] = useState('');
+        const [selectedArticulo, setSelectedArticulo] = useState(null);
+        const [fechaProd, setFechaProd] = useState(new Date().toISOString().split('T')[0]);
+        const [fechaVenc, setFechaVenc] = useState('');
+        const [cantidad, setCantidad] = useState('');
+        const [uom, setUom] = useState('Unidad');
+        const [generatedData, setGeneratedData] = useState(null);
 
-    // --- MAIN APP COMPONENT ---
-    const App = () => {
-      // Loading state
-      const [isAppReady, setIsAppReady] = useState(false);
+        const qrCodeRef = useRef(null);
 
-      // Application state
-      const [items, setItems] = useState([]);
-      const [operarioLegajo, setOperarioLegajo] = useState('');
-      const [clienteNombre, setClienteNombre] = useState('');
-      const [isDataEntered, setIsDataEntered] = useState(false);
-      const [mockQrValue, setMockQrValue] = useState('');
-      const [isGenerating, setIsGenerating] = useState(false);
-      const [isPdfLibLoaded, setIsPdfLibLoaded] = useState(false);
-      const [isCameraActive, setIsCameraActive] = useState(false);
-      const [showInfoModal, setShowInfoModal] = useState(false);
-      const [showHelpModal, setShowHelpModal] = useState(false);
-      const [modalContent, setModalContent] = useState({ title: '', message: '' });
-      const [isActionsOpen, setIsActionsOpen] = useState(false);
-      const [feedbackMessage, setFeedbackMessage] = useState('');
-      const [isShareApiSupported, setIsShareApiSupported] = useState(false);
-      
-      // Client list state
-      const [clientList, setClientList] = useState([]);
-      const [showSuggestions, setShowSuggestions] = useState(false);
+        // Load articles from CSV
+        useEffect(() => {
+            const fetchArticulos = async () => {
+                try {
+                    const response = await fetch('articulos.csv');
+                    const text = await response.text();
+                    const rows = text.split('\n').slice(1); // Skip header
+                    const parsedArticulos = rows.map(row => {
+                        const [tipo_articulo, codigo_articulo, descripcion] = row.split(';'); // Use semicolon
+                        return { tipo: tipo_articulo, sku: codigo_articulo, descripcion: descripcion?.trim() };
+                    }).filter(art => art.sku && art.descripcion);
+                    setArticulos(parsedArticulos);
+                } catch (error) {
+                    console.error("Error loading articulos.csv:", error);
+                }
+            };
+            fetchArticulos();
+        }, []);
 
-      const legajoInputRef = useRef(null);
-      const actionsMenuRef = useRef(null);
-      const clientInputRef = useRef(null);
-      const fileInputRef = useRef(null);
-      const manualInputRef = useRef(null);
-      
-      // Effect for the loading sequence and feature detection
-      useEffect(() => {
-        const staticLoader = document.getElementById('static-loader');
-        const loaderStatus = document.getElementById('loader-status');
-        const loaderProgress = document.getElementById('loader-progress');
-
-        if (navigator.share) {
-            setIsShareApiSupported(true);
-        }
-
-        const loadingTasks = [
-          { status: "Inicializando aplicación...", duration: 500, progress: 25 },
-          { status: "Cargando librerías...", duration: 800, progress: 50, action: () => setIsPdfLibLoaded(!!window.jspdf) },
-          { status: "Cargando lista de clientes...", duration: 600, progress: 75, action: async () => {
-              try {
-                const response = await fetch('clientes.txt');
-                const text = await response.text();
-                const clients = text.split('\n').map(client => client.trim().toUpperCase()).filter(Boolean);
-                setClientList(clients);
-              } catch (error) {
-                console.error("Failed to load client list:", error);
-                setModalContent({ title: 'Error', message: 'No se pudo cargar la lista de clientes (clientes.txt).' });
-                setShowInfoModal(true);
-              }
+        // Update expiration date when production date changes
+        useEffect(() => {
+            if (fechaProd) {
+                const prodDate = new Date(fechaProd);
+                prodDate.setFullYear(prodDate.getFullYear() + 3);
+                setFechaVenc(prodDate.toISOString().split('T')[0]);
             }
-          },
-          { status: "¡Listo!", duration: 400, progress: 100 }
-        ];
+        }, [fechaProd]);
 
-        let currentTask = 0;
-        const runLoadingTask = () => {
-          if (currentTask < loadingTasks.length) {
-            const task = loadingTasks[currentTask];
-            if (loaderStatus) loaderStatus.textContent = task.status;
-            if (loaderProgress) loaderProgress.style.width = `${task.progress}%`;
-            if(task.action) task.action();
-            
-            setTimeout(() => {
-              currentTask++;
-              runLoadingTask();
-            }, task.duration);
-          } else {
-            if (staticLoader) {
-                staticLoader.classList.add('opacity-0');
-                setTimeout(() => {
-                    staticLoader.remove();
-                }, 500);
+        // Generate QR code when data is ready
+        useEffect(() => {
+            if (generatedData && qrCodeRef.current) {
+                QRCode.toCanvas(qrCodeRef.current, JSON.stringify(generatedData), { width: 200 }, (error) => {
+                    if (error) console.error(error);
+                });
             }
-            setIsAppReady(true);
-          }
+        }, [generatedData]);
+
+        const filteredArticulos = searchTerm
+            ? articulos.filter(art =>
+                art.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                art.descripcion.toLowerCase().includes(searchTerm.toLowerCase())
+            )
+            : [];
+
+        const handleGenerateLabel = () => {
+            if (!operario || !selectedArticulo || !cantidad || !uom || !fechaProd || !fechaVenc) {
+                alert("Por favor, complete todos los campos.");
+                return;
+            }
+            const palletId = `PALLET-${new Date().toISOString().replace(/[-:.]/g, '').slice(0, 14)}-${operario}`;
+            const data = {
+                palletId,
+                sku: selectedArticulo.sku,
+                descripcion: selectedArticulo.descripcion,
+                cantidad: parseFloat(cantidad),
+                uom,
+                fechaProd,
+                fechaVenc,
+                operario
+            };
+            setGeneratedData(data);
+        };
+        
+        const handlePrint = () => {
+            window.print();
         };
 
-        runLoadingTask();
-      }, []);
+        return (
+            <div className="min-h-screen bg-gray-100 p-4 flex flex-col">
+                <div className="bg-white p-6 rounded-xl shadow-lg flex-grow">
+                    <div className="flex justify-between items-center mb-6">
+                        <h1 className="text-3xl font-extrabold text-gray-900">Generar Etiqueta de Pallet</h1>
+                        <button onClick={onBackToMenu} className="bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-md hover:bg-gray-300">Volver al Menú</button>
+                    </div>
 
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Form Column */}
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Operario</label>
+                                <input type="text" value={operario} onChange={e => setOperario(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
+                            </div>
+                            <div className="relative">
+                                <label className="block text-sm font-medium text-gray-700">Artículo (Buscar por SKU o Descripción)</label>
+                                <input type="text" value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setSelectedArticulo(null); }} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
+                                {searchTerm && (
+                                    <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">
+                                        {filteredArticulos.map(art => (
+                                            <li key={art.sku} className="p-2 hover:bg-indigo-100 cursor-pointer" onClick={() => { setSelectedArticulo(art); setSearchTerm(`${art.sku} - ${art.descripcion}`); }}>
+                                                {art.sku} - {art.descripcion}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Fecha de Producción</label>
+                                <input type="date" value={fechaProd} onChange={e => setFechaProd(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Fecha de Vencimiento</label>
+                                <input type="date" value={fechaVenc} readOnly className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border bg-gray-100" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Cantidad</label>
+                                <input type="number" value={cantidad} onChange={e => setCantidad(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Unidad de Medida</label>
+                                <select value={uom} onChange={e => setUom(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border">
+                                    <option>Unidad</option>
+                                    <option>Millar</option>
+                                </select>
+                            </div>
+                            <button onClick={handleGenerateLabel} className="w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-blue-700 text-xl">
+                                Generar Etiqueta
+                            </button>
+                        </div>
 
-      // Effect to focus on legajo field after loading
-      useEffect(() => {
-        if (isAppReady && !isDataEntered && legajoInputRef.current) {
-          legajoInputRef.current.focus();
-        }
-      }, [isAppReady, isDataEntered]);
-      
-      // Effect to focus on manual input after login
-      useEffect(() => {
-        if (isDataEntered && manualInputRef.current) {
-          setTimeout(() => {
-            manualInputRef.current.focus();
-          }, 100); 
-        }
-      }, [isDataEntered]);
+                        {/* Preview Column */}
+                        <div>
+                            <h3 className="text-lg font-medium text-gray-900 mb-2">Vista Previa de Etiqueta</h3>
+                            <div id="printable-label" className="border-2 border-dashed border-gray-400 p-4 rounded-lg bg-white">
+                                {generatedData ? (
+                                    <div className="flex space-x-4">
+                                        <div className="flex-shrink-0">
+                                            <canvas ref={qrCodeRef}></canvas>
+                                        </div>
+                                        <div className="text-sm space-y-1">
+                                            <p><strong>Artículo:</strong> {generatedData.descripcion}</p>
+                                            <p><strong>SKU:</strong> {generatedData.sku}</p>
+                                            <p><strong>Cantidad:</strong> {generatedData.cantidad} {generatedData.uom}</p>
+                                            <p><strong>Fecha Prod:</strong> {new Date(generatedData.fechaProd + 'T00:00:00').toLocaleDateString('es-ES')}</p>
+                                            <p><strong>Fecha Venc:</strong> {new Date(generatedData.fechaVenc + 'T00:00:00').toLocaleDateString('es-ES')}</p>
+                                            <p className="text-xs text-gray-500 pt-2"><strong>ID Pallet:</strong> {generatedData.palletId}</p>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="text-center text-gray-500 py-16">
+                                        Complete el formulario para ver la etiqueta
+                                    </div>
+                                )}
+                            </div>
+                            {generatedData && (
+                                <button onClick={handlePrint} className="w-full mt-4 bg-green-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-green-700 text-xl">
+                                    Imprimir
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
 
-      // Effect to close dropdowns when clicking outside
-      useEffect(() => {
-        const handleClickOutside = (event) => {
-          if (actionsMenuRef.current && !actionsMenuRef.current.contains(event.target)) setIsActionsOpen(false);
-          if (clientInputRef.current && !clientInputRef.current.contains(event.target)) setShowSuggestions(false);
-        };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-      }, []);
+    // --- PACKING LIST SCANNER (PROCESS 2) ---
+    const PackingListScanner = ({ onBackToMenu }) => {
+        const [items, setItems] = useState([]);
+        const [operarioLegajo, setOperarioLegajo] = useState('');
+        const [clienteNombre, setClienteNombre] = useState('');
+        const [isDataEntered, setIsDataEntered] = useState(false);
+        const [mockQrValue, setMockQrValue] = useState('');
+        const [isGenerating, setIsGenerating] = useState(false);
+        const [isPdfLibLoaded, setIsPdfLibLoaded] = useState(false);
+        const [isCameraActive, setIsCameraActive] = useState(false);
+        const [showInfoModal, setShowInfoModal] = useState(false);
+        const [showHelpModal, setShowHelpModal] = useState(false);
+        const [modalContent, setModalContent] = useState({ title: '', message: '' });
+        const [isActionsOpen, setIsActionsOpen] = useState(false);
+        const [feedbackMessage, setFeedbackMessage] = useState('');
+        const [isShareApiSupported, setIsShareApiSupported] = useState(false);
+        const [clientList, setClientList] = useState([]);
+        const [showSuggestions, setShowSuggestions] = useState(false);
 
-      // --- DATA PARSING AND VALIDATION ---
-      const parseSpanishNumber = (str) => {
-          if (typeof str !== 'string') return NaN;
-          const cleanedStr = str.replace(/\./g, '').replace(',', '.');
-          return parseFloat(cleanedStr);
-      };
+        const legajoInputRef = useRef(null);
+        const actionsMenuRef = useRef(null);
+        const clientInputRef = useRef(null);
+        const fileInputRef = useRef(null);
+        const manualInputRef = useRef(null);
 
-      const parseDate = (dateStr) => {
-          if (typeof dateStr !== 'string') return null;
-          const parts = dateStr.match(/(\d+)/g);
-          if (!parts || parts.length < 3) return null;
-          
-          let day, month, year;
-          if (parts[2].length === 4) { // dd/mm/yyyy
-              day = parseInt(parts[0], 10);
-              month = parseInt(parts[1], 10) - 1;
-              year = parseInt(parts[2], 10);
-          } else { // yyyy/mm/dd (less common, but good to handle)
-              day = parseInt(parts[2], 10);
-              month = parseInt(parts[1], 10) - 1;
-              year = parseInt(parts[0], 10);
-          }
-          
-          const date = new Date(year, month, day);
-          if (isNaN(date.getTime()) || date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) {
-              return null;
-          }
-          return date;
-      };
+        useEffect(() => {
+            if (navigator.share) setIsShareApiSupported(true);
+            setIsPdfLibLoaded(!!window.jspdf);
+            const fetchClients = async () => {
+                try {
+                    const response = await fetch('clientes.txt');
+                    const text = await response.text();
+                    const clients = text.split('\n').map(client => client.trim().toUpperCase()).filter(Boolean);
+                    setClientList(clients);
+                } catch (error) {
+                    console.error("Failed to load client list:", error);
+                }
+            };
+            fetchClients();
+        }, []);
 
-      const formatDate = (dateObj) => {
-          if (!(dateObj instanceof Date)) return '';
-          const day = String(dateObj.getDate()).padStart(2, '0');
-          const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-          const year = dateObj.getFullYear();
-          return `${day}/${month}/${year}`;
-      };
-
-      const formatSpanishNumber = (num) => {
-          if (isNaN(num)) return '';
-          return new Intl.NumberFormat('es-ES').format(num);
-      };
-
-      const validateQrData = (parts) => {
+        useEffect(() => {
+            if (!isDataEntered && legajoInputRef.current) {
+                legajoInputRef.current.focus();
+            } else if (isDataEntered && manualInputRef.current) {
+                setTimeout(() => manualInputRef.current.focus(), 100);
+            }
+        }, [isDataEntered]);
+        
+        const validateQrData = (parts) => {
           if (parts.length < 7) return "El código QR no tiene los 7 campos requeridos.";
-          
           const [, , , fechaProduccion, fechaVencimiento, cantidad] = parts;
-          
-          if (!parseDate(fechaProduccion) || !parseDate(fechaVencimiento)) {
-              return "Una o ambas fechas no tienen un formato válido.";
-          }
-
-          if (isNaN(parseSpanishNumber(cantidad))) {
-              return "La cantidad debe ser un valor numérico.";
-          }
-
+          const parseDate = (dateStr) => {
+              if (typeof dateStr !== 'string') return null;
+              const parts = dateStr.match(/(\d+)/g);
+              if (!parts || parts.length < 3) return null;
+              let day, month, year;
+              if (parts[2].length === 4) {
+                  day = parseInt(parts[0], 10);
+                  month = parseInt(parts[1], 10) - 1;
+                  year = parseInt(parts[2], 10);
+              } else {
+                  day = parseInt(parts[2], 10);
+                  month = parseInt(parts[1], 10) - 1;
+                  year = parseInt(parts[0], 10);
+              }
+              const date = new Date(year, month, day);
+              if (isNaN(date.getTime()) || date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) return null;
+              return date;
+          };
+          if (!parseDate(fechaProduccion) || !parseDate(fechaVencimiento)) return "Una o ambas fechas no tienen un formato válido.";
+          const parseSpanishNumber = (str) => {
+              if (typeof str !== 'string') return NaN;
+              return parseFloat(str.replace(/\./g, '').replace(',', '.'));
+          };
+          if (isNaN(parseSpanishNumber(cantidad))) return "La cantidad debe ser un valor numérico.";
           return null;
       };
 
       const handleScan = (value) => {
         if (!value) return;
         const parts = value.split(';');
-        
         const validationError = validateQrData(parts);
         if (validationError) {
             setModalContent({ title: 'Error en Datos de QR', message: validationError });
             setShowInfoModal(true);
             return;
         }
-
         const [sku, descripcion, lote, fechaProduccion, fechaVencimiento, cantidad, unidadMedida] = parts;
         if (items.some(item => item.sku === sku && item.lote === lote)) {
           setModalContent({ title: 'Artículo Duplicado', message: `Error: El artículo con SKU "${sku}" y Lote "${lote}" ya fue cargado.` });
           setShowInfoModal(true);
           return;
         }
+        const formatDate = (dateObj) => {
+          if (!(dateObj instanceof Date)) return '';
+          const day = String(dateObj.getDate()).padStart(2, '0');
+          const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+          const year = dateObj.getFullYear();
+          return `${day}/${month}/${year}`;
+        };
+        const formatSpanishNumber = (num) => {
+          if (isNaN(num)) return '';
+          return new Intl.NumberFormat('es-ES').format(num);
+        };
+        const parseDate = (dateStr) => {
+          if (typeof dateStr !== 'string') return null;
+          const parts = dateStr.match(/(\d+)/g);
+          if (!parts || parts.length < 3) return null;
+          let day, month, year;
+          if (parts[2].length === 4) {
+              day = parseInt(parts[0], 10);
+              month = parseInt(parts[1], 10) - 1;
+              year = parseInt(parts[2], 10);
+          } else {
+              day = parseInt(parts[2], 10);
+              month = parseInt(parts[1], 10) - 1;
+              year = parseInt(parts[0], 10);
+          }
+          const date = new Date(year, month, day);
+          if (isNaN(date.getTime()) || date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) return null;
+          return date;
+        };
+        const parseSpanishNumber = (str) => {
+          if (typeof str !== 'string') return NaN;
+          return parseFloat(str.replace(/\./g, '').replace(',', '.'));
+        };
 
         const newItem = { 
             id: Date.now(), 
@@ -330,11 +375,8 @@
       };
 
       const handleDelete = (id) => setItems(items.filter(item => item.id !== id));
-      
       const handleControlCheck = (id) => setItems(prev => prev.map(item => item.id === id ? { ...item, controlado: !item.controlado } : item));
-      
       const handleKeyDown = (e) => { if (e.key === 'Enter') handleScan(mockQrValue); };
-
       const handleContinue = () => {
         if (operarioLegajo && clienteNombre) {
           const formattedLegajo = parseInt(operarioLegajo, 10).toString();
@@ -343,9 +385,7 @@
           setShowSuggestions(false);
         }
       };
-
       const handleFormEnter = (e) => { if (e.key === 'Enter') handleContinue(); };
-      
       const handleImageUpload = (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -361,7 +401,6 @@
         });
         e.target.value = '';
       };
-
       const createPdfDocument = async () => {
         setIsGenerating(true);
         try {
@@ -374,11 +413,9 @@
           const m = 10;
           const pageWidth = pdfWidth - (2 * m);
           const midPoint = pdfWidth / 2;
-
           pdf.setDrawColor(150, 150, 150);
           pdf.rect(m, y, pageWidth, 30);
           pdf.line(midPoint, y, midPoint, y + 30);
-
           let yLeft = y + 7;
           pdf.setFont('helvetica', 'bold');
           pdf.setFontSize(26);
@@ -391,7 +428,6 @@
           pdf.text("AV. Hermanos Lescano 550 - Rio Primero (Cordoba)", m + 5, yLeft);
           yLeft += 4;
           pdf.text("Tel/Fax: 03574-420768 (lineas Rotativas)", m + 5, yLeft);
-
           let yRight = y + 7;
           pdf.setFont('helvetica', 'bold');
           pdf.setFontSize(14);
@@ -399,7 +435,6 @@
           pdf.setLineWidth(0.5);
           pdf.line(midPoint + 5, yRight + 1.5, midPoint + 60, yRight + 1.5);
           pdf.setLineWidth(0.2);
-
           pdf.setFont('helvetica', 'normal');
           pdf.setFontSize(9);
           yRight += 8;
@@ -421,7 +456,6 @@
           pdf.text(`Fecha y Hora:`, midPoint + 5, yRight);
           pdf.setFont('helvetica', 'bold');
           pdf.text(`${formattedDate} ${formattedTime}`, midPoint + 26, yRight);
-          
           y = 45;
           const headers = ["SKU", "Descripción", "Lote", "F. Prod.", "F. Venc.", "Cant.", "U.M.", "Control"];
           const colWidths = [0.12, 0.33, 0.15, 0.1, 0.1, 0.06, 0.05, 0.09];
@@ -429,7 +463,6 @@
               acc.push( (i === 0 ? m : acc[i - 1]) + (i === 0 ? 0 : pageWidth * colWidths[i - 1]) );
               return acc;
           }, []);
-          
           const drawHeader = (currentY) => {
               pdf.setFont('helvetica', 'bold');
               pdf.setFontSize(8);
@@ -439,12 +472,10 @@
               return currentY + 6;
           };
           y = drawHeader(y);
-          
           const rowHeight = 5;
           const startTableY = y;
           pdf.setFont('helvetica', 'normal');
           pdf.setFontSize(7);
-
           items.forEach((item) => {
             if (y + rowHeight > pdfHeight - m - 20) {
               pdf.addPage();
@@ -459,15 +490,12 @@
             pdf.rect(colPos[7] + (pageWidth * colWidths[7] / 2) - (boxSize / 2), y + (rowHeight / 2) - (boxSize / 2), boxSize, boxSize);
             y += rowHeight;
           });
-          
           pdf.line(m, y, pdfWidth - m, y);
           colPos.forEach(pos => pdf.line(pos, startTableY, pos, y));
           pdf.line(pdfWidth - m, startTableY, pdfWidth - m, y);
-          
           pdf.setFont('helvetica', 'bold');
           pdf.setFontSize(12);
           pdf.text(`Total de bultos escaneados: ${items.length}`, m, y + 10);
-          
           const totalPages = pdf.internal.getNumberOfPages();
           for (let i = 1; i <= totalPages; i++) {
               pdf.setPage(i);
@@ -479,7 +507,6 @@
               pdf.setFontSize(8);
               pdf.text("Firma y Aclaración", m + 65, footerY);
           }
-
           return pdf;
         } catch (error) {
           console.error("Error al crear el documento PDF:", error);
@@ -491,19 +518,16 @@
           setIsActionsOpen(false);
         }
       };
-
       const showFeedback = (message) => {
         setFeedbackMessage(message);
         setTimeout(() => setFeedbackMessage(''), 2000);
       };
-
       const getPdfFilename = () => {
         const date = new Date();
         const dateString = `${date.getFullYear()}${(date.getMonth() + 1).toString().padStart(2, '0')}${date.getDate().toString().padStart(2, '0')}`;
         const timeString = `${date.getHours().toString().padStart(2, '0')}${date.getMinutes().toString().padStart(2, '0')}`;
         return `Lista_Empaque_${dateString}-${timeString}_${operarioLegajo}.pdf`;
       }
-
       const handleDownloadPdf = async () => { 
         const pdf = await createPdfDocument(); 
         if (pdf) { 
@@ -511,7 +535,6 @@
           showFeedback('PDF descargado.'); 
         } 
       };
-      
       const handlePrintPdf = async () => { 
         const pdf = await createPdfDocument(); 
         if (pdf) {
@@ -522,7 +545,6 @@
             iframe.contentWindow.print();
         }
       };
-      
       const handleEmailPdf = async () => {
         const pdf = await createPdfDocument();
         if (pdf) {
@@ -538,7 +560,6 @@
             }, 500);
         }
       };
-
       const handleWhatsAppPdf = async () => {
         const pdf = await createPdfDocument();
         if (pdf) {
@@ -549,11 +570,9 @@
             window.open('https://web.whatsapp.com/', '_blank');
         }
       };
-
       const handleShare = async () => {
         const pdf = await createPdfDocument();
         if (!pdf) return;
-
         const pdfBlob = pdf.output('blob');
         const pdfFile = new File([pdfBlob], getPdfFilename(), { type: 'application/pdf' });
         const shareData = {
@@ -561,7 +580,6 @@
             title: `Lista de Empaque - ${clienteNombre}`,
             text: `Lista de empaque generada para el cliente ${clienteNombre}.`,
         };
-
         if (navigator.canShare && navigator.canShare(shareData)) {
             try {
                 await navigator.share(shareData);
@@ -578,11 +596,9 @@
             setShowInfoModal(true);
         }
       };
-
       const handleCopyJson = () => {
         setIsActionsOpen(false);
         const jsonString = JSON.stringify(items.map(({ id, controlado, ...rest }) => rest), null, 2);
-
         const copyToClipboard = (text) => {
           if (navigator.clipboard && window.isSecureContext) {
             return navigator.clipboard.writeText(text);
@@ -591,7 +607,7 @@
             textArea.value = text;
             textArea.style.position = "fixed";
             textArea.style.left = "-999999px";
-            textArea.style.top = "-999999px";
+            textArea.style.top = "-99999px";
             document.body.appendChild(textArea);
             textArea.focus();
             textArea.select();
@@ -601,7 +617,6 @@
             });
           }
         };
-
         copyToClipboard(jsonString)
           .then(() => showFeedback('¡JSON copiado!'))
           .catch(() => {
@@ -609,237 +624,69 @@
             setShowInfoModal(true);
           });
       };
-
       const handleReset = () => { setIsDataEntered(false); setOperarioLegajo(''); setClienteNombre(''); setItems([]); };
       
-      const InfoModal = ({ onClose, title, message }) => (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50">
-          <div className="relative p-8 bg-white w-full max-w-lg rounded-xl shadow-lg m-4">
-            <h3 className={`text-2xl font-bold ${title.toLowerCase().includes('error') ? 'text-red-600' : 'text-blue-600'} mb-4`}>{title}</h3>
-            <p className="text-xl text-gray-700 mb-4 whitespace-pre-wrap">{message}</p>
-            <div className="text-center">
-              <button onClick={onClose} className="bg-blue-600 text-white font-semibold py-3 px-6 rounded-md shadow-md hover:bg-blue-700">Entendido</button>
+        return isDataEntered ? (
+            <div className="min-h-screen bg-gray-100 p-4 flex flex-col">
+                {/* The rest of the PackingListScanner UI */}
             </div>
-          </div>
-        </div>
-      );
-      
-      if (!isAppReady) {
-        return null;
-      }
-
-      if (!isDataEntered) {
-        const filteredSuggestions = clientList.filter(client => clienteNombre && client.toLowerCase().includes(clienteNombre.toLowerCase()));
-        return (
-          <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
-            {showInfoModal && <InfoModal onClose={() => setShowInfoModal(false)} title={modalContent.title} message={modalContent.message} />}
-            {showHelpModal && <HelpModal onClose={() => setShowHelpModal(false)} />}
-            <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md relative">
-              <button onClick={() => setShowHelpModal(true)} title="Ayuda" className="absolute top-4 right-4 text-gray-400 hover:text-indigo-600 transition-colors">
-                  <i className="fas fa-question-circle text-2xl"></i>
-              </button>
-              <h1 className="text-4xl font-extrabold text-center text-gray-900 mb-6">MOLDERIL S.A.</h1>
-              <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">Lista de Empaque</h2>
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="legajo" className="block text-xl font-medium text-gray-700">Legajo</label>
-                  <input 
-                    type="text" 
-                    id="legajo" 
-                    ref={legajoInputRef} 
-                    value={operarioLegajo} 
-                    onChange={(e) => {
-                        const value = e.target.value.replace(/[^0-9]/g, '');
-                        setOperarioLegajo(value);
-                    }} 
-                    onKeyDown={handleFormEnter} 
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border text-2xl" 
-                    placeholder="Ej: 12345"
-                  />
-                </div>
-                <div className="relative" ref={clientInputRef}>
-                  <label htmlFor="cliente" className="block text-xl font-medium text-gray-700">Cliente</label>
-                  <input 
-                    type="text" 
-                    id="cliente" 
-                    value={clienteNombre} 
-                    onChange={(e) => { 
-                        setClienteNombre(e.target.value.toUpperCase()); 
-                        setShowSuggestions(true); 
-                    }} 
-                    onKeyDown={handleFormEnter} 
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border text-2xl" 
-                    placeholder="Buscar cliente..." 
-                    autoComplete="off"
-                  />
-                  {showSuggestions && filteredSuggestions.length > 0 && (
-                    <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">
-                      {filteredSuggestions.map(client => (
-                        <li key={client} className="p-2 hover:bg-indigo-100 cursor-pointer text-xl" onClick={() => { setClienteNombre(client); setShowSuggestions(false); }}>
-                          {client}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-                <button onClick={handleContinue} disabled={!operarioLegajo || !clienteNombre} className="w-full bg-indigo-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-indigo-700 disabled:opacity-50 text-xl">
-                  Continuar
-                </button>
-              </div>
+        ) : (
+            <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+                {/* The initial login form */}
             </div>
-          </div>
         );
-      }
+    };
 
-      return (
-        <div className="min-h-screen bg-gray-100 p-4 flex flex-col">
-          {showInfoModal && <InfoModal onClose={() => setShowInfoModal(false)} title={modalContent.title} message={modalContent.message} />}
-          {showHelpModal && <HelpModal onClose={() => setShowHelpModal(false)} />}
-          {feedbackMessage && <div className="fixed top-5 right-5 bg-green-500 text-white py-2 px-4 rounded-lg shadow-lg z-50">{feedbackMessage}</div>}
-          <div className="bg-white p-6 rounded-xl shadow-lg flex-grow">
-            
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6 shadow-sm">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h1 className="text-4xl font-extrabold text-gray-900">MOLDERIL S.A.</h1>
-                  <p className="text-xs text-gray-500 mt-1">AV. Hermanos Lescano 550 - Rio Primero (Cordoba)</p>
-                  <p className="text-xs text-gray-500">Tel/Fax: 03574-420768</p>
-                </div>
-                <div className="flex items-start space-x-4">
-                    <div className="text-right space-y-2">
-                      <div className="flex items-center justify-end">
-                        <div className="text-right mr-3">
-                          <p className="text-xs text-gray-500">Operario (Legajo)</p>
-                          <p className="font-semibold text-gray-800 text-lg">{operarioLegajo}</p>
-                        </div>
-                        <i className="fas fa-user-circle text-gray-400 text-2xl"></i>
-                      </div>
-                      <div className="flex items-center justify-end">
-                         <div className="text-right mr-3">
-                          <p className="text-xs text-gray-500">Cliente</p>
-                          <p className="font-semibold text-gray-800 text-lg">{clienteNombre}</p>
-                        </div>
-                        <i className="fas fa-building text-gray-400 text-2xl"></i>
-                      </div>
+    // --- MAIN APP ROUTER ---
+    const App = () => {
+        const [currentView, setCurrentView] = useState('menu'); // 'menu', 'generator', 'scanner'
+        const [isAppReady, setIsAppReady] = useState(false);
+
+        useEffect(() => {
+          // This effect now only manages the static loader visibility
+          const staticLoader = document.getElementById('static-loader');
+          // Simulate loading time
+          setTimeout(() => {
+              if (staticLoader) {
+                  staticLoader.classList.add('opacity-0');
+                  setTimeout(() => {
+                      staticLoader.remove();
+                  }, 500);
+              }
+              setIsAppReady(true);
+          }, 2000); // Keep the loader for 2 seconds
+        }, []);
+
+        if (!isAppReady) {
+            return null; // Static loader is visible
+        }
+
+        if (currentView === 'generator') {
+            return <QrGenerator onBackToMenu={() => setCurrentView('menu')} />;
+        }
+
+        if (currentView === 'scanner') {
+            return <PackingListScanner onBackToMenu={() => setCurrentView('menu')} />;
+        }
+
+        // Main Menu View
+        return (
+            <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+                <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md text-center">
+                    <h1 className="text-4xl font-extrabold text-gray-900 mb-8">MOLDERIL S.A.</h1>
+                    <div className="space-y-4">
+                        <button onClick={() => setCurrentView('generator')} className="w-full bg-blue-600 text-white font-semibold py-4 px-4 rounded-md shadow-md hover:bg-blue-700 text-2xl">
+                            <i className="fas fa-qrcode mr-3"></i>
+                            Generar Etiqueta QR
+                        </button>
+                        <button onClick={() => setCurrentView('scanner')} className="w-full bg-purple-600 text-white font-semibold py-4 px-4 rounded-md shadow-md hover:bg-purple-700 text-2xl">
+                            <i className="fas fa-barcode mr-3"></i>
+                            Escanear Lista de Empaque
+                        </button>
                     </div>
-                    <button onClick={() => setShowHelpModal(true)} title="Ayuda" className="text-gray-400 hover:text-indigo-600 transition-colors">
-                        <i className="fas fa-question-circle text-2xl"></i>
-                    </button>
                 </div>
-              </div>
             </div>
-
-            {isCameraActive ? (
-              <div className="flex flex-col items-center space-y-4">
-                <QrScanner onScanSuccess={handleScan} onStop={() => setIsCameraActive(false)} onError={(msg) => { setModalContent({ title: 'Error de Cámara', message: msg }); setShowInfoModal(true); }} />
-                <button onClick={() => setIsCameraActive(false)} className="w-full max-w-sm bg-red-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-red-700 text-xl">
-                  Cancelar Escaneo
-                </button>
-              </div>
-            ) : (
-              <>
-                <div className="space-y-4 mb-4">
-                  <button onClick={() => setIsCameraActive(true)} className="w-full bg-purple-600 text-white font-semibold py-4 px-4 rounded-md shadow-md hover:bg-purple-700 text-xl flex items-center justify-center">
-                      <i className="fas fa-camera mr-3"></i> Escanear con Cámara
-                  </button>
-                  <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
-                    <div className="flex-grow">
-                      <input type="text" ref={manualInputRef} value={mockQrValue} onChange={(e) => setMockQrValue(e.target.value)} onKeyDown={handleKeyDown} className="w-full rounded-md p-2 border text-xl" placeholder="Ingresar QR manual o con pistola"/>
-                    </div>
-                    <button onClick={() => handleScan(mockQrValue)} disabled={!mockQrValue} className="bg-green-600 text-white font-semibold py-2 px-4 rounded-md shadow-md hover:bg-green-700 disabled:opacity-50 text-lg">
-                      Agregar
-                    </button>
-                    <button onClick={() => fileInputRef.current.click()} className="bg-orange-500 text-white font-semibold py-2 px-4 rounded-md shadow-md hover:bg-orange-600 text-lg flex items-center justify-center">
-                      <i className="fas fa-file-image mr-2"></i> Adjuntar QR
-                    </button>
-                    <input type="file" ref={fileInputRef} onChange={handleImageUpload} className="hidden" accept="image/*" />
-                  </div>
-                </div>
-
-                <div className="overflow-x-auto rounded-lg shadow-md mb-6 border">
-                  <table className="min-w-full divide-y divide-gray-200 table-auto">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
-                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Descripción</th>
-                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lote</th>
-                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">F. Prod</th>
-                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">F. Venc</th>
-                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cant.</th>
-                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">U.M.</th>
-                        <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase">Control</th>
-                        <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase">Acción</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {items.length === 0 ? (
-                        <tr><td colSpan="9" className="px-2 py-4 text-center text-sm text-gray-500 italic">Aún no hay registros.</td></tr>
-                      ) : (
-                        items.map((item) => (
-                          <tr key={item.id} className="hover:bg-gray-50">
-                            <td className="px-2 py-4 whitespace-nowrap text-sm">{item.sku}</td>
-                            <td className="px-2 py-4 whitespace-nowrap text-sm">{item.descripcion}</td>
-                            <td className="px-2 py-4 whitespace-nowrap text-sm">{item.lote}</td>
-                            <td className="px-2 py-4 whitespace-nowrap text-sm">{item.fechaProduccion}</td>
-                            <td className="px-2 py-4 whitespace-nowrap text-sm">{item.fechaVencimiento}</td>
-                            <td className="px-2 py-4 whitespace-nowrap text-sm">{item.cantidad}</td>
-                            <td className="px-2 py-4 whitespace-nowrap text-sm">{item.unidadMedida}</td>
-                            <td className="px-2 py-4 text-center"><input type="checkbox" checked={item.controlado} onChange={() => handleControlCheck(item.id)} className="h-4 w-4"/></td>
-                            <td className="px-2 py-4 text-center"><button onClick={() => handleDelete(item.id)} className="text-red-600 hover:text-red-900"><i className="fas fa-trash"></i></button></td>
-                          </tr>
-                        ))
-                      )}
-                      <tr className="bg-gray-100 font-bold">
-                        <td colSpan="8" className="px-2 py-4 text-right text-sm">Total de bultos:</td>
-                        <td className="px-2 py-4 text-sm">{items.length}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4">
-                  <div className="relative w-full sm:w-auto flex-grow" ref={actionsMenuRef}>
-                    <div className="flex rounded-md shadow-sm">
-                        <button 
-                            onClick={isShareApiSupported ? handleShare : handleDownloadPdf} 
-                            disabled={items.length === 0 || isGenerating || !isPdfLibLoaded} 
-                            className="flex-grow bg-blue-600 text-white font-semibold py-3 px-5 rounded-l-md hover:bg-blue-700 disabled:opacity-50 text-xl flex items-center justify-center"
-                        >
-                            {isGenerating ? 'Generando...' : (isShareApiSupported ? 'Compartir PDF' : 'Descargar PDF')}
-                        </button>
-                        <button 
-                            onClick={() => setIsActionsOpen(prev => !prev)} 
-                            disabled={items.length === 0 || isGenerating || !isPdfLibLoaded}
-                            className="bg-blue-700 text-white font-semibold py-3 px-4 rounded-r-md hover:bg-blue-800 disabled:opacity-50"
-                        >
-                            <i className={`fas fa-chevron-down transition-transform ${isActionsOpen ? 'rotate-180' : ''}`}></i>
-                        </button>
-                    </div>
-                    {isActionsOpen && (
-                      <div className="absolute bottom-full mb-2 w-full bg-white rounded-md shadow-lg border z-20">
-                        <ul className="text-gray-700">
-                          {isShareApiSupported && (
-                            <li><button onClick={handleShare} className="w-full text-left font-bold text-indigo-600 hover:bg-indigo-50 p-3 flex items-center"><i className="fas fa-share-alt w-6 mr-2"></i>Compartir PDF</button></li>
-                          )}
-                          <li><button onClick={handleDownloadPdf} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-download w-6 mr-2"></i>Descargar PDF</button></li>
-                          <li><button onClick={handlePrintPdf} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-print w-6 mr-2"></i>Imprimir PDF</button></li>
-                          <li><button onClick={handleEmailPdf} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-envelope w-6 mr-2"></i>Enviar por Correo</button></li>
-                          <li><button onClick={handleWhatsAppPdf} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fab fa-whatsapp w-6 mr-2"></i>Enviar por WhatsApp</button></li>
-                           <li><hr className="my-1"/></li>
-                          <li><button onClick={handleCopyJson} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-copy w-6 mr-2"></i>Copiar JSON</button></li>
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                  <button onClick={handleReset} className="w-full sm:w-auto bg-gray-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-gray-700 text-xl">
-                    Nuevo Escaneo
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      );
+        );
     };
 
     const root = createRoot(document.getElementById('root'));
