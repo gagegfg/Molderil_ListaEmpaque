@@ -76,8 +76,8 @@
             const loaderProgress = document.getElementById('loader-progress');
 
             const loadingTasks = [
-                { status: "Inicializando...", duration: 500, progress: 25 },
-                { status: "Cargando lista de artículos...", duration: 1000, progress: 75, action: async () => {
+                { status: "Inicializando...", duration: 300, progress: 25 },
+                { status: "Cargando lista de artículos...", duration: 600, progress: 50, action: async () => {
                     try {
                         const response = await fetch('articulos.csv');
                         const text = await response.text();
@@ -90,6 +90,16 @@
                     } catch (error) {
                         console.error("Error loading articulos.csv:", error);
                         alert("Error al cargar la lista de artículos.");
+                    }
+                }},
+                { status: "Cargando último lote...", duration: 600, progress: 75, action: async () => {
+                    try {
+                        const response = await fetch('lotelogistica.txt');
+                        const lastLote = await response.text();
+                        setLote(parseInt(lastLote.trim()) + 1);
+                    } catch (error) {
+                        console.error("Error loading lotelogistica.txt:", error);
+                        setLote('Error al cargar');
                     }
                 }},
                 { status: "¡Listo!", duration: 500, progress: 100 }
@@ -138,7 +148,7 @@
 
         useEffect(() => {
             if (selectedArticulo) {
-                const specialTypes = ['TULIPAS', 'PIROTINES', 'MADALENAS'];
+                const specialTypes = ['TULIPAS', 'PIROTINES', 'MADALENAS', 'FUNDAS'];
                 if (specialTypes.includes(selectedArticulo.tipo)) {
                     setUom('Millar');
                 } else {
@@ -175,6 +185,7 @@
         };
         
         const handlePrint = () => {
+            alert("IMPORTANTE: Una vez impreso, el número de lote sugerido se incrementará. No se puede actualizar el archivo lotelogistica.txt automáticamente.");
             window.print();
         };
         
@@ -216,7 +227,7 @@
                                 )}
                             </div>
                              <div>
-                                <label className="block text-sm font-medium text-gray-700">Lote</label>
+                                <label className="block text-sm font-medium text-gray-700">Lote (Sugerido)</label>
                                 <input type="text" value={lote} onChange={e => setLote(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
                             </div>
                             <div>
