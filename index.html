@@ -230,7 +230,7 @@
     };
 
     // --- PACKING LIST SCANNER (PROCESS 2) ---
-    const PackingListScanner = ({ onBackToMenu }) => {
+    const PackingListScanner = ({ onBackToMenu, initialIsAppReady }) => {
         const [items, setItems] = useState([]);
         const [operarioLegajo, setOperarioLegajo] = useState('');
         const [clienteNombre, setClienteNombre] = useState('');
@@ -271,12 +271,12 @@
         }, []);
 
         useEffect(() => {
-            if (!isDataEntered && legajoInputRef.current) {
+            if (initialIsAppReady && !isDataEntered && legajoInputRef.current) {
                 legajoInputRef.current.focus();
             } else if (isDataEntered && manualInputRef.current) {
                 setTimeout(() => manualInputRef.current.focus(), 100);
             }
-        }, [isDataEntered]);
+        }, [initialIsAppReady, isDataEntered]);
         
         const parseSpanishNumber = (str) => {
             if (typeof str !== 'string') return NaN;
@@ -760,6 +760,64 @@
                     )}
                 </div>
             </div>
+        ) : (
+            <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+                {showInfoModal && <InfoModal onClose={() => setShowInfoModal(false)} title={modalContent.title} message={modalContent.message} />}
+                {showHelpModal && <HelpModal onClose={() => setShowHelpModal(false)} />}
+                <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md relative">
+                <button onClick={() => setShowHelpModal(true)} title="Ayuda" className="absolute top-4 right-4 text-gray-400 hover:text-indigo-600 transition-colors">
+                    <i className="fas fa-question-circle text-2xl"></i>
+                </button>
+                <h1 className="text-4xl font-extrabold text-center text-gray-900 mb-6">MOLDERIL S.A.</h1>
+                <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">Lista de Empaque</h2>
+                <div className="space-y-4">
+                    <div>
+                    <label htmlFor="legajo" className="block text-xl font-medium text-gray-700">Legajo</label>
+                    <input 
+                        type="text" 
+                        id="legajo" 
+                        ref={legajoInputRef} 
+                        value={operarioLegajo} 
+                        onChange={(e) => {
+                            const value = e.target.value.replace(/[^0-9]/g, '');
+                            setOperarioLegajo(value);
+                        }} 
+                        onKeyDown={handleFormEnter} 
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border text-2xl" 
+                        placeholder="Ej: 12345"
+                    />
+                    </div>
+                    <div className="relative" ref={clientInputRef}>
+                    <label htmlFor="cliente" className="block text-xl font-medium text-gray-700">Cliente</label>
+                    <input 
+                        type="text" 
+                        id="cliente" 
+                        value={clienteNombre} 
+                        onChange={(e) => { 
+                            setClienteNombre(e.target.value.toUpperCase()); 
+                            setShowSuggestions(true); 
+                        }} 
+                        onKeyDown={handleFormEnter} 
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border text-2xl" 
+                        placeholder="Buscar cliente..." 
+                        autoComplete="off"
+                    />
+                    {showSuggestions && clientList.filter(c => c.includes(clienteNombre)).length > 0 && (
+                        <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">
+                        {clientList.filter(c => c.includes(clienteNombre)).map(client => (
+                            <li key={client} className="p-2 hover:bg-indigo-100 cursor-pointer text-xl" onClick={() => { setClienteNombre(client); setShowSuggestions(false); }}>
+                            {client}
+                            </li>
+                        ))}
+                        </ul>
+                    )}
+                    </div>
+                    <button onClick={handleContinue} disabled={!operarioLegajo || !clienteNombre} className="w-full bg-indigo-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-indigo-700 disabled:opacity-50 text-xl">
+                    Continuar
+                    </button>
+                </div>
+                </div>
+            </div>
         );
     };
 
@@ -790,7 +848,7 @@
         }
 
         if (currentView === 'scanner') {
-            return <PackingListScanner onBackToMenu={() => setCurrentView('menu')} />;
+            return <PackingListScanner onBackToMenu={() => setCurrentView('menu')} initialIsAppReady={isAppReady} />;
         }
 
         return (
