@@ -635,6 +635,9 @@
             {showInfoModal && <InfoModal onClose={() => setShowInfoModal(false)} title={modalContent.title} message={modalContent.message} />}
             {showHelpModal && <HelpModal onClose={() => setShowHelpModal(false)} />}
             <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md relative">
+              <a href="index.html" title="Volver al Menú" className="absolute top-4 left-4 text-gray-400 hover:text-indigo-600 transition-colors">
+                  <i className="fas fa-arrow-left text-2xl"></i>
+              </a>
               <button onClick={() => setShowHelpModal(true)} title="Ayuda" className="absolute top-4 right-4 text-gray-400 hover:text-indigo-600 transition-colors">
                   <i className="fas fa-question-circle text-2xl"></i>
               </button>
@@ -840,6 +843,55 @@
           </div>
         </div>
       );
+    };
+
+    // --- MAIN APP ROUTER ---
+    const App = () => {
+        const [currentView, setCurrentView] = useState('menu'); // 'menu', 'generator', 'scanner'
+        const [isAppReady, setIsAppReady] = useState(false);
+
+        useEffect(() => {
+          const staticLoader = document.getElementById('static-loader');
+          setTimeout(() => {
+              if (staticLoader) {
+                  staticLoader.classList.add('opacity-0');
+                  setTimeout(() => {
+                      staticLoader.remove();
+                  }, 500);
+              }
+              setIsAppReady(true);
+          }, 2000);
+        }, []);
+
+        if (!isAppReady) {
+            return null;
+        }
+
+        if (currentView === 'generator') {
+            return <QrGenerator onBackToMenu={() => setCurrentView('menu')} />;
+        }
+
+        if (currentView === 'scanner') {
+            return <PackingListScanner onBackToMenu={() => setCurrentView('menu')} initialIsAppReady={isAppReady} />;
+        }
+
+        return (
+            <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+                <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md text-center">
+                    <h1 className="text-4xl font-extrabold text-gray-900 mb-8">MOLDERIL S.A.</h1>
+                    <div className="space-y-4">
+                        <button onClick={() => setCurrentView('generator')} className="w-full bg-blue-600 text-white font-semibold py-4 px-4 rounded-md shadow-md hover:bg-blue-700 text-2xl">
+                            <i className="fas fa-qrcode mr-3"></i>
+                            Generar Etiqueta QR
+                        </button>
+                        <button onClick={() => setCurrentView('scanner')} className="w-full bg-purple-600 text-white font-semibold py-4 px-4 rounded-md shadow-md hover:bg-purple-700 text-2xl">
+                            <i className="fas fa-barcode mr-3"></i>
+                            Escanear Lista de Empaque
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
     };
 
     const root = createRoot(document.getElementById('root'));
