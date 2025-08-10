@@ -165,15 +165,6 @@
         const [articulos, setArticulos] = useState([]);
 
         useEffect(() => {
-            const savedForm = localStorage.getItem('molderilFormData');
-            if (savedForm) {
-                const parsedForm = JSON.parse(savedForm);
-                setFormState(parsedForm);
-                if(parsedForm.selectedArticulo) {
-                    setFormState(prev => ({...prev, searchTerm: `${parsedForm.selectedArticulo.sku} - ${parsedForm.selectedArticulo.descripcion}`}));
-                }
-            }
-            
             const staticLoader = document.getElementById('static-loader');
             const loaderStatus = document.getElementById('loader-status');
             const loaderProgress = document.getElementById('loader-progress');
@@ -242,10 +233,6 @@
             };
             runLoadingTask();
         }, []);
-
-        useEffect(() => {
-            localStorage.setItem('molderilFormData', JSON.stringify(formState));
-        }, [formState]);
 
         const updateGitHubFile = async (nuevoContenido) => {
             const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${RUTA_DEL_ARCHIVO}`;
