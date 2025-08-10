@@ -278,7 +278,8 @@
                 </div>
                 <div className="border-b-2 border-black p-2 flex flex-col justify-center" style={{ height: '20%' }}>
                     <p className="text-sm">Artículo</p>
-                    <p className="font-bold leading-tight" style={{ fontSize: '2.5rem' }}>{data.descripcion}</p>
+                    {/* Aumento de 20% en el tamaño de la letra de la descripción */}
+                    <p className="font-bold leading-tight" style={{ fontSize: '3.0rem' }}>{data.descripcion}</p>
                     <div className="flex justify-between items-end mt-1">
                         <span className="font-semibold text-md">SKU: {data.sku}</span>
                         {data.lote && (
@@ -286,14 +287,16 @@
                         )}
                     </div>
                 </div>
-                <div className="border-b-2 border-black p-2 flex flex-col justify-center" style={{ height: '15%' }}>
+                {/* Disminución de 20% en el espacio de la cantidad */}
+                <div className="border-b-2 border-black p-2 flex flex-col justify-center" style={{ height: '12%' }}>
                     <p className="text-sm">Cantidad</p>
                     <p className="font-bold" style={{ fontSize: '4.5rem' }}>
                         {formatSpanishNumber(data.cantidad)} <span style={{ fontSize: '3rem' }}>{data.uom}</span>
                     </p>
                 </div>
                 <div className="flex-grow flex justify-center items-center" style={{ minHeight: '35%' }}>
-                    <div style={{ height: '90%', width: '90%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                    {/* Reducción de 5% en el tamaño del contenedor del QR */}
+                    <div style={{ height: '85%', width: '85%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                         <QrCanvas qrString={data.qrString} size={600} />
                     </div>
                 </div>
@@ -454,4 +457,3 @@
   </script>
 </body>
 </html>
-
