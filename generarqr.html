@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MOLDERIL - Generador de Etiquetas QR v2.1</title>
+  <title>MOLDERIL - Generador de Etiquetas QR v2.2</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet">
@@ -56,21 +56,21 @@
     }
 
     .label-article {
-        flex-grow: 3;
+        flex-grow: 2.7; /* Reducido 10% */
     }
     .label-article .title { font-size: 14pt; font-weight: 500; }
-    .label-article .description { font-size: 68pt; font-weight: 800; line-height: 1; }
+    .label-article .description { font-size: 61pt; font-weight: 800; line-height: 1; } /* Reducido 10% */
     .label-article .details { display: flex; justify-content: space-between; align-items: flex-end; margin-top: auto; font-size: 16pt; font-weight: 600; }
 
     .label-quantity {
-        flex-grow: 2;
+        flex-grow: 1.8; /* Reducido 10% */
     }
     .label-quantity .title { font-size: 14pt; font-weight: 500; }
-    .label-quantity .amount { font-size: 60pt; font-weight: 800; line-height: 1; }
-    .label-quantity .uom { font-size: 40pt; font-weight: 700; }
+    .label-quantity .amount { font-size: 54pt; font-weight: 800; line-height: 1; } /* Reducido 10% */
+    .label-quantity .uom { font-size: 36pt; font-weight: 700; } /* Reducido 10% */
 
     .label-qr {
-        flex-grow: 5;
+        flex-grow: 5.5; /* Aumentado para compensar */
         padding: 5mm;
         border-bottom: none;
     }
@@ -250,10 +250,10 @@
                     }),
                 });
                 if (!updateResponse.ok) throw new Error(`Error ${updateResponse.status}: Falló la actualización.`);
-                alert(`Lote ${nuevoContenido} guardado correctamente en GitHub.`);
+                console.log(`Lote ${nuevoContenido} guardado correctamente en GitHub.`);
                 return true;
             } catch (error) {
-                alert(`ERROR: No se pudo guardar el lote en GitHub.\n\n${error.message}\n\nPor favor, actualícelo manualmente.`);
+                console.error(`ERROR: No se pudo guardar el lote en GitHub. ${error.message}`);
                 return false;
             }
         };
@@ -352,9 +352,11 @@
         
         const handleNewPrint = () => {
             const numEtiquetas = parseInt(formState.cantidadEtiquetas, 10);
-            setLoteLogistico(prev => parseInt(prev, 10) + numEtiquetas);
-            setIsPrintDone(false);
+            const newLote = parseInt(loteLogistico, 10) + numEtiquetas;
+            setLoteLogistico(newLote);
+            setFormState(initialFormState);
             setGeneratedData(null);
+            setIsPrintDone(false);
         };
 
         const filteredArticulos = formState.searchTerm ? articulos.filter(art => art.sku.toLowerCase().includes(formState.searchTerm.toLowerCase()) || art.descripcion.toLowerCase().includes(formState.searchTerm.toLowerCase())) : [];
