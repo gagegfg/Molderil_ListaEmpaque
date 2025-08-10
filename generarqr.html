@@ -143,6 +143,7 @@
         const [printData, setPrintData] = useState([]);
         const [errors, setErrors] = useState({});
         const [isPrintDone, setIsPrintDone] = useState(false);
+        const [articulos, setArticulos] = useState([]);
 
         // --- Carga inicial de datos y autoguardado ---
         useEffect(() => {
@@ -179,16 +180,33 @@
             const fetchArticulos = async () => {
                 try {
                     const response = await fetch('articulos.csv');
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status} - ${response.statusText}. Asegúrese de que el archivo 'articulos.csv' exista en el repositorio.`);
+                    }
                     const text = await response.text();
                     const rows = text.split('\n').slice(1);
-                    const parsedArticulos = rows.map(row => {
-                        const [tipo_articulo, codigo_articulo, descripcion] = row.split(';');
-                        return { tipo: tipo_articulo?.trim().toUpperCase(), sku: codigo_articulo, descripcion: descripcion?.trim() };
-                    }).filter(art => art.sku && art.descripcion);
+                    const parsedArticulos = rows
+                        .map(row => {
+                            if (!row.trim()) return null; // Ignorar líneas vacías
+                            const parts = row.split(';');
+                            if (parts.length < 3) return null; // Ignorar líneas malformadas
+                            const [tipo_articulo, codigo_articulo, descripcion] = parts;
+                            return { 
+                                tipo: tipo_articulo?.trim().toUpperCase(), 
+                                sku: codigo_articulo?.trim(), 
+                                descripcion: descripcion?.trim() 
+                            };
+                        })
+                        .filter(art => art && art.sku && art.descripcion); // Filtrar nulos y artículos inválidos
+                    
+                    if (parsedArticulos.length === 0) {
+                        throw new Error("El archivo 'articulos.csv' está vacío o no tiene el formato correcto (separado por punto y coma).");
+                    }
+
                     setArticulos(parsedArticulos);
                 } catch (error) {
                     console.error("Error loading articulos.csv:", error);
-                    alert("Error al cargar la lista de artículos.");
+                    alert(`Error al cargar la lista de artículos: ${error.message}`);
                 }
             };
 
