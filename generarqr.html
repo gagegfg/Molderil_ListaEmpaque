@@ -15,12 +15,15 @@
       height: 297mm;
       padding: 1cm;
       box-sizing: border-box;
+      display: flex;
+      flex-direction: column; /* Organiza el contenido verticalmente */
       page-break-after: always;
     }
     @media print {
       body * { visibility: hidden; }
       #print-section, #print-section * { visibility: visible; }
       #print-section { position: absolute; left: 0; top: 0; }
+      .no-print { display: none; } /* Oculta elementos que no deben imprimirse */
     }
   </style>
 </head>
@@ -61,7 +64,6 @@
           });
         }
       }, [qrString, size]);
-      {/* --- ÚLTIMO CAMBIO: Se añade un estilo para forzar el tamaño de visualización --- */}
       return <canvas ref={canvasRef} style={{ width: '100%', height: '100%' }}></canvas>;
     };
 
@@ -81,7 +83,6 @@
         const [generatedData, setGeneratedData] = useState(null);
         const [printData, setPrintData] = useState([]);
         
-        // --- LÓGICA DE CARGA INICIAL ---
         useEffect(() => {
             const staticLoader = document.getElementById('static-loader');
             const loaderStatus = document.getElementById('loader-status');
@@ -196,7 +197,7 @@
         useEffect(() => {
             if (printData.length > 0) {
                 window.print();
-                setPrintData([]); // Limpiar después de imprimir
+                setPrintData([]);
             }
         }, [printData]);
 
@@ -269,12 +270,16 @@
         const filteredArticulos = searchTerm ? articulos.filter(art => art.sku.toLowerCase().includes(searchTerm.toLowerCase()) || art.descripcion.toLowerCase().includes(searchTerm.toLowerCase())) : [];
         const formatSpanishNumber = (num) => isNaN(num) ? '' : new Intl.NumberFormat('es-ES').format(num);
 
+        // --- COMPONENTE DE LA ETIQUETA VISUAL CON NUEVOS ESTILOS ---
         const LabelComponent = ({ data }) => (
             <div className="text-black h-full flex flex-col border-2 border-black">
-                <div className="text-center border-b-2 border-black pb-2"><h2 className="text-2xl font-bold">MOLDERIL S.A.</h2></div>
-                <div className="border-b-2 border-black p-2">
+                <div className="text-center border-b-2 border-black pb-2">
+                    <h2 className="text-2xl font-bold">MOLDERIL S.A.</h2>
+                </div>
+                {/* --- SECCIÓN DE DESCRIPCIÓN CON MÁS ESPACIO Y TEXTO MÁS GRANDE --- */}
+                <div className="border-b-2 border-black p-2 flex flex-col justify-center" style={{ height: '20%' }}>
                     <p className="text-sm">Artículo</p>
-                    <p className="font-bold text-[2.7rem] leading-tight">{data.descripcion}</p>
+                    <p className="font-bold leading-tight" style={{ fontSize: '2.5rem' }}>{data.descripcion}</p>
                     <div className="flex justify-between items-end mt-1">
                         <span className="font-semibold text-md">SKU: {data.sku}</span>
                         {data.lote && (
@@ -282,19 +287,24 @@
                         )}
                     </div>
                 </div>
-                <div className="border-b-2 border-black p-2">
+                {/* --- SECCIÓN DE CANTIDAD CON MÁS ESPACIO Y TEXTO MÁS GRANDE --- */}
+                <div className="border-b-2 border-black p-2 flex flex-col justify-center" style={{ height: '15%' }}>
                     <p className="text-sm">Cantidad</p>
-                    <p className="font-bold text-5xl">{formatSpanishNumber(data.cantidad)} <span className="text-3xl">{data.uom}</span></p>
+                    <p className="font-bold" style={{ fontSize: '4.5rem' }}>
+                        {formatSpanishNumber(data.cantidad)} <span style={{ fontSize: '3rem' }}>{data.uom}</span>
+                    </p>
                 </div>
-                <div className="flex-grow flex justify-center items-center">
-                    <div style={{ height: '80%', width: '80%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                {/* --- SECCIÓN DEL QR CODE --- */}
+                <div className="flex-grow flex justify-center items-center" style={{ minHeight: '35%' }}>
+                    <div style={{ height: '90%', width: '90%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                         <QrCanvas qrString={data.qrString} size={600} />
                     </div>
                 </div>
-                <div className="grid grid-cols-3 text-center text-sm border-t-2 border-black pt-2">
+                {/* --- SECCIÓN DEL PIE DE PÁGINA CON TEXTO MÁS GRANDE --- */}
+                <div className="grid grid-cols-3 text-center border-t-2 border-black pt-2" style={{ fontSize: '1.125rem' }}>
                     <div>
                         <p className="font-bold">Lote Logístico</p>
-                        <p className="text-2xl font-bold">{data.palletId}</p>
+                        <p className="font-bold" style={{ fontSize: '2.25rem' }}>{data.palletId}</p>
                     </div>
                     <div>
                         <p className="font-bold">Fabricación</p>
@@ -389,11 +399,16 @@
                     </div>
                 </div>
 
-                {/* Esta sección solo es visible al imprimir */}
+                {/* --- SECCIÓN DE IMPRESIÓN CON BOTÓN EN LA CABECERA --- */}
                 <div id="print-section">
                     {printData.map((labelData, index) => (
                         <div key={index} className="label-print-page">
-                            <LabelComponent data={labelData} />
+                            <div className="print-header no-print">
+                                <button onClick={() => window.print()}>Imprimir y Guardar Lotes</button>
+                            </div>
+                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                                <LabelComponent data={labelData} />
+                            </div>
                         </div>
                     ))}
                 </div>
