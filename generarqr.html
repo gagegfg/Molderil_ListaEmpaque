@@ -61,7 +61,8 @@
           });
         }
       }, [qrString, size]);
-      return <canvas ref={canvasRef}></canvas>;
+      {/* --- ÚLTIMO CAMBIO: Se añade un estilo para forzar el tamaño de visualización --- */}
+      return <canvas ref={canvasRef} style={{ width: '100%', height: '100%' }}></canvas>;
     };
 
     const App = () => {
@@ -255,14 +256,13 @@
             }
         }, [selectedArticulo]);
 
-        // --- NUEVA FUNCIÓN: Validador para el campo Operario ---
         const handleOperarioChange = (e) => {
             const value = e.target.value;
-            const numericValue = value.replace(/[^0-9]/g, ''); // Solo permite números
+            const numericValue = value.replace(/[^0-9]/g, '');
             if (numericValue === '') {
                 setOperario('');
             } else {
-                setOperario(String(parseInt(numericValue, 10))); // Remueve ceros a la izquierda
+                setOperario(String(parseInt(numericValue, 10)));
             }
         };
         
@@ -277,7 +277,6 @@
                     <p className="font-bold text-[2.7rem] leading-tight">{data.descripcion}</p>
                     <div className="flex justify-between items-end mt-1">
                         <span className="font-semibold text-md">SKU: {data.sku}</span>
-                        {/* --- NUEVO CAMBIO: Renderizado condicional del Lote de Producción --- */}
                         {data.lote && (
                              <span className="font-semibold text-md">Lote Prod: {data.lote}</span>
                         )}
@@ -321,7 +320,6 @@
                             <div className="space-y-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">Operario (Legajo)</label>
-                                    {/* --- NUEVO CAMBIO: Se usa el validador handleOperarioChange --- */}
                                     <input type="text" value={operario} onChange={handleOperarioChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" placeholder="Solo números" />
                                 </div>
                                 <div className="relative">
