@@ -421,7 +421,7 @@
             let rawToken = await response.text();
             
             // Eliminar las frases específicas de la cadena
-            rawToken = rawToken.replace(/aaaaa/g, '').replace(/bbbb/g, '').replace(/cccc/g, '');
+            rawToken = rawToken.replace(/aaaa/g, '').replace(/bbbb/g, '').replace(/cccc/g, '');
             
             return rawToken.trim(); // Devuelve la clave limpia
         } catch (error) {
@@ -454,3 +454,4 @@
   </script>
 </body>
 </html>
+
