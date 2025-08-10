@@ -276,10 +276,10 @@
                 <div className="text-center border-b-2 border-black pb-2">
                     <h2 className="text-2xl font-bold">MOLDERIL S.A.</h2>
                 </div>
-                <div className="border-b-2 border-black p-2 flex flex-col justify-center" style={{ height: '20%' }}>
+                {/* --- SECCIÓN DE DESCRIPCIÓN MÁS PROMINENTE --- */}
+                <div className="border-b-2 border-black p-2 flex flex-col justify-center" style={{ height: '25%' }}>
                     <p className="text-sm">Artículo</p>
-                    {/* Aumento de 20% en el tamaño de la letra de la descripción */}
-                    <p className="font-bold leading-tight" style={{ fontSize: '3.0rem' }}>{data.descripcion}</p>
+                    <p className="font-bold leading-tight" style={{ fontSize: '4.5rem' }}>{data.descripcion}</p>
                     <div className="flex justify-between items-end mt-1">
                         <span className="font-semibold text-md">SKU: {data.sku}</span>
                         {data.lote && (
@@ -287,15 +287,14 @@
                         )}
                     </div>
                 </div>
-                {/* Disminución de 20% en el espacio de la cantidad */}
+                {/* --- SECCIÓN DE CANTIDAD MENOS PROMINENTE --- */}
                 <div className="border-b-2 border-black p-2 flex flex-col justify-center" style={{ height: '12%' }}>
                     <p className="text-sm">Cantidad</p>
-                    <p className="font-bold" style={{ fontSize: '4.5rem' }}>
-                        {formatSpanishNumber(data.cantidad)} <span style={{ fontSize: '3rem' }}>{data.uom}</span>
+                    <p className="font-bold" style={{ fontSize: '3.5rem' }}>
+                        {formatSpanishNumber(data.cantidad)} <span style={{ fontSize: '2.5rem' }}>{data.uom}</span>
                     </p>
                 </div>
-                <div className="flex-grow flex justify-center items-center" style={{ minHeight: '35%' }}>
-                    {/* Reducción de 5% en el tamaño del contenedor del QR */}
+                <div className="flex-grow flex justify-center items-center" style={{ minHeight: '33%' }}>
                     <div style={{ height: '85%', width: '85%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                         <QrCanvas qrString={data.qrString} size={600} />
                     </div>
