@@ -47,9 +47,8 @@
     const { createRoot } = ReactDOM;
 
     // =================================================================
-    // ### CONFIGURACIÓN: RELLENA ESTOS 4 VALORES CON TUS DATOS ###
+    // ### CONFIGURACIÓN: DATOS DEL REPOSITORIO ###
     // =================================================================
-    const GITHUB_TOKEN = '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'; // Recuerda la advertencia de seguridad sobre esta clave.
     const USUARIO_GITHUB = 'gagegfg'; 
     const REPO_NOMBRE = 'Molderil_ListaEmpaque';
     const RUTA_DEL_ARCHIVO = 'lotelogistica.txt'; 
@@ -67,7 +66,8 @@
       return <canvas ref={canvasRef} style={{ width: '100%', height: '100%' }}></canvas>;
     };
 
-    const App = () => {
+    // El componente App ahora recibe el token como una propiedad (prop)
+    const App = ({ apiToken }) => {
         const [operario, setOperario] = useState('');
         const [articulos, setArticulos] = useState([]);
         const [searchTerm, setSearchTerm] = useState('');
@@ -149,15 +149,16 @@
             runLoadingTask();
         }, []);
 
+        // La función de actualización ahora usa el token recibido por props
         const updateGitHubFile = async (nuevoContenido) => {
             const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${RUTA_DEL_ARCHIVO}`;
             try {
-                const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${GITHUB_TOKEN}` } });
+                const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${apiToken}` } });
                 if (!fileResponse.ok) throw new Error(`Error ${fileResponse.status}: No se pudo obtener info del archivo.`);
                 const fileData = await fileResponse.json();
                 const updateResponse = await fetch(url, {
                     method: 'PUT',
-                    headers: { 'Authorization': `token ${GITHUB_TOKEN}`, 'Content-Type': 'application/json' },
+                    headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         message: `Actualizando lote a ${nuevoContenido}`,
                         content: btoa(String(nuevoContenido)),
@@ -270,13 +271,11 @@
         const filteredArticulos = searchTerm ? articulos.filter(art => art.sku.toLowerCase().includes(searchTerm.toLowerCase()) || art.descripcion.toLowerCase().includes(searchTerm.toLowerCase())) : [];
         const formatSpanishNumber = (num) => isNaN(num) ? '' : new Intl.NumberFormat('es-ES').format(num);
 
-        // --- COMPONENTE DE LA ETIQUETA VISUAL CON NUEVOS ESTILOS ---
         const LabelComponent = ({ data }) => (
             <div className="text-black h-full flex flex-col border-2 border-black">
                 <div className="text-center border-b-2 border-black pb-2">
                     <h2 className="text-2xl font-bold">MOLDERIL S.A.</h2>
                 </div>
-                {/* --- SECCIÓN DE DESCRIPCIÓN CON MÁS ESPACIO Y TEXTO MÁS GRANDE --- */}
                 <div className="border-b-2 border-black p-2 flex flex-col justify-center" style={{ height: '20%' }}>
                     <p className="text-sm">Artículo</p>
                     <p className="font-bold leading-tight" style={{ fontSize: '2.5rem' }}>{data.descripcion}</p>
@@ -287,20 +286,17 @@
                         )}
                     </div>
                 </div>
-                {/* --- SECCIÓN DE CANTIDAD CON MÁS ESPACIO Y TEXTO MÁS GRANDE --- */}
                 <div className="border-b-2 border-black p-2 flex flex-col justify-center" style={{ height: '15%' }}>
                     <p className="text-sm">Cantidad</p>
                     <p className="font-bold" style={{ fontSize: '4.5rem' }}>
                         {formatSpanishNumber(data.cantidad)} <span style={{ fontSize: '3rem' }}>{data.uom}</span>
                     </p>
                 </div>
-                {/* --- SECCIÓN DEL QR CODE --- */}
                 <div className="flex-grow flex justify-center items-center" style={{ minHeight: '35%' }}>
                     <div style={{ height: '90%', width: '90%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                         <QrCanvas qrString={data.qrString} size={600} />
                     </div>
                 </div>
-                {/* --- SECCIÓN DEL PIE DE PÁGINA CON TEXTO MÁS GRANDE --- */}
                 <div className="grid grid-cols-3 text-center border-t-2 border-black pt-2" style={{ fontSize: '1.125rem' }}>
                     <div>
                         <p className="font-bold">Lote Logístico</p>
@@ -399,7 +395,6 @@
                     </div>
                 </div>
 
-                {/* --- SECCIÓN DE IMPRESIÓN CON BOTÓN EN LA CABECERA --- */}
                 <div id="print-section">
                     {printData.map((labelData, index) => (
                         <div key={index} className="label-print-page">
@@ -416,11 +411,46 @@
         );
     };
 
-    const rootElement = document.getElementById('root');
-    const root = createRoot(rootElement);
-    root.render(<App />);
+    // --- NUEVA LÓGICA PARA CARGAR Y PROCESAR LA CLAVE DE API ---
+    async function getApiToken() {
+        try {
+            const response = await fetch('cls.txt');
+            if (!response.ok) {
+                throw new Error('No se pudo cargar el archivo de clave (cls.txt).');
+            }
+            let rawToken = await response.text();
+            
+            // Eliminar las frases específicas de la cadena
+            rawToken = rawToken.replace(/aaaaa/g, '').replace(/bbbb/g, '').replace(/cccc/g, '');
+            
+            return rawToken.trim(); // Devuelve la clave limpia
+        } catch (error) {
+            console.error("Error crítico al obtener el token:", error);
+            alert("Error crítico: No se pudo obtener la clave de API. La aplicación no puede continuar.");
+            return null;
+        }
+    }
+
+    // --- INICIO DE LA APLICACIÓN ---
+    // Se usa una función asíncrona autoejecutable para esperar el token antes de renderizar
+    (async () => {
+        const token = await getApiToken();
+        
+        if (token) {
+            // Si el token se obtiene correctamente, se renderiza la aplicación y se le pasa el token
+            const rootElement = document.getElementById('root');
+            const root = createRoot(rootElement);
+            root.render(<App apiToken={token} />);
+        } else {
+            // Si no se puede obtener el token, se muestra un error y no se carga la app
+            const loaderStatus = document.getElementById('loader-status');
+            if(loaderStatus) {
+                loaderStatus.textContent = "Error fatal: No se pudo iniciar la aplicación.";
+                loaderStatus.style.color = 'red';
+            }
+        }
+    })();
+
   </script>
 </body>
 </html>
-
-
