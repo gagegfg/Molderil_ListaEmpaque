@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MOLDERIL - Generador de Etiquetas QR v2.0</title>
+  <title>MOLDERIL - Generador de Etiquetas QR v2.1</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800&display=swap" rel="stylesheet">
@@ -19,7 +19,6 @@
     
     /* --- ESTILOS PARA LA IMPRESIÓN Y LA VISTA PREVIA --- */
     
-    /* Contenedor de la página A4 para la impresión */
     .label-print-page {
       width: 210mm;
       height: 297mm;
@@ -31,17 +30,65 @@
       background-color: white;
     }
 
-    /* Contenedor de la etiqueta en sí, diseñado para A4 */
     .label-container {
         width: 190mm;
         height: 277mm;
-        border: 3px solid black;
+        border: 1mm solid black;
         display: flex;
         flex-direction: column;
         color: black;
+        box-sizing: border-box;
     }
 
-    /* Contenedor para la vista previa en pantalla */
+    .label-section {
+        border-bottom: 1mm solid black;
+        padding: 4mm;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+
+    .label-header {
+        text-align: center;
+        font-size: 48pt;
+        font-weight: 800; /* extrabold */
+        flex-grow: 1;
+    }
+
+    .label-article {
+        flex-grow: 3;
+    }
+    .label-article .title { font-size: 14pt; font-weight: 500; }
+    .label-article .description { font-size: 68pt; font-weight: 800; line-height: 1; }
+    .label-article .details { display: flex; justify-content: space-between; align-items: flex-end; margin-top: auto; font-size: 16pt; font-weight: 600; }
+
+    .label-quantity {
+        flex-grow: 2;
+    }
+    .label-quantity .title { font-size: 14pt; font-weight: 500; }
+    .label-quantity .amount { font-size: 60pt; font-weight: 800; line-height: 1; }
+    .label-quantity .uom { font-size: 40pt; font-weight: 700; }
+
+    .label-qr {
+        flex-grow: 5;
+        padding: 5mm;
+        border-bottom: none;
+    }
+    .label-qr-inner { width: 100%; height: 100%; }
+
+    .label-footer {
+        border-top: 1mm solid black;
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        text-align: center;
+        font-size: 16pt;
+        padding: 4mm;
+    }
+    .label-footer .title { font-weight: 700; }
+    .label-footer .value { font-weight: 500; }
+    .label-footer .lote-value { font-size: 52pt; font-weight: 800; }
+
+
     #preview-container {
         width: 100%;
         height: 100%;
@@ -56,28 +103,12 @@
     }
     
     @media print {
-      body, html {
-        margin: 0;
-        padding: 0;
-      }
-      .no-print { 
-        display: none !important; 
-      }
-      .label-print-page {
-        padding: 0;
-        margin: 0;
-      }
-      body * { 
-        visibility: hidden; 
-      }
-      #print-section, #print-section * { 
-        visibility: visible; 
-      }
-      #print-section { 
-        position: absolute; 
-        left: 0; 
-        top: 0; 
-      }
+      body, html { margin: 0; padding: 0; }
+      .no-print { display: none !important; }
+      .label-print-page { padding: 0; margin: 0; }
+      body * { visibility: hidden; }
+      #print-section, #print-section * { visibility: visible; }
+      #print-section { position: absolute; left: 0; top: 0; }
     }
   </style>
 </head>
@@ -104,37 +135,25 @@
     const REPO_NOMBRE = 'Molderil_ListaEmpaque';
     const RUTA_DEL_ARCHIVO = 'lotelogistica.txt'; 
 
-    // --- COMPONENTE QR: AHORA GENERA UNA IMAGEN (<img>) ---
     const QrImage = ({ qrString, size }) => {
         const [imageUrl, setImageUrl] = useState('');
-
         useEffect(() => {
             if (qrString) {
-                QRCode.toDataURL(qrString, { width: size, margin: 2 }, (err, url) => {
-                    if (err) {
-                        console.error(err);
-                        return;
-                    }
+                QRCode.toDataURL(qrString, { width: size, margin: 2, errorCorrectionLevel: 'H' }, (err, url) => {
+                    if (err) { console.error(err); return; }
                     setImageUrl(url);
                 });
             }
         }, [qrString, size]);
-
         if (!imageUrl) return null;
         return <img src={imageUrl} alt="Código QR" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />;
     };
 
     const App = ({ apiToken }) => {
         const initialFormState = {
-            operario: '',
-            searchTerm: '',
-            selectedArticulo: null,
-            loteProduccion: '',
-            cantidad: '',
-            uom: 'Unidad',
-            cantidadEtiquetas: 1,
+            operario: '', searchTerm: '', selectedArticulo: null,
+            loteProduccion: '', cantidad: '', uom: 'Unidad', cantidadEtiquetas: 1,
         };
-
         const [formState, setFormState] = useState(initialFormState);
         const [loteLogistico, setLoteLogistico] = useState('');
         const [fechaProd, setFechaProd] = useState(new Date().toISOString().split('T')[0]);
@@ -145,13 +164,11 @@
         const [isPrintDone, setIsPrintDone] = useState(false);
         const [articulos, setArticulos] = useState([]);
 
-        // --- Carga inicial de datos y autoguardado ---
         useEffect(() => {
             const savedForm = localStorage.getItem('molderilFormData');
             if (savedForm) {
                 const parsedForm = JSON.parse(savedForm);
                 setFormState(parsedForm);
-                // Si había un artículo seleccionado, lo restauramos
                 if(parsedForm.selectedArticulo) {
                     setFormState(prev => ({...prev, searchTerm: `${parsedForm.selectedArticulo.sku} - ${parsedForm.selectedArticulo.descripcion}`}));
                 }
@@ -180,33 +197,21 @@
             const fetchArticulos = async () => {
                 try {
                     const response = await fetch('articulos.csv');
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status} - ${response.statusText}. Asegúrese de que el archivo 'articulos.csv' exista en el repositorio.`);
-                    }
+                    if (!response.ok) throw new Error(`HTTP ${response.status}. Asegúrese de que 'articulos.csv' exista.`);
                     const text = await response.text();
                     const rows = text.split('\n').slice(1);
-                    const parsedArticulos = rows
-                        .map(row => {
-                            if (!row.trim()) return null; // Ignorar líneas vacías
-                            const parts = row.split(';');
-                            if (parts.length < 3) return null; // Ignorar líneas malformadas
-                            const [tipo_articulo, codigo_articulo, descripcion] = parts;
-                            return { 
-                                tipo: tipo_articulo?.trim().toUpperCase(), 
-                                sku: codigo_articulo?.trim(), 
-                                descripcion: descripcion?.trim() 
-                            };
-                        })
-                        .filter(art => art && art.sku && art.descripcion); // Filtrar nulos y artículos inválidos
-                    
-                    if (parsedArticulos.length === 0) {
-                        throw new Error("El archivo 'articulos.csv' está vacío o no tiene el formato correcto (separado por punto y coma).");
-                    }
-
+                    const parsedArticulos = rows.map(row => {
+                        if (!row.trim()) return null;
+                        const parts = row.split(';');
+                        if (parts.length < 3) return null;
+                        const [tipo_articulo, codigo_articulo, descripcion] = parts;
+                        return { tipo: tipo_articulo?.trim().toUpperCase(), sku: codigo_articulo?.trim(), descripcion: descripcion?.trim() };
+                    }).filter(art => art && art.sku && art.descripcion);
+                    if (parsedArticulos.length === 0) throw new Error("'articulos.csv' está vacío o mal formado.");
                     setArticulos(parsedArticulos);
                 } catch (error) {
                     console.error("Error loading articulos.csv:", error);
-                    alert(`Error al cargar la lista de artículos: ${error.message}`);
+                    alert(`Error al cargar artículos: ${error.message}`);
                 }
             };
 
@@ -219,21 +224,21 @@
 
             let currentTask = 0;
             const runLoadingTask = () => {
-                if (currentTask < loadingTasks.length) {
-                    const task = loadingTasks[currentTask];
-                    if (loaderStatus) loaderStatus.textContent = task.status;
-                    if (loaderProgress) loaderProgress.style.width = `${task.progress}%`;
-                    if (task.action) task.action();
-                    setTimeout(() => {
-                        currentTask++;
-                        runLoadingTask();
-                    }, task.duration);
-                } else {
+                if (currentTask >= loadingTasks.length) {
                     if (staticLoader) {
                         staticLoader.classList.add('opacity-0');
                         setTimeout(() => staticLoader.remove(), 500);
                     }
+                    return;
                 }
+                const task = loadingTasks[currentTask];
+                if (loaderStatus) loaderStatus.textContent = task.status;
+                if (loaderProgress) loaderProgress.style.width = `${task.progress}%`;
+                if (task.action) task.action();
+                setTimeout(() => {
+                    currentTask++;
+                    runLoadingTask();
+                }, task.duration);
             };
             runLoadingTask();
         }, []);
@@ -269,18 +274,15 @@
         const handlePrint = async () => {
             const numEtiquetas = parseInt(formState.cantidadEtiquetas, 10);
             const loteInicial = parseInt(loteLogistico, 10);
-            
             const ultimoLoteAGuardar = loteInicial + numEtiquetas - 1;
             const isConfirmed = window.confirm(`Se prepararán ${numEtiquetas} etiquetas, desde el lote ${loteInicial} hasta el ${ultimoLoteAGuardar}.\n\nAl confirmar, se guardará el número ${ultimoLoteAGuardar} en GitHub.`);
-
             if (isConfirmed) {
                 const success = await updateGitHubFile(ultimoLoteAGuardar);
                 if (success) {
-                    let labels = [];
-                    for (let i = 0; i < numEtiquetas; i++) {
-                        const currentLot = loteInicial + i;
-                        labels.push({ ...generatedData, palletId: currentLot });
-                    }
+                    let labels = Array.from({ length: numEtiquetas }, (_, i) => ({
+                        ...generatedData,
+                        palletId: loteInicial + i,
+                    }));
                     setPrintData(labels);
                     setIsPrintDone(true);
                 }
@@ -309,39 +311,22 @@
                 return;
             }
             setIsPrintDone(false);
-
             const formatQrDate = (dateString) => {
                 if (!dateString) return '';
                 const date = new Date(dateString + 'T00:00:00');
-                const day = String(date.getDate()).padStart(2, '0');
-                const month = String(date.getMonth() + 1).padStart(2, '0');
-                const year = date.getFullYear();
-                return `${day}/${month}/${year}`;
+                return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
             };
-
             const qrDataForCode = [
-                formState.selectedArticulo.sku || '',
-                formState.selectedArticulo.descripcion || '',
-                formState.loteProduccion || '',
-                formatQrDate(fechaProd),
-                formatQrDate(fechaVenc),
-                formState.cantidad.replace(',', '.') || '',
-                formState.uom || ''
+                formState.selectedArticulo.sku || '', formState.selectedArticulo.descripcion || '',
+                formState.loteProduccion || '', formatQrDate(fechaProd), formatQrDate(fechaVenc),
+                formState.cantidad.replace(',', '.') || '', formState.uom || ''
             ].join(';');
-
-            const dataForLabel = {
-                sku: formState.selectedArticulo.sku,
-                descripcion: formState.selectedArticulo.descripcion,
-                lote: formState.loteProduccion,
-                cantidad: parseFloat(formState.cantidad.replace(',', '.')),
-                uom: formState.uom,
-                fechaProd,
-                fechaVenc,
-                operario: formState.operario,
-                palletId: loteLogistico,
-                qrString: qrDataForCode
-            };
-            setGeneratedData(dataForLabel);
+            setGeneratedData({
+                sku: formState.selectedArticulo.sku, descripcion: formState.selectedArticulo.descripcion,
+                lote: formState.loteProduccion, cantidad: parseFloat(formState.cantidad.replace(',', '.')),
+                uom: formState.uom, fechaProd, fechaVenc, operario: formState.operario,
+                palletId: loteLogistico, qrString: qrDataForCode
+            });
         };
         
         useEffect(() => {
@@ -355,22 +340,14 @@
         useEffect(() => {
             if (formState.selectedArticulo) {
                 const specialTypes = ['TULIPAS', 'PIROTINES', 'MADALENAS', 'FUNDAS'];
-                if (specialTypes.includes(formState.selectedArticulo.tipo)) {
-                    handleFormChange('uom', 'Millar');
-                } else {
-                    handleFormChange('uom', 'Unidad');
-                }
+                handleFormChange('uom', specialTypes.includes(formState.selectedArticulo.tipo) ? 'Millar' : 'Unidad');
             }
         }, [formState.selectedArticulo]);
 
         const handleFormChange = (field, value) => {
             setFormState(prev => ({ ...prev, [field]: value }));
             if (errors[field]) {
-                setErrors(prev => {
-                    const newErrors = {...prev};
-                    delete newErrors[field];
-                    return newErrors;
-                });
+                setErrors(prev => { const newErrors = {...prev}; delete newErrors[field]; return newErrors; });
             }
         };
 
@@ -380,12 +357,9 @@
         };
 
         const handleCantidadChange = (e) => {
-            let value = e.target.value;
-            value = value.replace(/[^0-9,]/g, ''); // Solo números y comas
+            let value = e.target.value.replace(/[^0-9,]/g, '');
             const parts = value.split(',');
-            if (parts.length > 2) { // Solo una coma permitida
-                value = parts[0] + ',' + parts.slice(1).join('');
-            }
+            if (parts.length > 2) value = parts[0] + ',' + parts.slice(1).join('');
             handleFormChange('cantidad', value);
         };
         
@@ -400,52 +374,43 @@
         const formatSpanishNumber = (num) => {
             if (isNaN(num)) return '';
             const [integer, decimal] = String(num).split('.');
-            const formattedInteger = new Intl.NumberFormat('es-ES').format(integer);
-            return decimal ? `${formattedInteger},${decimal}` : formattedInteger;
+            return decimal ? `${new Intl.NumberFormat('es-ES').format(integer)},${decimal}` : new Intl.NumberFormat('es-ES').format(integer);
         };
         
         const LabelComponent = ({ data }) => (
             <div className="label-container">
-                <div className="text-center border-b-[3px] border-black p-4">
-                    <h2 className="text-5xl font-extrabold">MOLDERIL S.A.</h2>
-                </div>
-                
-                <div className="border-b-[3px] border-black p-4 flex flex-col justify-center flex-grow-[3]">
-                    <p className="text-2xl font-medium">Artículo</p>
-                    <p className="font-extrabold leading-none" style={{ fontSize: '6rem' }}>{data.descripcion}</p>
-                    <div className="flex justify-between items-end mt-2 text-2xl">
-                        <span className="font-semibold">SKU: {data.sku}</span>
-                        {data.lote && (
-                             <span className="font-semibold">Lote Prod: {data.lote}</span>
-                        )}
+                <div className="label-section label-header">MOLDERIL S.A.</div>
+                <div className="label-section label-article">
+                    <p className="title">Artículo</p>
+                    <p className="description">{data.descripcion}</p>
+                    <div className="details">
+                        <span>SKU: {data.sku}</span>
+                        {data.lote && <span>Lote Prod: {data.lote}</span>}
                     </div>
                 </div>
-                
-                <div className="border-b-[3px] border-black p-4 flex flex-col justify-center flex-grow-[2]">
-                    <p className="text-2xl font-medium">Cantidad</p>
-                    <p className="font-extrabold leading-none" style={{ fontSize: '5rem' }}>
-                        {formatSpanishNumber(data.cantidad)} <span className="text-5xl font-bold">{data.uom}</span>
+                <div className="label-section label-quantity">
+                    <p className="title">Cantidad</p>
+                    <p className="amount">
+                        {formatSpanishNumber(data.cantidad)} <span className="uom">{data.uom}</span>
                     </p>
                 </div>
-                
-                <div className="flex-grow-[5] flex justify-center items-center p-4">
-                    <div className="w-full h-full">
-                        <QrImage qrString={data.qrString} size={800} />
+                <div className="label-section label-qr">
+                    <div className="label-qr-inner">
+                        <QrImage qrString={data.qrString} size={1000} />
                     </div>
                 </div>
-                
-                <div className="grid grid-cols-3 text-center border-t-[3px] border-black p-4 text-2xl">
+                <div className="label-footer">
                     <div>
-                        <p className="font-bold">Lote Logístico</p>
-                        <p className="font-extrabold text-6xl">{data.palletId}</p>
+                        <p className="title">Lote Logístico</p>
+                        <p className="lote-value">{data.palletId}</p>
                     </div>
                     <div>
-                        <p className="font-bold">Fabricación</p>
-                        <p className="font-medium">{new Date(data.fechaProd + 'T00:00:00').toLocaleDateString('es-ES')}</p>
+                        <p className="title">Fabricación</p>
+                        <p className="value">{new Date(data.fechaProd + 'T00:00:00').toLocaleDateString('es-ES')}</p>
                     </div>
                     <div>
-                        <p className="font-bold">Vencimiento</p>
-                        <p className="font-medium">{new Date(data.fechaVenc + 'T00:00:00').toLocaleDateString('es-ES')}</p>
+                        <p className="title">Vencimiento</p>
+                        <p className="value">{new Date(data.fechaVenc + 'T00:00:00').toLocaleDateString('es-ES')}</p>
                     </div>
                 </div>
             </div>
@@ -460,7 +425,6 @@
                             <a href="index.html" className="bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">Volver al Menú</a>
                         </div>
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            {/* Columna del formulario */}
                             <div className="space-y-5">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Operario (Legajo)</label>
@@ -517,13 +481,14 @@
                                     </div>
                                 </div>
                             </div>
-                            {/* Columna de la vista previa */}
                             <div className="flex flex-col">
                                 <h3 className="text-lg font-medium text-gray-900 mb-2">Vista Previa de Etiqueta</h3>
                                 <div id="preview-container">
                                     {generatedData ? (
-                                        <div style={{ transform: 'scale(0.23)', transformOrigin: 'center center', width: '190mm', height: '277mm', flexShrink: 0 }}>
-                                            <LabelComponent data={generatedData} />
+                                        <div style={{ transform: 'scale(0.23)', transformOrigin: 'center center' }}>
+                                            <div className="label-print-page">
+                                                <LabelComponent data={generatedData} />
+                                            </div>
                                         </div>
                                     ) : (
                                         <div className="text-center text-gray-500 flex items-center justify-center h-full">
@@ -569,9 +534,7 @@
     async function getApiToken() {
         try {
             const response = await fetch('cls.txt');
-            if (!response.ok) {
-                throw new Error('No se pudo cargar el archivo de clave (cls.txt).');
-            }
+            if (!response.ok) throw new Error('No se pudo cargar el archivo de clave (cls.txt).');
             let rawToken = await response.text();
             rawToken = rawToken.replace(/aaaa/g, '').replace(/bbbb/g, '').replace(/cccc/g, '');
             return rawToken.trim();
