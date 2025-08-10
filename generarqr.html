@@ -52,15 +52,15 @@
     const RUTA_DEL_ARCHIVO = 'lotelogistica.txt'; 
     // =================================================================
 
-    const QrCanvas = ({ data, size }) => {
+    const QrCanvas = ({ qrString, size }) => {
       const canvasRef = useRef(null);
       useEffect(() => {
-        if (canvasRef.current && data) {
-          QRCode.toCanvas(canvasRef.current, JSON.stringify(data), { width: size, margin: 2 }, (error) => {
+        if (canvasRef.current && qrString) {
+          QRCode.toCanvas(canvasRef.current, qrString, { width: size, margin: 2 }, (error) => {
             if (error) console.error(error);
           });
         }
-      }, [data, size]);
+      }, [qrString, size]);
       return <canvas ref={canvasRef}></canvas>;
     };
 
@@ -200,19 +200,43 @@
         }, [printData]);
 
         const handleGenerateLabel = () => {
-            if (!operario || !selectedArticulo || !loteProduccion || !loteLogistico || !cantidad) {
-                alert("Por favor, complete todos los campos.");
+            if (!operario || !selectedArticulo || !loteLogistico || !cantidad) {
+                alert("Por favor, complete todos los campos obligatorios (Operario, Artículo, Cantidad).");
                 return;
             }
-            const data = {
+
+            const formatQrDate = (dateString) => {
+                if (!dateString) return '';
+                const date = new Date(dateString + 'T00:00:00');
+                const day = String(date.getDate()).padStart(2, '0');
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const year = date.getFullYear();
+                return `${day}/${month}/${year}`;
+            };
+
+            const qrDataForCode = [
+                selectedArticulo.sku || '',
+                selectedArticulo.descripcion || '',
+                loteProduccion || '',
+                formatQrDate(fechaProd),
+                formatQrDate(fechaVenc),
+                cantidad || '',
+                uom || ''
+            ].join(';');
+
+            const dataForLabel = {
                 sku: selectedArticulo.sku,
                 descripcion: selectedArticulo.descripcion,
                 lote: loteProduccion,
                 cantidad: parseFloat(cantidad.replace(',', '.')),
-                uom, fechaProd, fechaVenc, operario,
-                palletId: loteLogistico, // Para la vista previa
+                uom,
+                fechaProd,
+                fechaVenc,
+                operario,
+                palletId: loteLogistico,
+                qrString: qrDataForCode
             };
-            setGeneratedData(data);
+            setGeneratedData(dataForLabel);
         };
         
         useEffect(() => {
@@ -230,6 +254,17 @@
                 else { setUom('Unidad'); }
             }
         }, [selectedArticulo]);
+
+        // --- NUEVA FUNCIÓN: Validador para el campo Operario ---
+        const handleOperarioChange = (e) => {
+            const value = e.target.value;
+            const numericValue = value.replace(/[^0-9]/g, ''); // Solo permite números
+            if (numericValue === '') {
+                setOperario('');
+            } else {
+                setOperario(String(parseInt(numericValue, 10))); // Remueve ceros a la izquierda
+            }
+        };
         
         const filteredArticulos = searchTerm ? articulos.filter(art => art.sku.toLowerCase().includes(searchTerm.toLowerCase()) || art.descripcion.toLowerCase().includes(searchTerm.toLowerCase())) : [];
         const formatSpanishNumber = (num) => isNaN(num) ? '' : new Intl.NumberFormat('es-ES').format(num);
@@ -242,7 +277,10 @@
                     <p className="font-bold text-[2.7rem] leading-tight">{data.descripcion}</p>
                     <div className="flex justify-between items-end mt-1">
                         <span className="font-semibold text-md">SKU: {data.sku}</span>
-                        <span className="font-semibold text-md">Lote Prod: {data.lote}</span>
+                        {/* --- NUEVO CAMBIO: Renderizado condicional del Lote de Producción --- */}
+                        {data.lote && (
+                             <span className="font-semibold text-md">Lote Prod: {data.lote}</span>
+                        )}
                     </div>
                 </div>
                 <div className="border-b-2 border-black p-2">
@@ -251,8 +289,7 @@
                 </div>
                 <div className="flex-grow flex justify-center items-center">
                     <div style={{ height: '80%', width: '80%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                        {/* --- ÚNICO CAMBIO REALIZADO AQUÍ --- */}
-                        <QrCanvas data={data} size={600} />
+                        <QrCanvas qrString={data.qrString} size={600} />
                     </div>
                 </div>
                 <div className="grid grid-cols-3 text-center text-sm border-t-2 border-black pt-2">
@@ -283,8 +320,9 @@
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="space-y-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">Operario</label>
-                                    <input type="text" value={operario} onChange={e => setOperario(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
+                                    <label className="block text-sm font-medium text-gray-700">Operario (Legajo)</label>
+                                    {/* --- NUEVO CAMBIO: Se usa el validador handleOperarioChange --- */}
+                                    <input type="text" value={operario} onChange={handleOperarioChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" placeholder="Solo números" />
                                 </div>
                                 <div className="relative">
                                     <label className="block text-sm font-medium text-gray-700">Artículo (Buscar por SKU o Descripción)</label>
@@ -300,7 +338,7 @@
                                     )}
                                 </div>
                                  <div>
-                                    <label className="block text-sm font-medium text-gray-700">Lote de Producción</label>
+                                    <label className="block text-sm font-medium text-gray-700">Lote de Producción (Opcional)</label>
                                     <input type="text" value={loteProduccion} onChange={e => setLoteProduccion(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
                                 </div>
                                 <div>
