@@ -1,488 +1,413 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MOLDERIL - Generar Etiqueta QR</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
-  <style>
-    /* --- ESTILOS PARA LA IMPRESIÓN Y LA VISTA PREVIA --- */
-    
-    /* Contenedor de la página A4 para la impresión */
-    .label-print-page {
-      width: 210mm;
-      height: 297mm;
-      box-sizing: border-box;
-      page-break-after: always;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-
-    /* Contenedor de la etiqueta en sí, diseñado para A4 */
-    .label-container {
-        width: 190mm;
-        height: 277mm;
-        border: 2px solid black;
-        display: flex;
-        flex-direction: column;
-        background-color: white; /* Fondo blanco para la etiqueta */
-    }
-
-    /* Contenedor para la vista previa en pantalla */
-    #printable-label-container {
-        width: 100%;
-        height: 100%;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        overflow: hidden;
-        background-color: #e5e7eb; /* Color de fondo del área de preview */
-    }
-    
-    @media print {
-      body, html {
-        margin: 0;
-        padding: 0;
-      }
-      .no-print { 
-        display: none; 
-      }
-      .label-print-page {
-        padding: 0;
-        margin: 0;
-      }
-      body * { 
-        visibility: hidden; 
-      }
-      #print-section, #print-section * { 
-        visibility: visible; 
-      }
-      #print-section { 
-        position: absolute; 
-        left: 0; 
-        top: 0; 
-      }
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MOLDERIL - Generar Etiqueta QR</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+<style>
+  .label-print-page {
+    width: 210mm;
+    height: 297mm;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    page-break-after: always;
+    box-sizing: border-box;
+  }
+  .label-container {
+    width: 190mm;
+    height: 277mm;
+    border: 2px solid black;
+    display: flex;
+    flex-direction: column;
+    background-color: white;
+    page-break-inside: avoid;
+  }
+  #printable-label-container {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    background-color: #f3f4f6;
+  }
+  @media print {
+    body, html { margin: 0; padding: 0; }
+    .no-print { display: none; }
+    body * { visibility: hidden; }
+    #print-section, #print-section * { visibility: visible; }
+    #print-section { position: absolute; left: 0; top: 0; }
+  }
+</style>
 </head>
 <body class="bg-gray-100 font-sans">
 
-  <div id="static-loader" class="fixed inset-0 bg-gray-100 flex items-center justify-center p-4 font-sans z-50 transition-opacity duration-500">
-    <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md text-center">
-      <h1 class="text-4xl font-extrabold text-gray-900 tracking-wide mb-6" style="font-family: 'Arial', sans-serif;">MOLDERIL S.A.</h1>
-      <p id="loader-status" class="text-xl text-gray-600 mb-4">Cargando aplicación...</p>
-      <div class="w-full bg-gray-200 rounded-full h-4">
-        <div id="loader-progress" class="bg-indigo-600 h-4 rounded-full transition-all duration-500" style="width: 10%"></div>
-      </div>
+<div id="static-loader" class="fixed inset-0 bg-gray-100 flex items-center justify-center p-4 z-50 transition-opacity duration-500">
+  <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md text-center">
+    <h1 class="text-4xl font-extrabold text-gray-900 mb-6">MOLDERIL S.A.</h1>
+    <p id="loader-status" class="text-xl text-gray-600 mb-4">Cargando aplicación...</p>
+    <div class="w-full bg-gray-200 rounded-full h-4">
+      <div id="loader-progress" class="bg-indigo-600 h-4 rounded-full transition-all duration-500" style="width: 10%"></div>
     </div>
   </div>
-  
-  <div id="root"></div>
-  <div id="print-section"></div>
+</div>
 
-  <script type="text/babel">
-    const { useState, useRef, useEffect, Fragment } = React;
-    const { createRoot } = ReactDOM;
+<div id="root"></div>
+<div id="print-section"></div>
 
-    // =================================================================
-    // ### CONFIGURACIÓN: DATOS DEL REPOSITORIO ###
-    // =================================================================
-    const USUARIO_GITHUB = 'gagegfg'; 
-    const REPO_NOMBRE = 'Molderil_ListaEmpaque';
-    const RUTA_DEL_ARCHIVO = 'lotelogistica.txt'; 
-    // =================================================================
+<script type="text/babel">
+const { useState, useEffect, Fragment } = React;
+const { createRoot } = ReactDOM;
 
-    const QrCanvas = ({ qrString, size }) => {
-      const canvasRef = useRef(null);
-      useEffect(() => {
-        if (canvasRef.current && qrString) {
-          QRCode.toCanvas(canvasRef.current, qrString, { width: size, margin: 2 }, (error) => {
-            if (error) console.error(error);
-          });
-        }
-      }, [qrString, size]);
-      return <canvas ref={canvasRef} style={{ width: '100%', height: '100%', objectFit: 'contain' }}></canvas>;
+const USUARIO_GITHUB = 'gagegfg';
+const REPO_NOMBRE = 'Molderil_ListaEmpaque';
+const RUTA_DEL_ARCHIVO = 'lotelogistica.txt';
+
+// QR como imagen de alta resolución
+const QrImage = ({ qrString, sizeMM }) => {
+  const [src, setSrc] = useState('');
+  useEffect(() => {
+    const pxPerMM = 300 / 25.4;
+    const sizePX = Math.round(sizeMM * pxPerMM);
+    QRCode.toDataURL(qrString, { width: sizePX, margin: 0 }, (err, url) => {
+      if (!err) setSrc(url);
+    });
+  }, [qrString, sizeMM]);
+  return <img src={src} alt="QR" style={{ width: '100%', height: '100%' }} />;
+};
+
+const App = ({ apiToken }) => {
+  const [operario, setOperario] = useState('');
+  const [articulos, setArticulos] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedArticulo, setSelectedArticulo] = useState(null);
+  const [loteProduccion, setLoteProduccion] = useState('');
+  const [loteLogistico, setLoteLogistico] = useState('');
+  const [isLoteEditable, setIsLoteEditable] = useState(false);
+  const [cantidadEtiquetas, setCantidadEtiquetas] = useState(1);
+  const [fechaProd, setFechaProd] = useState(new Date().toISOString().split('T')[0]);
+  const [fechaVenc, setFechaVenc] = useState('');
+  const [cantidad, setCantidad] = useState('');
+  const [uom, setUom] = useState('Unidad');
+  const [generatedData, setGeneratedData] = useState(null);
+  const [printData, setPrintData] = useState([]);
+  const [showPrintBtn, setShowPrintBtn] = useState(false);
+  const [lastLote, setLastLote] = useState(null);
+
+  // Carga inicial
+  useEffect(() => {
+    const loaderStatus = document.getElementById('loader-status');
+    const loaderProgress = document.getElementById('loader-progress');
+    const staticLoader = document.getElementById('static-loader');
+
+    const fetchLote = async () => {
+      try {
+        const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_DEL_ARCHIVO}`;
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) throw new Error("No se pudo leer lote");
+        const num = parseInt((await res.text()).trim(), 10);
+        if (isNaN(num)) throw new Error("Lote inválido");
+        setLoteLogistico(num + 1);
+      } catch {
+        setIsLoteEditable(true);
+      }
     };
 
-    const App = ({ apiToken }) => {
-        const [operario, setOperario] = useState('');
-        const [articulos, setArticulos] = useState([]);
-        const [searchTerm, setSearchTerm] = useState('');
-        const [selectedArticulo, setSelectedArticulo] = useState(null);
-        const [loteProduccion, setLoteProduccion] = useState('');
-        const [loteLogistico, setLoteLogistico] = useState('');
-        const [isLoteLogisticoEditable, setIsLoteLogisticoEditable] = useState(false);
-        const [cantidadEtiquetas, setCantidadEtiquetas] = useState(1);
-        const [fechaProd, setFechaProd] = useState(new Date().toISOString().split('T')[0]);
-        const [fechaVenc, setFechaVenc] = useState('');
-        const [cantidad, setCantidad] = useState('');
-        const [uom, setUom] = useState('Unidad');
-        const [generatedData, setGeneratedData] = useState(null);
-        const [printData, setPrintData] = useState([]);
-        
-        useEffect(() => {
-            const staticLoader = document.getElementById('static-loader');
-            const loaderStatus = document.getElementById('loader-status');
-            const loaderProgress = document.getElementById('loader-progress');
-
-            const fetchLoteLogistico = async () => {
-                const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_DEL_ARCHIVO}`;
-                try {
-                    const response = await fetch(url, { cache: "no-store" });
-                    if (!response.ok) throw new Error('No se pudo obtener el lote desde GitHub.');
-                    const text = await response.text();
-                    const numeroLote = parseInt(text.trim(), 10);
-                    if (isNaN(numeroLote)) throw new Error('El contenido del archivo no es un número.');
-                    setLoteLogistico(numeroLote + 1);
-                } catch (error) {
-                    console.error("Error al cargar lote logístico:", error);
-                    setLoteLogistico('');
-                    setIsLoteLogisticoEditable(true);
-                }
-            };
-            
-            const fetchArticulos = async () => {
-                try {
-                    const response = await fetch('articulos.csv');
-                    const text = await response.text();
-                    const rows = text.split('\n').slice(1);
-                    const parsedArticulos = rows.map(row => {
-                        const [tipo_articulo, codigo_articulo, descripcion] = row.split(';');
-                        return { tipo: tipo_articulo?.trim().toUpperCase(), sku: codigo_articulo, descripcion: descripcion?.trim() };
-                    }).filter(art => art.sku && art.descripcion);
-                    setArticulos(parsedArticulos);
-                } catch (error) {
-                    console.error("Error loading articulos.csv:", error);
-                }
-            };
-
-            const loadingTasks = [
-                { status: "Inicializando...", duration: 300, progress: 20 },
-                { status: "Cargando lote logístico...", duration: 800, progress: 50, action: fetchLoteLogistico },
-                { status: "Cargando lista de artículos...", duration: 800, progress: 85, action: fetchArticulos },
-                { status: "¡Listo!", duration: 500, progress: 100 }
-            ];
-
-            let currentTask = 0;
-            const runLoadingTask = () => {
-                if (currentTask < loadingTasks.length) {
-                    const task = loadingTasks[currentTask];
-                    if (loaderStatus) loaderStatus.textContent = task.status;
-                    if (loaderProgress) loaderProgress.style.width = `${task.progress}%`;
-                    if (task.action) task.action();
-                    setTimeout(() => {
-                        currentTask++;
-                        runLoadingTask();
-                    }, task.duration);
-                } else {
-                    if (staticLoader) {
-                        staticLoader.classList.add('opacity-0');
-                        setTimeout(() => staticLoader.remove(), 500);
-                    }
-                }
-            };
-            runLoadingTask();
-        }, []);
-
-        const updateGitHubFile = async (nuevoContenido) => {
-            const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${RUTA_DEL_ARCHIVO}`;
-            try {
-                const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${apiToken}` } });
-                if (!fileResponse.ok) throw new Error(`Error ${fileResponse.status}: No se pudo obtener info del archivo.`);
-                const fileData = await fileResponse.json();
-                const updateResponse = await fetch(url, {
-                    method: 'PUT',
-                    headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        message: `Actualizando lote a ${nuevoContenido}`,
-                        content: btoa(String(nuevoContenido)),
-                        sha: fileData.sha,
-                    }),
-                });
-                if (!updateResponse.ok) throw new Error(`Error ${updateResponse.status}: Falló la actualización.`);
-                console.log(`Lote ${nuevoContenido} guardado correctamente en GitHub.`);
-            } catch (error) {
-                console.error(`ERROR: No se pudo guardar el lote en GitHub. ${error.message}`);
-            }
-        };
-
-        const handlePrint = () => {
-            const numEtiquetas = parseInt(cantidadEtiquetas, 10);
-            const loteInicial = parseInt(loteLogistico, 10);
-
-            if (isNaN(numEtiquetas) || numEtiquetas < 1 || isNaN(loteInicial)) {
-                console.error("Verifique la cantidad de etiquetas y el lote logístico.");
-                return;
-            }
-            
-            const ultimoLoteAGuardar = loteInicial + numEtiquetas - 1;
-            const isConfirmed = true;
-
-            if (isConfirmed) {
-                let labels = [];
-                for (let i = 0; i < numEtiquetas; i++) {
-                    const currentLot = loteInicial + i;
-                    labels.push({ ...generatedData, palletId: currentLot });
-                }
-                setPrintData(labels);
-                updateGitHubFile(ultimoLoteAGuardar);
-            }
-        };
-
-        useEffect(() => {
-            if (printData.length > 0) {
-                window.print();
-                setPrintData([]);
-            }
-        }, [printData]);
-
-        const handleGenerateLabel = () => {
-            if (!operario || !selectedArticulo || !loteLogistico || !cantidad) {
-                console.error("Por favor, complete todos los campos obligatorios (Operario, Artículo, Cantidad).");
-                return;
-            }
-
-            const formatQrDate = (dateString) => {
-                if (!dateString) return '';
-                const date = new Date(dateString + 'T00:00:00');
-                const day = String(date.getDate()).padStart(2, '0');
-                const month = String(date.getMonth() + 1).padStart(2, '0');
-                const year = date.getFullYear();
-                return `${day}/${month}/${year}`;
-            };
-
-            const qrDataForCode = [
-                selectedArticulo.sku || '',
-                selectedArticulo.descripcion || '',
-                loteProduccion || '',
-                formatQrDate(fechaProd),
-                formatQrDate(fechaVenc),
-                cantidad || '',
-                uom || ''
-            ].join(';');
-
-            const dataForLabel = {
-                sku: selectedArticulo.sku,
-                descripcion: selectedArticulo.descripcion,
-                lote: loteProduccion,
-                cantidad: parseFloat(cantidad.replace(',', '.')),
-                uom,
-                fechaProd,
-                fechaVenc,
-                operario,
-                palletId: loteLogistico,
-                qrString: qrDataForCode
-            };
-            setGeneratedData(dataForLabel);
-        };
-        
-        useEffect(() => {
-            if (fechaProd) {
-                const prodDate = new Date(fechaProd);
-                prodDate.setFullYear(prodDate.getFullYear() + 3);
-                setFechaVenc(prodDate.toISOString().split('T')[0]);
-            }
-        }, [fechaProd]);
-
-        useEffect(() => {
-            if (selectedArticulo) {
-                const specialTypes = ['TULIPAS', 'PIROTINES', 'MADALENAS', 'FUNDAS'];
-                if (specialTypes.includes(selectedArticulo.tipo)) { setUom('Millar'); } 
-                else { setUom('Unidad'); }
-            }
-        }, [selectedArticulo]);
-
-        const handleOperarioChange = (e) => {
-            const value = e.target.value;
-            const numericValue = value.replace(/[^0-9]/g, '');
-            if (numericValue === '') {
-                setOperario('');
-            } else {
-                setOperario(String(parseInt(numericValue, 10)));
-            }
-        };
-        
-        const filteredArticulos = searchTerm ? articulos.filter(art => art.sku.toLowerCase().includes(searchTerm.toLowerCase()) || art.descripcion.toLowerCase().includes(searchTerm.toLowerCase())) : [];
-        const formatSpanishNumber = (num) => isNaN(num) ? '' : new Intl.NumberFormat('es-ES').format(num);
-
-        const LabelComponent = ({ data }) => (
-            <div className="label-container text-black">
-                <div className="text-center border-b-2 border-black p-4">
-                    <h2 className="text-5xl font-bold">MOLDERIL S.A.</h2>
-                </div>
-                
-                <div className="border-b-2 border-black p-4 flex flex-col justify-center flex-grow-[3]">
-                    <p className="text-2xl">Artículo</p>
-                    <p className="font-bold leading-none" style={{ fontSize: '6rem' }}>{data.descripcion}</p>
-                    <div className="flex justify-between items-end mt-2 text-2xl">
-                        <span className="font-semibold">SKU: {data.sku}</span>
-                        {data.lote && (
-                             <span className="font-semibold">Lote Prod: {data.lote}</span>
-                        )}
-                    </div>
-                </div>
-                
-                <div className="border-b-2 border-black p-4 flex flex-col justify-center flex-grow-[2]">
-                    <p className="text-2xl">Cantidad</p>
-                    <p className="font-bold leading-none" style={{ fontSize: '5rem' }}>
-                        {formatSpanishNumber(data.cantidad)} <span className="text-5xl">{data.uom}</span>
-                    </p>
-                </div>
-                
-                <div className="flex-grow-[5] flex justify-center items-center p-4">
-                    <div className="w-full h-full">
-                        <QrCanvas qrString={data.qrString} size={800} />
-                    </div>
-                </div>
-                
-                <div className="grid grid-cols-3 text-center border-t-2 border-black p-4 text-2xl">
-                    <div>
-                        <p className="font-bold">Lote Logístico</p>
-                        <p className="font-bold text-6xl">{data.palletId}</p>
-                    </div>
-                    <div>
-                        <p className="font-bold">Fabricación</p>
-                        <p>{new Date(data.fechaProd + 'T00:00:00').toLocaleDateString('es-ES')}</p>
-                    </div>
-                    <div>
-                        <p className="font-bold">Vencimiento</p>
-                        <p>{new Date(data.fechaVenc + 'T00:00:00').toLocaleDateString('es-ES')}</p>
-                    </div>
-                </div>
-            </div>
-        );
-
-        return (
-            <Fragment>
-                <div className="min-h-screen bg-gray-100 p-4 flex flex-col">
-                    <div className="bg-white p-6 rounded-xl shadow-lg flex-grow">
-                        <div className="flex justify-between items-center mb-6">
-                            <h1 className="text-3xl font-extrabold text-gray-900">Generar Etiqueta de Pallet</h1>
-                            <a href="index.html" className="bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-md hover:bg-gray-300 no-print">Volver al Menú</a>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700">Operario (Legajo)</label>
-                                    <input type="text" value={operario} onChange={handleOperarioChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" placeholder="Solo números" />
-                                </div>
-                                <div className="relative">
-                                    <label className="block text-sm font-medium text-gray-700">Artículo (Buscar por SKU o Descripción)</label>
-                                    <input type="text" value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setSelectedArticulo(null); }} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
-                                    {searchTerm && (
-                                        <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">
-                                            {filteredArticulos.map(art => (
-                                                <li key={art.sku} className="p-2 hover:bg-indigo-100 cursor-pointer" onClick={() => { setSelectedArticulo(art); setSearchTerm(`${art.sku} - ${art.descripcion}`); }}>
-                                                    {art.sku} - {art.descripcion}
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    )}
-                                </div>
-                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">Lote de Producción (Opcional)</label>
-                                    <input type="text" value={loteProduccion} onChange={e => setLoteProduccion(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700">Lote Logístico (Automático)</label>
-                                    <input type="number" value={loteLogistico} readOnly={!isLoteLogisticoEditable} onChange={e => setLoteLogistico(e.target.value)} className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border ${!isLoteLogisticoEditable ? 'bg-gray-100' : ''}`} />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700">Cantidad de Etiquetas a Imprimir</label>
-                                    <input type="number" min="1" value={cantidadEtiquetas} onChange={e => setCantidadEtiquetas(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
-                                </div>
-                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">Fecha de Producción</label>
-                                    <input type="date" value={fechaProd} onChange={e => setFechaProd(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
-                                </div>
-                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">Fecha de Vencimiento</label>
-                                    <input type="date" value={fechaVenc} readOnly className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border bg-gray-100" />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700">Cantidad (por etiqueta)</label>
-                                    <input type="text" value={cantidad} onChange={e => setCantidad(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700">Unidad de Medida</label>
-                                    <select value={uom} onChange={e => setUom(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border">
-                                        <option>Unidad</option>
-                                        <option>Millar</option>
-                                    </select>
-                                </div>
-                                <button onClick={handleGenerateLabel} className="w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-blue-700 text-xl">
-                                    Generar Vista Previa
-                                </button>
-                            </div>
-                            <div>
-                                <h3 className="text-lg font-medium text-gray-900 mb-2">Vista Previa de Etiqueta</h3>
-                                <div id="printable-label-container" className="border-2 border-dashed border-gray-400 w-full" style={{height: '60vh'}}>
-                                    {generatedData ? (
-                                        <div style={{ transform: 'scale(0.23)', transformOrigin: 'center' }}>
-                                            <LabelComponent data={generatedData} />
-                                        </div>
-                                    ) : (
-                                        <div className="text-center text-gray-500 flex items-center justify-center h-full">
-                                            <p>Complete el formulario para ver la etiqueta</p>
-                                        </div>
-                                    )}
-                                </div>
-                                {generatedData && (
-                                    <button onClick={handlePrint} className="w-full mt-4 bg-green-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-green-700 text-xl">
-                                        Imprimir y Guardar Lotes
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="print-section">
-                    {printData.map((labelData, index) => (
-                        <div key={index} className="label-print-page">
-                           <LabelComponent data={labelData} />
-                        </div>
-                    ))}
-                </div>
-            </Fragment>
-        );
+    const fetchArticulos = async () => {
+      const res = await fetch('articulos.csv');
+      const text = await res.text();
+      const rows = text.split('\n').slice(1);
+      setArticulos(rows.map(r => {
+        const [tipo, sku, desc] = r.split(';');
+        return { tipo: tipo?.trim().toUpperCase(), sku, descripcion: desc?.trim() };
+      }).filter(a => a.sku && a.descripcion));
     };
 
-    async function getApiToken() {
-        try {
-            const response = await fetch('cls.txt');
-            if (!response.ok) {
-                throw new Error('No se pudo cargar el archivo de clave (cls.txt).');
-            }
-            let rawToken = await response.text();
-            rawToken = rawToken.replace(/aaaa/g, '').replace(/bbbb/g, '').replace(/cccc/g, '');
-            return rawToken.trim();
-        } catch (error) {
-            console.error("Error crítico al obtener el token:", error);
-            return null;
-        }
+    const tasks = [
+      { status: "Inicializando...", p: 20 },
+      { status: "Cargando lote...", p: 50, fn: fetchLote },
+      { status: "Cargando artículos...", p: 85, fn: fetchArticulos },
+      { status: "Listo", p: 100 }
+    ];
+    let i = 0;
+    const run = () => {
+      if (i < tasks.length) {
+        loaderStatus.textContent = tasks[i].status;
+        loaderProgress.style.width = tasks[i].p + "%";
+        if (tasks[i].fn) tasks[i].fn();
+        setTimeout(() => { i++; run(); }, 500);
+      } else {
+        staticLoader.classList.add('opacity-0');
+        setTimeout(() => staticLoader.remove(), 500);
+      }
+    };
+    run();
+  }, []);
+
+  // Guardar lote en GitHub
+  const updateGitHubFile = async (contenido) => {
+    try {
+      const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${RUTA_DEL_ARCHIVO}`;
+      const fileRes = await fetch(url, { headers: { Authorization: `token ${apiToken}` } });
+      const fileData = await fileRes.json();
+      await fetch(url, {
+        method: 'PUT',
+        headers: { Authorization: `token ${apiToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: `Actualizando lote a ${contenido}`, content: btoa(String(contenido)), sha: fileData.sha })
+      });
+    } catch (err) { alert("Error guardando lote: " + err.message); }
+  };
+
+  // Generar vista previa
+  const handleGenerateLabel = () => {
+    if (!operario || !selectedArticulo || !loteLogistico || !cantidad) {
+      alert("Complete todos los campos obligatorios");
+      return;
     }
+    const validCantidad = /^\d+([,]\d+)?$/.test(cantidad) && parseFloat(cantidad.replace(',', '.')) > 0;
+    if (!validCantidad) {
+      alert("Cantidad inválida (solo números positivos con coma decimal)");
+      return;
+    }
+    const formatDate = (d) => {
+      if (!d) return '';
+      const date = new Date(d + 'T00:00:00');
+      return date.toLocaleDateString('es-ES');
+    };
+    const qrData = [
+      selectedArticulo.sku,
+      selectedArticulo.descripcion,
+      loteProduccion,
+      formatDate(fechaProd),
+      formatDate(fechaVenc),
+      cantidad,
+      uom
+    ].join(';');
 
-    (async () => {
-        const token = await getApiToken();
-        if (token) {
-            const rootElement = document.getElementById('root');
-            const root = createRoot(rootElement);
-            root.render(<App apiToken={token} />);
-        } else {
-            const loaderStatus = document.getElementById('loader-status');
-            if(loaderStatus) {
-                loaderStatus.textContent = "Error fatal: No se pudo iniciar la aplicación.";
-                loaderStatus.style.color = 'red';
-            }
-        }
-    })();
+    setGeneratedData({
+      sku: selectedArticulo.sku,
+      descripcion: selectedArticulo.descripcion,
+      lote: loteProduccion,
+      cantidad: parseFloat(cantidad.replace(',', '.')),
+      uom,
+      fechaProd,
+      fechaVenc,
+      operario,
+      palletId: loteLogistico,
+      qrString: qrData
+    });
+    setShowPrintBtn(true);
+  };
 
-  </script>
+  // Imprimir
+  const handlePrint = () => {
+    const num = parseInt(cantidadEtiquetas, 10);
+    const loteIni = parseInt(loteLogistico, 10);
+    const loteFin = loteIni + num - 1;
+    const etiquetas = [];
+    for (let i = 0; i < num; i++) {
+      etiquetas.push({ ...generatedData, palletId: loteIni + i });
+    }
+    setPrintData(etiquetas);
+    updateGitHubFile(loteFin);
+    setLastLote(loteFin);
+  };
+
+  useEffect(() => {
+    if (printData.length > 0) {
+      window.print();
+      setPrintData([]);
+    }
+  }, [printData]);
+
+  // Nueva impresión
+  const handleNewPrint = async () => {
+    try {
+      const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_DEL_ARCHIVO}`;
+      const res = await fetch(url, { cache: "no-store" });
+      const num = parseInt((await res.text()).trim(), 10);
+      if (!isNaN(num)) setLoteLogistico(num + 1);
+    } catch {
+      alert("No se pudo obtener el último lote");
+    }
+    setOperario('');
+    setSearchTerm('');
+    setSelectedArticulo(null);
+    setLoteProduccion('');
+    setCantidadEtiquetas(1);
+    setFechaProd(new Date().toISOString().split('T')[0]);
+    setFechaVenc('');
+    setCantidad('');
+    setUom('Unidad');
+    setGeneratedData(null);
+    setShowPrintBtn(false);
+  };
+
+  useEffect(() => {
+    if (fechaProd) {
+      const d = new Date(fechaProd);
+      d.setFullYear(d.getFullYear() + 3);
+      setFechaVenc(d.toISOString().split('T')[0]);
+    }
+  }, [fechaProd]);
+
+  const filtered = searchTerm ? articulos.filter(a =>
+    a.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    a.descripcion.toLowerCase().includes(searchTerm.toLowerCase())
+  ) : [];
+  const fmtNum = (n) => isNaN(n) ? '' : new Intl.NumberFormat('es-ES').format(n);
+
+  const LabelComponent = ({ data }) => (
+    <div className="label-container text-black">
+      <div className="text-center border-b-2 border-black p-4">
+        <h2 className="text-5xl font-bold">MOLDERIL S.A.</h2>
+      </div>
+      <div className="border-b-2 border-black p-4 flex flex-col flex-grow-[3]">
+        <p className="text-2xl">Artículo</p>
+        <p className="font-bold leading-none" style={{ fontSize: '6rem' }}>{data.descripcion}</p>
+        <div className="flex justify-between text-2xl mt-2">
+          <span>SKU: {data.sku}</span>
+          {data.lote && <span>Lote Prod: {data.lote}</span>}
+        </div>
+      </div>
+      <div className="border-b-2 border-black p-4 flex flex-col flex-grow-[2]">
+        <p className="text-2xl">Cantidad</p>
+        <p className="font-bold" style={{ fontSize: '5rem' }}>
+          {fmtNum(data.cantidad)} <span className="text-5xl">{data.uom}</span>
+        </p>
+      </div>
+      <div className="flex-grow-[5] flex justify-center items-center p-4">
+        <QrImage qrString={data.qrString} sizeMM={100} />
+      </div>
+      <div className="grid grid-cols-3 text-center border-t-2 border-black p-4 text-2xl">
+        <div><p className="font-bold">Lote Logístico</p><p className="font-bold text-6xl">{data.palletId}</p></div>
+        <div><p className="font-bold">Fabricación</p><p>{new Date(data.fechaProd).toLocaleDateString('es-ES')}</p></div>
+        <div><p className="font-bold">Vencimiento</p><p>{new Date(data.fechaVenc).toLocaleDateString('es-ES')}</p></div>
+      </div>
+    </div>
+  );
+
+  return (
+    <Fragment>
+      <div className="min-h-screen bg-gray-100 p-4 flex flex-col">
+        <div className="bg-white p-6 rounded-xl shadow-lg flex-grow">
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-3xl font-extrabold">Generar Etiqueta de Pallet</h1>
+            <a href="index.html" className="bg-gray-200 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-300 no-print">Volver</a>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div>
+                <label>Operario (Legajo)</label>
+                <input type="text" value={operario} onChange={(e) => setOperario(e.target.value.replace(/[^0-9]/g, ''))} className="mt-1 block w-full border p-2 rounded-md" />
+              </div>
+              <div className="relative">
+                <label>Artículo</label>
+                <input type="text" value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); setSelectedArticulo(null); }} className="mt-1 block w-full border p-2 rounded-md" />
+                {searchTerm && (
+                  <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">
+                    {filtered.map(art => (
+                      <li key={art.sku} className="p-2 hover:bg-indigo-100 cursor-pointer" onClick={() => { setSelectedArticulo(art); setSearchTerm(`${art.sku} - ${art.descripcion}`); }}>
+                        {art.sku} - {art.descripcion}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div>
+                <label>Lote de Producción</label>
+                <input type="text" value={loteProduccion} onChange={(e) => setLoteProduccion(e.target.value)} className="mt-1 block w-full border p-2 rounded-md" />
+              </div>
+              <div>
+                <label>Lote Logístico</label>
+                <input type="number" value={loteLogistico} readOnly={!isLoteEditable} onChange={(e) => setLoteLogistico(e.target.value)} className={`mt-1 block w-full border p-2 rounded-md ${!isLoteEditable ? 'bg-gray-100' : ''}`} />
+              </div>
+              <div>
+                <label>Cantidad de Etiquetas</label>
+                <input type="number" min="1" value={cantidadEtiquetas} onChange={(e) => setCantidadEtiquetas(e.target.value)} className="mt-1 block w-full border p-2 rounded-md" />
+              </div>
+              <div>
+                <label>Fecha Producción</label>
+                <input type="date" value={fechaProd} onChange={(e) => setFechaProd(e.target.value)} className="mt-1 block w-full border p-2 rounded-md" />
+              </div>
+              <div>
+                <label>Fecha Vencimiento</label>
+                <input type="date" value={fechaVenc} readOnly className="mt-1 block w-full border p-2 rounded-md bg-gray-100" />
+              </div>
+              <div>
+                <label>Cantidad</label>
+                <input type="text" value={cantidad} onChange={(e) => setCantidad(e.target.value.replace(/[^0-9,]/g, ''))} className="mt-1 block w-full border p-2 rounded-md" />
+              </div>
+              <div>
+                <label>Unidad de Medida</label>
+                <select value={uom} onChange={(e) => setUom(e.target.value)} className="mt-1 block w-full border p-2 rounded-md">
+                  <option>Unidad</option>
+                  <option>Millar</option>
+                </select>
+              </div>
+              <button onClick={handleGenerateLabel} className="w-full bg-blue-600 text-white py-3 rounded-md hover:bg-blue-700">Generar Vista Previa</button>
+              {showPrintBtn && (
+                <button onClick={handlePrint} className="w-full bg-green-600 text-white py-3 rounded-md hover:bg-green-700">Imprimir y Guardar Lotes</button>
+              )}
+              {lastLote && (
+                <button onClick={handleNewPrint} className="w-full bg-yellow-500 text-white py-3 rounded-md hover:bg-yellow-600">Nueva impresión</button>
+              )}
+            </div>
+
+            <div>
+              <h3 className="text-lg mb-2">Vista Previa</h3>
+              <div id="printable-label-container" className="border-2 border-dashed border-gray-400 w-full" style={{ height: '60vh' }}>
+                {generatedData ? (
+                  <div style={{ transform: 'scale(0.23)', transformOrigin: 'center' }}>
+                    <LabelComponent data={generatedData} />
+                  </div>
+                ) : (
+                  <div className="text-center text-gray-500 flex items-center justify-center h-full">Complete el formulario</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="print-section">
+        {printData.map((label, i) => (
+          <div key={i} className="label-print-page">
+            <LabelComponent data={label} />
+          </div>
+        ))}
+      </div>
+    </Fragment>
+  );
+};
+
+async function getApiToken() {
+  try {
+    const res = await fetch('cls.txt');
+    let token = await res.text();
+    return token.replace(/aaaa/g, '').replace(/bbbb/g, '').replace(/cccc/g, '').trim();
+  } catch (err) {
+    alert("Error crítico: " + err.message);
+    return null;
+  }
+}
+
+(async () => {
+  const token = await getApiToken();
+  if (token) {
+    const root = createRoot(document.getElementById('root'));
+    root.render(<App apiToken={token} />);
+  } else {
+    document.getElementById('loader-status').textContent = "No se pudo iniciar";
+  }
+})();
+</script>
 </body>
 </html>
