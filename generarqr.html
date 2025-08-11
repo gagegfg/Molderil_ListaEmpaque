@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+V<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -188,23 +188,25 @@
             const margin = 10;
             const contentW = pageW - (margin * 2);
 
+            let currentY = margin + 10; // Mover el inicio un poco hacia arriba
+
             // --- Header ---
-            doc.setFontSize(32);
+            doc.setFontSize(28); // Reducir tamaño de "MOLDERIL S.A."
             doc.setFont("helvetica", "bold");
-            doc.text("MOLDERIL S.A.", pageW / 2, margin + 15, { align: "center" });
-            doc.line(margin, margin + 25, pageW - margin, margin + 25);
+            doc.text("MOLDERIL S.A.", pageW / 2, currentY + 10, { align: "center" });
+            doc.line(margin, currentY + 20, pageW - margin, currentY + 20);
+            currentY += 30;
 
             // --- Artículo ---
-            let currentY = margin + 45;
             doc.setFontSize(16);
             doc.setFont("helvetica", "normal");
             doc.text("Artículo", margin, currentY);
-            currentY += 25;
-            doc.setFontSize(60);
+            currentY += 20;
+            doc.setFontSize(48); // Reducir tamaño de la descripción
             doc.setFont("helvetica", "bold");
             const descLines = doc.splitTextToSize(data.descripcion, contentW);
             doc.text(descLines, pageW / 2, currentY, { align: "center" });
-            currentY += (descLines.length * 20);
+            currentY += (descLines.length * 16); // Ajustar según el nuevo tamaño
 
             doc.setFontSize(18);
             doc.setFont("helvetica", "bold");
@@ -220,8 +222,8 @@
             doc.setFontSize(16);
             doc.setFont("helvetica", "normal");
             doc.text("Cantidad", margin, currentY);
-            currentY += 25;
-            doc.setFontSize(54);
+            currentY += 20;
+            doc.setFontSize(44); // Reducir tamaño de la cantidad
             doc.setFont("helvetica", "bold");
             doc.text(`${data.cantidad} ${data.uom}`, pageW / 2, currentY, { align: "center" });
             currentY += 10;
@@ -229,14 +231,14 @@
 
             // --- QR Code ---
             currentY += 10;
-            const qrSize = 70; // Reducir un poco el tamaño del QR
+            const qrSize = 70;
             const qrX = (pageW - qrSize) / 2;
             const qrY = currentY;
             const qrImageData = await QRCode.toDataURL(data.qrString, { width: 300, margin: 1 });
             doc.addImage(qrImageData, 'PNG', qrX, qrY, qrSize, qrSize);
-            currentY += qrSize + 10; // Aumentar el espacio después del QR
+            currentY += qrSize + 10;
 
-            // --- Footer (Fechas y Lotes) - Ubicado debajo del QR ---
+            // --- Footer (Fechas y Lotes) ---
             doc.setFontSize(18);
             doc.setFont("helvetica", "bold");
             doc.text("Lote Logístico", margin + 20, currentY, { align: "left" });
