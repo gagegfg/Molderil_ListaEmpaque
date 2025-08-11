@@ -1,47 +1,47 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MOLDERIL - Generar Etiqueta QR</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <style>
-    /* ELIMINADO: Ya no necesitamos estilos de impresión complejos. */
-    #preview-container {
-        width: 100%;
-        height: 100%;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        overflow: hidden;
-        background-color: #e5e7eb;
-    }
-    #preview-iframe {
-        width: 100%;
-        height: 100%;
-        border: none;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MOLDERIL - Generar Etiqueta QR</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        #preview-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            background-color: #e5e7eb;
+        }
+        #preview-iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+    </style>
 </head>
 <body class="bg-gray-100 font-sans">
 
-  <div id="static-loader" class="fixed inset-0 bg-gray-100 flex items-center justify-center p-4 font-sans z-50 transition-opacity duration-500">
+<div id="static-loader" class="fixed inset-0 bg-gray-100 flex items-center justify-center p-4 font-sans z-50 transition-opacity duration-500">
     <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md text-center">
-      <h1 class="text-4xl font-extrabold text-gray-900 tracking-wide mb-6" style="font-family: 'Arial', sans-serif;">MOLDERIL S.A.</h1>
-      <p id="loader-status" class="text-xl text-gray-600 mb-4">Cargando aplicación...</p>
-      <div class="w-full bg-gray-200 rounded-full h-4">
-        <div id="loader-progress" class="bg-indigo-600 h-4 rounded-full transition-all duration-500" style="width: 10%"></div>
-      </div>
+        <h1 class="text-4xl font-extrabold text-gray-900 tracking-wide mb-6" style="font-family: 'Arial', sans-serif;">MOLDERIL S.A.</h1>
+        <p id="loader-status" class="text-xl text-gray-600 mb-4">Cargando aplicación...</p>
+        <div class="w-full bg-gray-200 rounded-full h-4">
+            <div id="loader-progress" class="bg-indigo-600 h-4 rounded-full transition-all duration-500" style="width: 10%"></div>
+        </div>
     </div>
-  </div>
-  
-  <div id="root"></div>
-  <script type="text/babel">
+</div>
+
+<div id="root"></div>
+
+<script type="text/babel">
     const { useState, useRef, useEffect, Fragment } = React;
     const { createRoot } = ReactDOM;
     const { jsPDF } = window.jspdf;
@@ -49,9 +49,9 @@
     // =================================================================
     // ### CONFIGURACIÓN: DATOS DEL REPOSITORIO ###
     // =================================================================
-    const USUARIO_GITHUB = 'gagegfg'; 
+    const USUARIO_GITHUB = 'gagegfg';
     const REPO_NOMBRE = 'Molderil_ListaEmpaque';
-    const RUTA_DEL_ARCHIVO = 'lotelogistica.txt'; 
+    const RUTA_DEL_ARCHIVO = 'lotelogistica.txt';
     // =================================================================
 
     const App = ({ apiToken }) => {
@@ -66,11 +66,8 @@
         const [fechaVenc, setFechaVenc] = useState('');
         const [cantidad, setCantidad] = useState('');
         const [uom, setUom] = useState('Unidad');
-        
-        // MODIFICADO: Este estado ahora almacenará la URL del PDF para la vista previa
         const [previewPdfUrl, setPreviewPdfUrl] = useState(null);
-        
-        // --- Lógica de carga inicial (sin cambios) ---
+
         useEffect(() => {
             const staticLoader = document.getElementById('static-loader');
             const loaderStatus = document.getElementById('loader-status');
@@ -92,7 +89,7 @@
                     setIsLoteLogisticoEditable(true);
                 }
             };
-            
+
             const fetchArticulos = async () => {
                 try {
                     const response = await fetch('articulos.csv');
@@ -119,7 +116,7 @@
             let currentTask = 0;
             const runLoadingTask = () => {
                 if (currentTask < loadingTasks.length) {
-                    const task = loadingTasks[currentTask];
+                    const task = loadingTasks [currentTask];
                     if (loaderStatus) loaderStatus.textContent = task.status;
                     if (loaderProgress) loaderProgress.style.width = `${task.progress}%`;
                     if (task.action) task.action();
@@ -159,7 +156,6 @@
             }
         };
 
-        // --- Lógica de fechas y UOM (sin cambios) ---
         useEffect(() => {
             if (fechaProd) {
                 const prodDate = new Date(fechaProd);
@@ -171,7 +167,7 @@
         useEffect(() => {
             if (selectedArticulo) {
                 const specialTypes = ['TULIPAS', 'PIROTINES', 'MADALENAS', 'FUNDAS'];
-                if (specialTypes.includes(selectedArticulo.tipo)) { setUom('Millar'); } 
+                if (specialTypes.includes(selectedArticulo.tipo)) { setUom('Millar'); }
                 else { setUom('Unidad'); }
             }
         }, [selectedArticulo]);
@@ -183,24 +179,22 @@
                 setCantidad(rawValue);
             }
         };
-        
+
         const filteredArticulos = searchTerm ? articulos.filter(art => art.sku.toLowerCase().includes(searchTerm.toLowerCase()) || art.descripcion.toLowerCase().includes(searchTerm.toLowerCase())) : [];
 
-        // NUEVO: Función central para dibujar una etiqueta en una página de jsPDF
         const drawLabelOnDoc = async (doc, data) => {
-            // --- Coordenadas y dimensiones en mm para una página A4 (210x297mm) ---
             const pageW = 210;
             const pageH = 297;
             const margin = 10;
             const contentW = pageW - (margin * 2);
-            
-            // --- 1. Header ---
+
+            // --- Header ---
             doc.setFontSize(32);
             doc.setFont("helvetica", "bold");
             doc.text("MOLDERIL S.A.", pageW / 2, margin + 15, { align: "center" });
-            doc.line(margin, margin + 25, pageW - margin, margin + 25); // Línea divisoria
+            doc.line(margin, margin + 25, pageW - margin, margin + 25);
 
-            // --- 2. Artículo ---
+            // --- Artículo ---
             let currentY = margin + 45;
             doc.setFontSize(16);
             doc.setFont("helvetica", "normal");
@@ -208,10 +202,9 @@
             currentY += 25;
             doc.setFontSize(60);
             doc.setFont("helvetica", "bold");
-            // Manejo de texto largo con auto-wrap
             const descLines = doc.splitTextToSize(data.descripcion, contentW);
             doc.text(descLines, pageW / 2, currentY, { align: "center" });
-            currentY += (descLines.length * 20); // Ajustar Y según número de líneas
+            currentY += (descLines.length * 20);
 
             doc.setFontSize(18);
             doc.setFont("helvetica", "bold");
@@ -222,7 +215,7 @@
             currentY += 10;
             doc.line(margin, currentY, pageW - margin, currentY);
 
-            // --- 3. Cantidad ---
+            // --- Cantidad ---
             currentY += 15;
             doc.setFontSize(16);
             doc.setFont("helvetica", "normal");
@@ -234,57 +227,44 @@
             currentY += 10;
             doc.line(margin, currentY, pageW - margin, currentY);
 
-            // --- 4. QR Code ---
+            // --- QR Code ---
             currentY += 10;
-            const qrSize = 85; // tamaño del QR en mm
+            const qrSize = 70; // Reducir un poco el tamaño del QR
             const qrX = (pageW - qrSize) / 2;
             const qrY = currentY;
-            // Generar QR como DataURL para poder añadirlo como imagen
-            const qrImageData = await QRCode.toDataURL(data.qrString, { width: 400, margin: 1 });
+            const qrImageData = await QRCode.toDataURL(data.qrString, { width: 300, margin: 1 });
             doc.addImage(qrImageData, 'PNG', qrX, qrY, qrSize, qrSize);
-            currentY += qrSize + 5;
-            doc.line(margin, currentY, pageW - margin, currentY);
+            currentY += qrSize + 10; // Aumentar el espacio después del QR
 
-            // --- 5. Footer (Fechas y Lotes) ---
-            currentY += 15;
-            const col1X = margin + 20;
-            const col2X = pageW / 2;
-            const col3X = pageW - margin - 20;
-
+            // --- Footer (Fechas y Lotes) - Ubicado debajo del QR ---
             doc.setFontSize(18);
             doc.setFont("helvetica", "bold");
-            doc.text("Lote Logístico", col1X, currentY, { align: "center" });
-            doc.text("Fabricación", col2X, currentY, { align: "center" });
-            doc.text("Vencimiento", col3X, currentY, { align: "center" });
+            doc.text("Lote Logístico", margin + 20, currentY, { align: "left" });
+            doc.text("Fabricación", pageW / 2, currentY, { align: "center" });
+            doc.text("Vencimiento", pageW - margin - 20, currentY, { align: "right" });
 
             currentY += 10;
-            doc.setFontSize(36);
-            doc.text(String(data.palletId), col1X, currentY, { align: "center" });
-            doc.setFontSize(18);
-            doc.text(new Date(data.fechaProd + 'T00:00:00').toLocaleDateString('es-ES'), col2X, currentY, { align: "center" });
-            doc.text(new Date(data.fechaVenc + 'T00:00:00').toLocaleDateString('es-ES'), col3X, currentY, { align: "center" });
+            doc.setFontSize(30);
+            doc.text(String(data.palletId), margin + 20, currentY, { align: "left" });
+            doc.setFontSize(16);
+            doc.text(new Date(data.fechaProd + 'T00:00:00').toLocaleDateString('es-ES'), pageW / 2, currentY + 2, { align: "center" });
+            doc.text(new Date(data.fechaVenc + 'T00:00:00').toLocaleDateString('es-ES'), pageW - margin - 20, currentY + 2, { align: "right" });
         }
-        
-        // MODIFICADO: Esta función ahora genera un PDF para la vista previa
+
         const handleGeneratePreview = async () => {
             if (!selectedArticulo || !cantidad) {
                 alert("Por favor, complete Artículo y Cantidad.");
                 return;
             }
-
-            const data = getLabelData(loteLogistico); // Obtener datos de la etiqueta
-            
-            const doc = new jsPDF('p', 'mm', 'a4'); // Crear un doc PDF
-            await drawLabelOnDoc(doc, data); // Dibujar la etiqueta en el doc
-            
-            // Generar una URL del PDF y ponerla en el estado para el iframe
+            const data = getLabelData(loteLogistico);
+            const doc = new jsPDF('p', 'mm', 'a4');
+            await drawLabelOnDoc(doc, data);
             const pdfDataUrl = doc.output('datauristring');
             setPreviewPdfUrl(pdfDataUrl);
         };
-        
-        // NUEVO: Función helper para no repetir la creación del objeto de datos
+
         const getLabelData = (currentLote) => {
-             const formatQrDate = (dateString) => {
+            const formatQrDate = (dateString) => {
                 if (!dateString) return '';
                 const date = new Date(dateString + 'T00:00:00');
                 const day = String(date.getDate()).padStart(2, '0');
@@ -294,16 +274,20 @@
             };
             const cantidadParaQR = cantidad.replace(',', '.');
             const qrString = [
-                selectedArticulo.sku || '', selectedArticulo.descripcion || '',
-                loteProduccion || '', formatQrDate(fechaProd),
-                formatQrDate(fechaVenc), cantidadParaQR || '', uom || ''
+                selectedArticulo.sku || '',
+                selectedArticulo.descripcion || '',
+                String(currentLote) || '',
+                formatQrDate(fechaProd),
+                formatQrDate(fechaVenc),
+                cantidadParaQR || '',
+                uom || ''
             ].join(';');
 
             return {
                 sku: selectedArticulo.sku,
                 descripcion: selectedArticulo.descripcion,
                 lote: loteProduccion,
-                cantidad: cantidad, // Usamos el valor con coma para mostrar
+                cantidad: cantidad,
                 uom,
                 fechaProd,
                 fechaVenc,
@@ -312,7 +296,6 @@
             };
         }
 
-        // MODIFICADO: Esta es la nueva lógica de impresión y guardado
         const handleGenerateAndPrintPDF = async () => {
             const numEtiquetas = parseInt(cantidadEtiquetas, 10);
             const loteInicial = parseInt(loteLogistico, 10);
@@ -327,20 +310,16 @@
 
             if (isConfirmed) {
                 const doc = new jsPDF('p', 'mm', 'a4');
-                
-                // Usamos un bucle for...of para poder usar await adentro
                 for (let i = 0; i < numEtiquetas; i++) {
                     if (i > 0) {
                         doc.addPage();
                     }
                     const currentLote = loteInicial + i;
                     const data = getLabelData(currentLote);
-                    await drawLabelOnDoc(doc, data); // Esperamos a que cada etiqueta se dibuje
+                    await drawLabelOnDoc(doc, data);
                 }
-                
-                // Abre el diálogo de impresión del navegador para el PDF generado
+
                 doc.autoPrint();
-                // Ofrece la descarga del archivo
                 doc.save(`etiquetas_lotes_${loteInicial}-${ultimoLoteAGuardar}.pdf`);
 
                 updateGitHubFile(ultimoLoteAGuardar);
@@ -356,7 +335,6 @@
                             <a href="index.html" className="bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-md hover:bg-gray-300">Volver al Menú</a>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {/* --- Columna del Formulario (sin cambios funcionales) --- */}
                             <div className="space-y-4">
                                 <div className="relative">
                                     <label className="block text-sm font-medium text-gray-700">Artículo (Buscar por SKU o Descripción)</label>
@@ -383,11 +361,11 @@
                                     <label className="block text-sm font-medium text-gray-700">Cantidad de Etiquetas a Imprimir</label>
                                     <input type="number" min="1" value={cantidadEtiquetas} onChange={e => setCantidadEtiquetas(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
                                 </div>
-                                 <div>
+                                < div>
                                     <label className="block text-sm font-medium text-gray-700">Fecha de Producción</label>
                                     <input type="date" value={fechaProd} onChange={e => setFechaProd(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
                                 </div>
-                                 <div>
+                                <div>
                                     <label className="block text-sm font-medium text-gray-700">Fecha de Vencimiento</label>
                                     <input type="date" value={fechaVenc} readOnly className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border bg-gray-100" />
                                 </div>
@@ -406,8 +384,6 @@
                                     Generar Vista Previa
                                 </button>
                             </div>
-
-                            {/* --- Columna de la Vista Previa --- */}
                             <div>
                                 <h3 className="text-lg font-medium text-gray-900 mb-2">Vista Previa de Etiqueta</h3>
                                 <div id="preview-container" className="border-2 border-dashed border-gray-400 w-full" style={{height: '60vh'}}>
@@ -463,6 +439,6 @@
         }
     })();
 
-  </script>
+</script>
 </body>
 </html>
