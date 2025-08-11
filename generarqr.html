@@ -9,64 +9,22 @@
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <style>
-    /* --- ESTILOS PARA LA IMPRESIÓN Y LA VISTA PREVIA --- */
-    
-    /* Contenedor de la página A4 para la impresión */
-    .label-print-page {
-      width: 210mm;
-      height: 297mm;
-      box-sizing: border-box;
-      page-break-after: always;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
-
-    /* Contenedor de la etiqueta en sí, diseñado para A4 */
-    .label-container {
-        width: 190mm;
-        height: 277mm;
-        border: 2px solid black;
-        display: flex;
-        flex-direction: column;
-        background-color: white; /* Fondo blanco para la etiqueta */
-    }
-
-    /* Contenedor para la vista previa en pantalla */
-    #printable-label-container {
+    /* ELIMINADO: Ya no necesitamos estilos de impresión complejos. */
+    #preview-container {
         width: 100%;
         height: 100%;
         display: flex;
         justify-content: center;
         align-items: center;
         overflow: hidden;
-        background-color: #e5e7eb; /* Color de fondo del área de preview */
+        background-color: #e5e7eb;
     }
-    
-    @media print {
-      body, html {
-        margin: 0;
-        padding: 0;
-      }
-      .no-print { 
-        display: none; 
-      }
-      .label-print-page {
-        padding: 0;
-        margin: 0;
-      }
-      body * { 
-        visibility: hidden; 
-      }
-      #print-section, #print-section * { 
-        visibility: visible; 
-      }
-      #print-section { 
-        position: absolute; 
-        left: 0; 
-        top: 0; 
-      }
+    #preview-iframe {
+        width: 100%;
+        height: 100%;
+        border: none;
     }
   </style>
 </head>
@@ -83,11 +41,10 @@
   </div>
   
   <div id="root"></div>
-  <div id="print-section"></div>
-
   <script type="text/babel">
     const { useState, useRef, useEffect, Fragment } = React;
     const { createRoot } = ReactDOM;
+    const { jsPDF } = window.jspdf;
 
     // =================================================================
     // ### CONFIGURACIÓN: DATOS DEL REPOSITORIO ###
@@ -96,18 +53,6 @@
     const REPO_NOMBRE = 'Molderil_ListaEmpaque';
     const RUTA_DEL_ARCHIVO = 'lotelogistica.txt'; 
     // =================================================================
-
-    const QrCanvas = ({ qrString, size }) => {
-      const canvasRef = useRef(null);
-      useEffect(() => {
-        if (canvasRef.current && qrString) {
-          QRCode.toCanvas(canvasRef.current, qrString, { width: size, margin: 2 }, (error) => {
-            if (error) console.error(error);
-          });
-        }
-      }, [qrString, size]);
-      return <canvas ref={canvasRef} style={{ width: '100%', height: '100%', objectFit: 'contain' }}></canvas>;
-    };
 
     const App = ({ apiToken }) => {
         const [articulos, setArticulos] = useState([]);
@@ -121,9 +66,11 @@
         const [fechaVenc, setFechaVenc] = useState('');
         const [cantidad, setCantidad] = useState('');
         const [uom, setUom] = useState('Unidad');
-        const [generatedData, setGeneratedData] = useState(null);
-        const [printData, setPrintData] = useState([]);
         
+        // MODIFICADO: Este estado ahora almacenará la URL del PDF para la vista previa
+        const [previewPdfUrl, setPreviewPdfUrl] = useState(null);
+        
+        // --- Lógica de carga inicial (sin cambios) ---
         useEffect(() => {
             const staticLoader = document.getElementById('static-loader');
             const loaderStatus = document.getElementById('loader-status');
@@ -212,79 +159,7 @@
             }
         };
 
-        const handlePrint = () => {
-            const numEtiquetas = parseInt(cantidadEtiquetas, 10);
-            const loteInicial = parseInt(loteLogistico, 10);
-
-            if (isNaN(numEtiquetas) || numEtiquetas < 1 || isNaN(loteInicial)) {
-                alert("Verifique la cantidad de etiquetas y el lote logístico.");
-                return;
-            }
-            
-            const ultimoLoteAGuardar = loteInicial + numEtiquetas - 1;
-            const isConfirmed = window.confirm(`Se prepararán ${numEtiquetas} etiquetas, desde el lote ${loteInicial} hasta el ${ultimoLoteAGuardar}.\n\nAl confirmar, se guardará el número ${ultimoLoteAGuardar} en GitHub.`);
-
-            if (isConfirmed) {
-                let labels = [];
-                for (let i = 0; i < numEtiquetas; i++) {
-                    const currentLot = loteInicial + i;
-                    labels.push({ ...generatedData, palletId: currentLot });
-                }
-                setPrintData(labels);
-                updateGitHubFile(ultimoLoteAGuardar);
-            }
-        };
-
-        useEffect(() => {
-            if (printData.length > 0) {
-                window.print();
-                setPrintData([]);
-            }
-        }, [printData]);
-
-        const handleGenerateLabel = () => {
-            if (!selectedArticulo || !loteLogistico || !cantidad) {
-                alert("Por favor, complete todos los campos obligatorios (Artículo, Cantidad).");
-                return;
-            }
-
-            const formatQrDate = (dateString) => {
-                if (!dateString) return '';
-                const date = new Date(dateString + 'T00:00:00');
-                const day = String(date.getDate()).padStart(2, '0');
-                const month = String(date.getMonth() + 1).padStart(2, '0');
-                const year = date.getFullYear();
-                return `${day}/${month}/${year}`;
-            };
-            
-            // Reemplaza la coma por un punto para el QR y el procesamiento interno
-            const cantidadParaQR = cantidad.replace(',', '.');
-
-            const qrDataForCode = [
-                selectedArticulo.sku || '',
-                selectedArticulo.descripcion || '',
-                loteProduccion || '',
-                formatQrDate(fechaProd),
-                formatQrDate(fechaVenc),
-                cantidadParaQR || '',
-                uom || ''
-            ].join(';');
-
-            const dataForLabel = {
-                sku: selectedArticulo.sku,
-                descripcion: selectedArticulo.descripcion,
-                lote: loteProduccion,
-                // Guarda la cantidad con formato original para visualización
-                cantidad: cantidad, 
-                uom,
-                fechaProd,
-                fechaVenc,
-                palletId: loteLogistico,
-                qrString: qrDataForCode
-            };
-            setGeneratedData(dataForLabel);
-        };
-        
+        // --- Lógica de fechas y UOM (sin cambios) ---
         useEffect(() => {
             if (fechaProd) {
                 const prodDate = new Date(fechaProd);
@@ -300,73 +175,177 @@
                 else { setUom('Unidad'); }
             }
         }, [selectedArticulo]);
-        
-        // Nueva función para manejar el cambio en la cantidad con validación
+
         const handleCantidadChange = (e) => {
             const rawValue = e.target.value;
-            // Permite solo números y una única coma decimal.
             const regex = /^\d*(,?\d*)?$/;
             if (regex.test(rawValue)) {
                 setCantidad(rawValue);
             }
         };
-
-        const filteredArticulos = searchTerm ? articulos.filter(art => art.sku.toLowerCase().includes(searchTerm.toLowerCase()) || art.descripcion.toLowerCase().includes(searchTerm.toLowerCase())) : [];
         
-        // Función ajustada para mostrar el número con coma en la etiqueta
-        const formatSpanishNumberForLabel = (numStr) => {
-            if (typeof numStr !== 'string' || numStr === '') return '';
-            // Asume que el string ya viene con coma, simplemente lo devuelve.
-            // Si se necesitara formateo (ej. puntos de miles), se añadiría aquí.
-            return numStr;
-        };
+        const filteredArticulos = searchTerm ? articulos.filter(art => art.sku.toLowerCase().includes(searchTerm.toLowerCase()) || art.descripcion.toLowerCase().includes(searchTerm.toLowerCase())) : [];
 
-        const LabelComponent = ({ data }) => (
-            <div className="label-container text-black">
-                <div className="text-center border-b-2 border-black p-4">
-                    <h2 className="text-5xl font-bold">MOLDERIL S.A.</h2>
-                </div>
+        // NUEVO: Función central para dibujar una etiqueta en una página de jsPDF
+        const drawLabelOnDoc = async (doc, data) => {
+            // --- Coordenadas y dimensiones en mm para una página A4 (210x297mm) ---
+            const pageW = 210;
+            const pageH = 297;
+            const margin = 10;
+            const contentW = pageW - (margin * 2);
+            
+            // --- 1. Header ---
+            doc.setFontSize(32);
+            doc.setFont("helvetica", "bold");
+            doc.text("MOLDERIL S.A.", pageW / 2, margin + 15, { align: "center" });
+            doc.line(margin, margin + 25, pageW - margin, margin + 25); // Línea divisoria
+
+            // --- 2. Artículo ---
+            let currentY = margin + 45;
+            doc.setFontSize(16);
+            doc.setFont("helvetica", "normal");
+            doc.text("Artículo", margin, currentY);
+            currentY += 25;
+            doc.setFontSize(60);
+            doc.setFont("helvetica", "bold");
+            // Manejo de texto largo con auto-wrap
+            const descLines = doc.splitTextToSize(data.descripcion, contentW);
+            doc.text(descLines, pageW / 2, currentY, { align: "center" });
+            currentY += (descLines.length * 20); // Ajustar Y según número de líneas
+
+            doc.setFontSize(18);
+            doc.setFont("helvetica", "bold");
+            doc.text(`SKU: ${data.sku}`, margin, currentY);
+            if(data.lote) {
+                doc.text(`Lote Prod: ${data.lote}`, pageW - margin, currentY, { align: "right" });
+            }
+            currentY += 10;
+            doc.line(margin, currentY, pageW - margin, currentY);
+
+            // --- 3. Cantidad ---
+            currentY += 15;
+            doc.setFontSize(16);
+            doc.setFont("helvetica", "normal");
+            doc.text("Cantidad", margin, currentY);
+            currentY += 25;
+            doc.setFontSize(54);
+            doc.setFont("helvetica", "bold");
+            doc.text(`${data.cantidad} ${data.uom}`, pageW / 2, currentY, { align: "center" });
+            currentY += 10;
+            doc.line(margin, currentY, pageW - margin, currentY);
+
+            // --- 4. QR Code ---
+            currentY += 10;
+            const qrSize = 85; // tamaño del QR en mm
+            const qrX = (pageW - qrSize) / 2;
+            const qrY = currentY;
+            // Generar QR como DataURL para poder añadirlo como imagen
+            const qrImageData = await QRCode.toDataURL(data.qrString, { width: 400, margin: 1 });
+            doc.addImage(qrImageData, 'PNG', qrX, qrY, qrSize, qrSize);
+            currentY += qrSize + 5;
+            doc.line(margin, currentY, pageW - margin, currentY);
+
+            // --- 5. Footer (Fechas y Lotes) ---
+            currentY += 15;
+            const col1X = margin + 20;
+            const col2X = pageW / 2;
+            const col3X = pageW - margin - 20;
+
+            doc.setFontSize(18);
+            doc.setFont("helvetica", "bold");
+            doc.text("Lote Logístico", col1X, currentY, { align: "center" });
+            doc.text("Fabricación", col2X, currentY, { align: "center" });
+            doc.text("Vencimiento", col3X, currentY, { align: "center" });
+
+            currentY += 10;
+            doc.setFontSize(36);
+            doc.text(String(data.palletId), col1X, currentY, { align: "center" });
+            doc.setFontSize(18);
+            doc.text(new Date(data.fechaProd + 'T00:00:00').toLocaleDateString('es-ES'), col2X, currentY, { align: "center" });
+            doc.text(new Date(data.fechaVenc + 'T00:00:00').toLocaleDateString('es-ES'), col3X, currentY, { align: "center" });
+        }
+        
+        // MODIFICADO: Esta función ahora genera un PDF para la vista previa
+        const handleGeneratePreview = async () => {
+            if (!selectedArticulo || !cantidad) {
+                alert("Por favor, complete Artículo y Cantidad.");
+                return;
+            }
+
+            const data = getLabelData(loteLogistico); // Obtener datos de la etiqueta
+            
+            const doc = new jsPDF('p', 'mm', 'a4'); // Crear un doc PDF
+            await drawLabelOnDoc(doc, data); // Dibujar la etiqueta en el doc
+            
+            // Generar una URL del PDF y ponerla en el estado para el iframe
+            const pdfDataUrl = doc.output('datauristring');
+            setPreviewPdfUrl(pdfDataUrl);
+        };
+        
+        // NUEVO: Función helper para no repetir la creación del objeto de datos
+        const getLabelData = (currentLote) => {
+             const formatQrDate = (dateString) => {
+                if (!dateString) return '';
+                const date = new Date(dateString + 'T00:00:00');
+                const day = String(date.getDate()).padStart(2, '0');
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const year = date.getFullYear();
+                return `${day}/${month}/${year}`;
+            };
+            const cantidadParaQR = cantidad.replace(',', '.');
+            const qrString = [
+                selectedArticulo.sku || '', selectedArticulo.descripcion || '',
+                loteProduccion || '', formatQrDate(fechaProd),
+                formatQrDate(fechaVenc), cantidadParaQR || '', uom || ''
+            ].join(';');
+
+            return {
+                sku: selectedArticulo.sku,
+                descripcion: selectedArticulo.descripcion,
+                lote: loteProduccion,
+                cantidad: cantidad, // Usamos el valor con coma para mostrar
+                uom,
+                fechaProd,
+                fechaVenc,
+                palletId: currentLote,
+                qrString: qrString
+            };
+        }
+
+        // MODIFICADO: Esta es la nueva lógica de impresión y guardado
+        const handleGenerateAndPrintPDF = async () => {
+            const numEtiquetas = parseInt(cantidadEtiquetas, 10);
+            const loteInicial = parseInt(loteLogistico, 10);
+
+            if (isNaN(numEtiquetas) || numEtiquetas < 1 || isNaN(loteInicial) || !previewPdfUrl) {
+                alert("Primero genere una vista previa y verifique la cantidad de etiquetas y el lote logístico.");
+                return;
+            }
+
+            const ultimoLoteAGuardar = loteInicial + numEtiquetas - 1;
+            const isConfirmed = window.confirm(`Se generará un PDF con ${numEtiquetas} etiquetas, desde el lote ${loteInicial} hasta el ${ultimoLoteAGuardar}.\n\nAl confirmar, se guardará el número ${ultimoLoteAGuardar} en GitHub.`);
+
+            if (isConfirmed) {
+                const doc = new jsPDF('p', 'mm', 'a4');
                 
-                <div className="border-b-2 border-black p-4 flex flex-col justify-center flex-grow-[3]">
-                    <p className="text-2xl">Artículo</p>
-                    <p className="font-bold leading-none" style={{ fontSize: '6rem' }}>{data.descripcion}</p>
-                    <div className="flex justify-between items-end mt-2 text-2xl">
-                        <span className="font-semibold">SKU: {data.sku}</span>
-                        {data.lote && (
-                             <span className="font-semibold">Lote Prod: {data.lote}</span>
-                        )}
-                    </div>
-                </div>
+                // Usamos un bucle for...of para poder usar await adentro
+                for (let i = 0; i < numEtiquetas; i++) {
+                    if (i > 0) {
+                        doc.addPage();
+                    }
+                    const currentLote = loteInicial + i;
+                    const data = getLabelData(currentLote);
+                    await drawLabelOnDoc(doc, data); // Esperamos a que cada etiqueta se dibuje
+                }
                 
-                <div className="border-b-2 border-black p-4 flex flex-col justify-center flex-grow-[2]">
-                    <p className="text-2xl">Cantidad</p>
-                    <p className="font-bold leading-none" style={{ fontSize: '5rem' }}>
-                        {formatSpanishNumberForLabel(data.cantidad)} <span className="text-5xl">{data.uom}</span>
-                    </p>
-                </div>
-                
-                <div className="flex-grow-[5] flex justify-center items-center p-4">
-                    <div className="w-full h-full">
-                        <QrCanvas qrString={data.qrString} size={800} />
-                    </div>
-                </div>
-                
-                <div className="grid grid-cols-3 text-center border-t-2 border-black p-4 text-2xl">
-                    <div>
-                        <p className="font-bold">Lote Logístico</p>
-                        <p className="font-bold text-6xl">{data.palletId}</p>
-                    </div>
-                    <div>
-                        <p className="font-bold">Fabricación</p>
-                        <p>{new Date(data.fechaProd + 'T00:00:00').toLocaleDateString('es-ES')}</p>
-                    </div>
-                    <div>
-                        <p className="font-bold">Vencimiento</p>
-                        <p>{new Date(data.fechaVenc + 'T00:00:00').toLocaleDateString('es-ES')}</p>
-                    </div>
-                </div>
-            </div>
-        );
+                // Abre el diálogo de impresión del navegador para el PDF generado
+                doc.autoPrint();
+                // Ofrece la descarga del archivo
+                doc.save(`etiquetas_lotes_${loteInicial}-${ultimoLoteAGuardar}.pdf`);
+
+                updateGitHubFile(ultimoLoteAGuardar);
+            }
+        };
 
         return (
             <Fragment>
@@ -374,14 +353,15 @@
                     <div className="bg-white p-6 rounded-xl shadow-lg flex-grow">
                         <div className="flex justify-between items-center mb-6">
                             <h1 className="text-3xl font-extrabold text-gray-900">Generar Etiqueta de Pallet</h1>
-                            <a href="index.html" className="bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-md hover:bg-gray-300 no-print">Volver al Menú</a>
+                            <a href="index.html" className="bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-md hover:bg-gray-300">Volver al Menú</a>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {/* --- Columna del Formulario (sin cambios funcionales) --- */}
                             <div className="space-y-4">
                                 <div className="relative">
                                     <label className="block text-sm font-medium text-gray-700">Artículo (Buscar por SKU o Descripción)</label>
-                                    <input type="text" value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setSelectedArticulo(null); }} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
-                                    {searchTerm && (
+                                    <input type="text" value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setSelectedArticulo(null); setPreviewPdfUrl(null); }} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
+                                    {searchTerm && filteredArticulos.length > 0 && (
                                         <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">
                                             {filteredArticulos.map(art => (
                                                 <li key={art.sku} className="p-2 hover:bg-indigo-100 cursor-pointer" onClick={() => { setSelectedArticulo(art); setSearchTerm(`${art.sku} - ${art.descripcion}`); }}>
@@ -391,7 +371,7 @@
                                         </ul>
                                     )}
                                 </div>
-                                 <div>
+                                <div>
                                     <label className="block text-sm font-medium text-gray-700">Lote de Producción (Opcional)</label>
                                     <input type="text" value={loteProduccion} onChange={e => setLoteProduccion(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
                                 </div>
@@ -422,39 +402,31 @@
                                         <option>Millar</option>
                                     </select>
                                 </div>
-                                <button onClick={handleGenerateLabel} className="w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-blue-700 text-xl">
+                                <button onClick={handleGeneratePreview} className="w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-blue-700 text-xl">
                                     Generar Vista Previa
                                 </button>
                             </div>
+
+                            {/* --- Columna de la Vista Previa --- */}
                             <div>
                                 <h3 className="text-lg font-medium text-gray-900 mb-2">Vista Previa de Etiqueta</h3>
-                                <div id="printable-label-container" className="border-2 border-dashed border-gray-400 w-full" style={{height: '60vh'}}>
-                                    {generatedData ? (
-                                        <div style={{ transform: 'scale(0.23)', transformOrigin: 'center' }}>
-                                            <LabelComponent data={generatedData} />
-                                        </div>
+                                <div id="preview-container" className="border-2 border-dashed border-gray-400 w-full" style={{height: '60vh'}}>
+                                    {previewPdfUrl ? (
+                                        <iframe id="preview-iframe" src={previewPdfUrl} title="Vista Previa de Etiqueta"></iframe>
                                     ) : (
                                         <div className="text-center text-gray-500 flex items-center justify-center h-full">
-                                            <p>Complete el formulario para ver la etiqueta</p>
+                                            <p>Complete el formulario y genere la vista previa</p>
                                         </div>
                                     )}
                                 </div>
-                                {generatedData && (
-                                    <button onClick={handlePrint} className="w-full mt-4 bg-green-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-green-700 text-xl">
+                                {previewPdfUrl && (
+                                    <button onClick={handleGenerateAndPrintPDF} className="w-full mt-4 bg-green-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-green-700 text-xl">
                                         Imprimir y Guardar Lotes
                                     </button>
                                 )}
                             </div>
                         </div>
                     </div>
-                </div>
-
-                <div id="print-section">
-                    {printData.map((labelData, index) => (
-                        <div key={index} className="label-print-page">
-                           <LabelComponent data={labelData} />
-                        </div>
-                    ))}
                 </div>
             </Fragment>
         );
