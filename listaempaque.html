@@ -46,7 +46,7 @@
     const QrScanner = ({ onScanSuccess, onStop, onError }) => {
       const qrCodeScanner = useRef(null);
       const readerId = "reader";
-      
+
       useEffect(() => {
         qrCodeScanner.current = new Html5Qrcode(readerId);
         const config = { fps: 10, qrbox: { width: 250, height: 250 } };
@@ -81,7 +81,7 @@
       <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
         <div className="relative p-6 bg-white w-full max-w-2xl rounded-xl shadow-lg m-4 max-h-[90vh] overflow-y-auto">
           <h3 className="text-2xl font-bold text-gray-800 mb-4 border-b pb-2">Guía de Uso: Escáner de Inventario</h3>
-          
+
           <div className="space-y-4 text-gray-700">
             <div>
               <h4 className="font-semibold text-lg text-indigo-600">1. Registro Inicial</h4>
@@ -152,7 +152,7 @@
       const [isActionsOpen, setIsActionsOpen] = useState(false);
       const [feedbackMessage, setFeedbackMessage] = useState('');
       const [isShareApiSupported, setIsShareApiSupported] = useState(false);
-      
+
       const [clientList, setClientList] = useState([]);
       const [showSuggestions, setShowSuggestions] = useState(false);
 
@@ -161,7 +161,7 @@
       const clientInputRef = useRef(null);
       const fileInputRef = useRef(null);
       const manualInputRef = useRef(null);
-      
+
       async function getApiToken() {
         try {
             const response = await fetch('cls.txt');
@@ -188,42 +188,40 @@
         }
 
         const loadingTasks = [
-          { status: "Inicializando aplicación...", duration: 200, progress: 15 },
-          { status: "Cargando librerías...", duration: 500, progress: 30, action: () => setIsPdfLibLoaded(!!window.jspdf) },
-          { status: "Verificando acceso a GitHub...", duration: 600, progress: 50, action: async () => {
-              const token = await getApiToken();
-              setApiToken(token);
-            }
-          },
-          { status: "Cargando lista de clientes...", duration: 600, progress: 75, action: async () => {
-              try {
-                const response = await fetch('clientes.txt');
-                const text = await response.text();
-                const clients = text.split('\n').map(client => client.trim().toUpperCase()).filter(Boolean);
-                setClientList(clients);
-              } catch (error) {
-                console.error("Failed to load client list:", error);
-                setModalContent({ title: 'Error', message: 'No se pudo cargar la lista de clientes (clientes.txt).' });
-                setShowInfoModal(true);
+            { status: "Inicializando aplicación...", duration: 200, progress: 15 },
+            { status: "Cargando librerías...", duration: 500, progress: 30, action: () => setIsPdfLibLoaded(!!window.jspdf) },
+            { status: "Verificando acceso a GitHub...", duration: 600, progress: 50, action: async () => {
+                const token = await getApiToken();
+                setApiToken(token);
               }
-            }
-          },
-          { status: "¡Listo!", duration: 400, progress: 100 }
+            },
+            { status: "Cargando lista de clientes...", duration: 600, progress: 75, action: async () => {
+                try {
+                  const response = await fetch('clientes.txt');
+                   if (!response.ok) {
+                       throw new Error(`No se pudo cargar clientes.txt (Estado: ${response.status})`);
+                   }
+                  const text = await response.text();
+                  const clients = text.split('\n').map(client => client.trim().toUpperCase()).filter(Boolean);
+                  setClientList(clients);
+                } catch (error) {
+                  console.error("Fallo al cargar la lista de clientes:", error);
+                  setModalContent({ title: 'Error', message: 'No se pudo cargar la lista de clientes (clientes.txt).' });
+                  setShowInfoModal(true);
+                }
+              }
+            },
+            { status: "¡Listo!", duration: 400, progress: 100 }
         ];
 
-        let currentTask = 0;
-        const runLoadingTask = () => {
-          if (currentTask < loadingTasks.length) {
-            const task = loadingTasks[currentTask];
-            if (loaderStatus) loaderStatus.textContent = task.status;
-            if (loaderProgress) loaderProgress.style.width = `${task.progress}%`;
-            if(task.action) task.action();
-            
-            setTimeout(() => {
-              currentTask++;
-              runLoadingTask();
-            }, task.duration);
-          } else {
+        const executeLoadingTasks = async () => {
+            for (const task of loadingTasks) {
+                if (loaderStatus) loaderStatus.textContent = task.status;
+                if (loaderProgress) loaderProgress.style.width = `${task.progress}%`;
+                if (task.action) await task.action();
+                await new Promise(resolve => setTimeout(resolve, task.duration));
+            }
+
             if (staticLoader) {
                 staticLoader.classList.add('opacity-0');
                 setTimeout(() => {
@@ -231,11 +229,10 @@
                 }, 500);
             }
             setIsAppReady(true);
-          }
         };
 
-        runLoadingTask();
-      }, []);
+        executeLoadingTasks();
+    }, []);
 
 
       useEffect(() => {
@@ -243,12 +240,12 @@
           legajoInputRef.current.focus();
         }
       }, [isAppReady, isDataEntered]);
-      
+
       useEffect(() => {
         if (isDataEntered && manualInputRef.current) {
           setTimeout(() => {
             manualInputRef.current.focus();
-          }, 100); 
+          }, 100);
         }
       }, [isDataEntered]);
 
@@ -273,9 +270,9 @@
         }
 
         const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${RUTA_HISTORICO_CSV}`;
-        
+
         try {
-            const fileResponse = await fetch(url, { 
+            const fileResponse = await fetch(url, {
                 headers: { 'Authorization': `token ${apiToken}` },
                 cache: 'no-store'
             });
@@ -286,25 +283,25 @@
             const fileData = await fileResponse.json();
             const sha = fileData.sha;
             const contenidoBase64 = fileData.content;
-            
+
             let contenidoCsv = atob(contenidoBase64);
             let lineas = contenidoCsv.split('\n');
             let cambiosRealizados = 0;
 
             itemsScaneados.forEach(item => {
-                const indiceLinea = lineas.findIndex(linea => 
+                const indiceLinea = lineas.findIndex(linea =>
                     linea.includes(item.sku) && linea.includes(item.numeroDePallet)
                 );
 
                 if (indiceLinea !== -1) {
                     let columnas = lineas[indiceLinea].split(';');
-                    
+
                     while (columnas.length < 9) {
                         columnas.push('');
                     }
 
                     const clientesExistentes = columnas[8] ? columnas[8].trim().split('#').filter(Boolean) : [];
-                    
+
                     if (!clientesExistentes.includes(clienteNombre.toUpperCase())) {
                         clientesExistentes.push(clienteNombre.toUpperCase());
                         columnas[8] = clientesExistentes.join('#');
@@ -326,9 +323,9 @@
 
             const updateResponse = await fetch(url, {
                 method: 'PUT',
-                headers: { 
-                    'Authorization': `token ${apiToken}`, 
-                    'Content-Type': 'application/json' 
+                headers: {
+                    'Authorization': `token ${apiToken}`,
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
                     message: `Actualización de clientes para ${cambiosRealizados} pallet(s)`,
@@ -363,7 +360,7 @@
           if (typeof dateStr !== 'string') return null;
           const parts = dateStr.match(/(\d+)/g);
           if (!parts || parts.length < 3) return null;
-          
+
           let day, month, year;
           if (parts[2].length === 4) { // dd/mm/yyyy
               day = parseInt(parts[0], 10);
@@ -374,7 +371,7 @@
               month = parseInt(parts[1], 10) - 1;
               year = parseInt(parts[0], 10);
           }
-          
+
           const date = new Date(year, month, day);
           if (isNaN(date.getTime()) || date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) {
               return null;
@@ -397,9 +394,9 @@
 
       const validateQrData = (parts) => {
           if (parts.length < 7) return "El código QR no tiene los 7 campos requeridos.";
-          
+
           const [, , , , fechaProduccion, cantidad] = parts;
-          
+
           if (!parseDate(fechaProduccion)) {
               return "La fecha de producción no tiene un formato válido.";
           }
@@ -414,7 +411,7 @@
       const handleScan = (value) => {
         if (!value) return;
         const parts = value.split(';');
-        
+
         const validationError = validateQrData(parts);
         if (validationError) {
             setModalContent({ title: 'Error en Datos de QR', message: validationError });
@@ -429,16 +426,16 @@
           return;
         }
 
-        const newItem = { 
-            id: Date.now(), 
-            sku, 
-            descripcion, 
+        const newItem = {
+            id: Date.now(),
+            sku,
+            descripcion,
             numeroDePallet,
             lotesProduccion: lotesProduccion.replace(/#/g, ', '),
             fechaProduccion: formatDate(parseDate(fechaProduccion)),
             cantidad: formatSpanishNumber(parseSpanishNumber(cantidad)),
-            unidadMedida, 
-            controlado: false 
+            unidadMedida,
+            controlado: false
         };
         setItems([newItem, ...items]);
         setMockQrValue('');
@@ -446,9 +443,9 @@
       };
 
       const handleDelete = (id) => setItems(items.filter(item => item.id !== id));
-      
+
       const handleControlCheck = (id) => setItems(prev => prev.map(item => item.id === id ? { ...item, controlado: !item.controlado } : item));
-      
+
       const handleKeyDown = (e) => { if (e.key === 'Enter') handleScan(mockQrValue); };
 
       const handleContinue = () => {
@@ -461,7 +458,7 @@
       };
 
       const handleFormEnter = (e) => { if (e.key === 'Enter') handleContinue(); };
-      
+
       const handleImageUpload = (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -537,7 +534,7 @@
           pdf.text(`Fecha y Hora:`, midPoint + 5, yRight);
           pdf.setFont('helvetica', 'bold');
           pdf.text(`${formattedDate} ${formattedTime}`, midPoint + 26, yRight);
-          
+
           y = 45;
           const headers = ["SKU", "Descripción", "Nº Pallet", "Lotes Prod.", "F. Prod.", "Cant.", "U.M.", "Control"];
           const colWidths = [0.12, 0.33, 0.12, 0.13, 0.08, 0.06, 0.05, 0.11];
@@ -545,7 +542,7 @@
               acc.push( (i === 0 ? m : acc[i - 1]) + (i === 0 ? 0 : pageWidth * colWidths[i - 1]) );
               return acc;
           }, []);
-          
+
           const drawHeader = (currentY) => {
               pdf.setFont('helvetica', 'bold');
               pdf.setFontSize(8);
@@ -555,7 +552,7 @@
               return currentY + 6;
           };
           y = drawHeader(y);
-          
+
           const rowHeight = 5;
           const startTableY = y;
           pdf.setFont('helvetica', 'normal');
@@ -575,15 +572,15 @@
             pdf.rect(colPos[7] + (pageWidth * colWidths[7] / 2) - (boxSize / 2), y + (rowHeight / 2) - (boxSize / 2), boxSize, boxSize);
             y += rowHeight;
           });
-          
+
           pdf.line(m, y, pdfWidth - m, y);
           colPos.forEach(pos => pdf.line(pos, startTableY, pos, y));
           pdf.line(pdfWidth - m, startTableY, pdfWidth - m, y);
-          
+
           pdf.setFont('helvetica', 'bold');
           pdf.setFontSize(12);
           pdf.text(`Total de bultos escaneados: ${items.length}`, m, y + 10);
-          
+
           const totalPages = pdf.internal.getNumberOfPages();
           for (let i = 1; i <= totalPages; i++) {
               pdf.setPage(i);
@@ -620,17 +617,17 @@
         return `Lista_Empaque_${dateString}-${timeString}_${operarioLegajo}.pdf`;
       }
 
-      const handleDownloadPdf = async () => { 
-        const pdf = await createPdfDocument(); 
-        if (pdf) { 
-          pdf.save(getPdfFilename()); 
-          showFeedback('PDF descargado.'); 
+      const handleDownloadPdf = async () => {
+        const pdf = await createPdfDocument();
+        if (pdf) {
+          pdf.save(getPdfFilename());
+          showFeedback('PDF descargado.');
           await actualizarEstadoPalletsEnGitHub(items, clienteNombre);
-        } 
+        }
       };
-      
-      const handlePrintPdf = async () => { 
-        const pdf = await createPdfDocument(); 
+
+      const handlePrintPdf = async () => {
+        const pdf = await createPdfDocument();
         if (pdf) {
             const iframe = document.createElement('iframe');
             iframe.style.display = 'none';
@@ -640,7 +637,7 @@
             await actualizarEstadoPalletsEnGitHub(items, clienteNombre);
         }
       };
-      
+
       const handleEmailPdf = async () => {
         const pdf = await createPdfDocument();
         if (pdf) {
@@ -732,7 +729,7 @@
       };
 
       const handleReset = () => { setIsDataEntered(false); setOperarioLegajo(''); setClienteNombre(''); setItems([]); };
-      
+
       const InfoModal = ({ onClose, title, message }) => (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50">
           <div className="relative p-8 bg-white w-full max-w-lg rounded-xl shadow-lg m-4">
@@ -744,7 +741,7 @@
           </div>
         </div>
       );
-      
+
       if (!isAppReady) {
         return null;
       }
@@ -764,33 +761,33 @@
               <div className="space-y-4">
                 <div>
                   <label htmlFor="legajo" className="block text-xl font-medium text-gray-700">Legajo</label>
-                  <input 
-                    type="text" 
-                    id="legajo" 
-                    ref={legajoInputRef} 
-                    value={operarioLegajo} 
+                  <input
+                    type="text"
+                    id="legajo"
+                    ref={legajoInputRef}
+                    value={operarioLegajo}
                     onChange={(e) => {
                         const value = e.target.value.replace(/[^0-9]/g, '');
                         setOperarioLegajo(value);
-                    }} 
-                    onKeyDown={handleFormEnter} 
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border text-2xl" 
+                    }}
+                    onKeyDown={handleFormEnter}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border text-2xl"
                     placeholder="Ej: 12345"
                   />
                 </div>
                 <div className="relative" ref={clientInputRef}>
                   <label htmlFor="cliente" className="block text-xl font-medium text-gray-700">Cliente</label>
-                  <input 
-                    type="text" 
-                    id="cliente" 
-                    value={clienteNombre} 
-                    onChange={(e) => { 
-                        setClienteNombre(e.target.value.toUpperCase()); 
-                        setShowSuggestions(true); 
-                    }} 
-                    onKeyDown={handleFormEnter} 
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border text-2xl" 
-                    placeholder="Buscar cliente..." 
+                  <input
+                    type="text"
+                    id="cliente"
+                    value={clienteNombre}
+                    onChange={(e) => {
+                        setClienteNombre(e.target.value.toUpperCase());
+                        setShowSuggestions(true);
+                    }}
+                    onKeyDown={handleFormEnter}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border text-2xl"
+                    placeholder="Buscar cliente..."
                     autoComplete="off"
                   />
                   {showSuggestions && filteredSuggestions.length > 0 && (
@@ -818,7 +815,7 @@
           {showHelpModal && <HelpModal onClose={() => setShowHelpModal(false)} />}
           {feedbackMessage && <div className="fixed top-5 right-5 bg-green-500 text-white py-2 px-4 rounded-lg shadow-lg z-50">{feedbackMessage}</div>}
           <div className="bg-white p-6 rounded-xl shadow-lg flex-grow">
-            
+
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6 shadow-sm">
               <div className="flex justify-between items-start">
                 <div>
@@ -922,1008 +919,15 @@
                 <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4">
                   <div className="relative w-full sm:w-auto flex-grow" ref={actionsMenuRef}>
                     <div className="flex rounded-md shadow-sm">
-                        <button 
-                            onClick={isShareApiSupported ? handleShare : handleDownloadPdf} 
-                            disabled={items.length === 0 || isGenerating || !isPdfLibLoaded} 
-                            className="flex-grow bg-blue-600 text-white font-semibold py-3 px-5 rounded-l-md hover:bg-blue-700 disabled:opacity-50 text-xl flex items-center justify-center"
-                        >
-                            {isGenerating ? 'Generando...' : (isShareApiSupported ? 'Compartir PDF' : 'Descargar PDF')}
-                        </button>
-                        <button 
-                            onClick={() => setIsActionsOpen(prev => !prev)} 
+                        <button
+                            onClick={isShareApiSupported ? handleShare : handleDownloadPdf}
                             disabled={items.length === 0 || isGenerating || !isPdfLibLoaded}
-                            className="bg-blue-700 text-white font-semibold py-3 px-4 rounded-r-md hover:bg-blue-800 disabled:opacity-50"
-                        >
-                            <i className={`fas fa-chevron-down transition-transform ${isActionsOpen ? 'rotate-180' : ''}`}></i>
-                        </button>
-                    </div>
-                    {isActionsOpen && (
-                      <div className="absolute bottom-full mb-2 w-full bg-white rounded-md shadow-lg border z-20">
-                        <ul className="text-gray-700">
-                          {isShareApiSupported && (
-                            <li><button onClick={handleShare} className="w-full text-left font-bold text-indigo-600 hover:bg-indigo-50 p-3 flex items-center"><i className="fas fa-share-alt w-6 mr-2"></i>Compartir PDF</button></li>
-                          )}
-                          <li><button onClick={handleDownloadPdf} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-download w-6 mr-2"></i>Descargar PDF</button></li>
-                          <li><button onClick={handlePrintPdf} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-print w-6 mr-2"></i>Imprimir PDF</button></li>
-                          <li><button onClick={handleEmailPdf} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-envelope w-6 mr-2"></i>Enviar por Correo</button></li>
-                          <li><button onClick={handleWhatsAppPdf} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fab fa-whatsapp w-6 mr-2"></i>Enviar por WhatsApp</button></li>
-                           <li><hr className="my-1"/></li>
-                          <li><button onClick={handleCopyJson} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-copy w-6 mr-2"></i>Copiar JSON</button></li>
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                  <button onClick={handleReset} className="w-full sm:w-auto bg-gray-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-gray-700 text-xl">
-                    Nuevo Escaneo
-                  </button>
-                  <a href="index.html" className="w-full sm:w-auto bg-gray-500 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-gray-600 text-xl flex items-center justify-center">
-                    Volver al Menú
-                  </a>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      );
-    };
-
-    const root = createRoot(document.getElementById('root'));
-    root.render(<App />);
-  </script>
-</body>
-</html>
-" and want to apply the following change: "BUENO AHORA SOBRE listaempaque.html
-si se escanea un lote y al generar la impresion el mismo ya tiene un cliente asociado en el archivo detallelotes.csv
-SOBRE LA COLUMNA CLIENTE  que es la ultoma del csv agrega no agregues la fina nueva, sino que solo actualiza agregando el nuevo cliente seoardo por "#"
-de modo que actue como el lote de producto, mas de un cliente recibio ek mismo lote de producto al hacer piking del mismo. se entiende lo que debes hacer?"
-I have made the following changes:
-I've updated the `actualizarEstadoPalletsEnGitHub` function to handle multiple clients for a single lot. Now, if a lot already exists, it appends the new client to the existing list, separated by a '#'. If the lot doesn't exist, it creates a new entry. This ensures that partial shipments to different clients are correctly recorded.De acuerdo. He modificado el archivo `listaempaque.html` para implementar la lógica de despachos parciales (picking) a múltiples clientes.
-
-### Resumen de Cambios
-He actualizado la función `actualizarEstadoPalletsEnGitHub`. La nueva lógica funciona de la siguiente manera:
-1.  **Verificación de Lote:** Al generar un PDF, el sistema buscará en `detallelotes.csv` si el lote escaneado ya existe.
-2.  **Actualización Inteligente:**
-    * **Si el lote ya tiene clientes asignados,** el nuevo cliente se añadirá a la lista existente, separado por un `#`.
-    * **Si el lote es nuevo o no tiene clientes,** se le asignará el cliente actual como el primero.
-3.  **Consistencia de Datos:** Esto asegura que tanto la pantalla de escaneo como la grilla de históricos manejen los datos de la misma forma, reflejando correctamente los despachos a múltiples clientes para un mismo lote.
-
-Aquí tienes el código actualizado en el Canvas.
-
-
-```html
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MOLDERIL - Escáner de Inventario</title>
-  <script src="[https://cdn.tailwindcss.com](https://cdn.tailwindcss.com)"></script>
-  <script crossorigin src="[https://unpkg.com/react@18/umd/react.production.min.js](https://unpkg.com/react@18/umd/react.production.min.js)"></script>
-  <script crossorigin src="[https://unpkg.com/react-dom@18/umd/react-dom.production.min.js](https://unpkg.com/react-dom@18/umd/react-dom.production.min.js)"></script>
-  <script src="[https://unpkg.com/@babel/standalone/babel.min.js](https://unpkg.com/@babel/standalone/babel.min.js)"></script>
-  <script src="[https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js](https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js)"></script>
-  <script src="[https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js](https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js)"></script>
-  <link rel="stylesheet" href="[https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css](https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css)">
-</head>
-<body class="bg-gray-100 font-sans">
-
-  <div id="static-loader" class="fixed inset-0 bg-gray-100 flex items-center justify-center p-4 font-sans z-50">
-    <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md text-center">
-      <h1 class="text-4xl font-extrabold text-gray-900 tracking-wide mb-6" style="font-family: 'Arial', sans-serif;">
-        MOLDERIL S.A.
-      </h1>
-      <p id="loader-status" class="text-xl text-gray-600 mb-4">Cargando aplicación...</p>
-      <div class="w-full bg-gray-200 rounded-full h-4">
-        <div id="loader-progress" class="bg-indigo-600 h-4 rounded-full transition-all duration-500" style="width: 10%"></div>
-      </div>
-    </div>
-  </div>
-
-  <div id="root"></div>
-  <div id="reader-placeholder" className="hidden"></div>
-
-  <script type="text/babel">
-    const { useState, useRef, useEffect } = React;
-    const { createRoot } = ReactDOM;
-
-    // =================================================================
-    // ### CONFIGURACIÓN: DATOS DEL REPOSITORIO DE GITHUB ###
-    // =================================================================
-    const USUARIO_GITHUB = 'gagegfg';
-    const REPO_NOMBRE = 'Molderil_ListaEmpaque';
-    const RUTA_HISTORICO_CSV = 'detallelotes.csv';
-    // =================================================================
-
-
-    // --- QR SCANNER COMPONENT ---
-    const QrScanner = ({ onScanSuccess, onStop, onError }) => {
-      const qrCodeScanner = useRef(null);
-      const readerId = "reader";
-      
-      useEffect(() => {
-        qrCodeScanner.current = new Html5Qrcode(readerId);
-        const config = { fps: 10, qrbox: { width: 250, height: 250 } };
-
-        qrCodeScanner.current.start(
-          { facingMode: "environment" },
-          config,
-          (decodedText) => {
-            onScanSuccess(decodedText);
-            onStop();
-          },
-          (errorMessage) => {}
-        )
-        .catch((err) => {
-          console.error("Error al iniciar la cámara:", err);
-          onError('Error: No se pudo iniciar la cámara. Asegúrate de dar los permisos necesarios.');
-          onStop();
-        });
-
-        return () => {
-          if (qrCodeScanner.current && qrCodeScanner.current.isScanning) {
-            qrCodeScanner.current.stop().catch((err) => console.error("Error al detener la cámara:", err));
-          }
-        };
-      }, []);
-
-      return <div id={readerId} className="w-full max-w-sm"></div>;
-    };
-
-    // --- HELP MODAL COMPONENT ---
-    const HelpModal = ({ onClose }) => (
-      <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
-        <div className="relative p-6 bg-white w-full max-w-2xl rounded-xl shadow-lg m-4 max-h-[90vh] overflow-y-auto">
-          <h3 className="text-2xl font-bold text-gray-800 mb-4 border-b pb-2">Guía de Uso: Escáner de Inventario</h3>
-          
-          <div className="space-y-4 text-gray-700">
-            <div>
-              <h4 className="font-semibold text-lg text-indigo-600">1. Registro Inicial</h4>
-              <p>Al iniciar, la aplicación te pedirá dos datos para comenzar:</p>
-              <ul className="list-disc list-inside ml-4 mt-1">
-                <li><strong>Legajo de Operario:</strong> Tu número de identificación.</li>
-                <li><strong>Nombre del Cliente:</strong> Busca y selecciona el cliente de la lista oficial.</li>
-              </ul>
-            </div>
-
-            <div>
-              <h4 className="font-semibold text-lg text-indigo-600">2. Métodos para Agregar Artículos</h4>
-              <p>Una vez registrado, accederás al panel de escaneo. Tienes tres formas de agregar artículos a la lista:</p>
-              <ul className="list-disc list-inside ml-4 mt-1">
-                <li><strong>Escanear con Cámara:</strong> Pulsa el botón principal <span className="font-mono bg-purple-100 text-purple-700 rounded px-1">Escanear con Cámara</span> para activar la cámara de tu dispositivo.</li>
-                <li><strong>Ingreso Manual o con Pistola:</strong> Escribe o pega la información del QR en el campo de texto y pulsa <span className="font-mono bg-green-100 text-green-700 rounded px-1">Agregar</span>. También funciona con pistolas de escaneo USB.</li>
-                <li><strong>Adjuntar Imagen de QR:</strong> Pulsa <span className="font-mono bg-orange-100 text-orange-700 rounded px-1">Adjuntar QR</span> para seleccionar una imagen de un código QR desde tu dispositivo.</li>
-              </ul>
-            </div>
-
-            <div>
-              <h4 className="font-semibold text-lg text-indigo-600">3. La Lista de Artículos</h4>
-              <p>Cada artículo que escaneas se añade a la tabla. Dentro de la tabla puedes:</p>
-               <ul className="list-disc list-inside ml-4 mt-1">
-                <li><strong>Marcar como Controlado:</strong> Usa la casilla de verificación para llevar un control visual de los pallets que ya has revisado.</li>
-                <li><strong>Eliminar (🗑️):</strong> Si agregaste un artículo por error, usa el ícono de la papelera para quitarlo de la lista.</li>
-                <li><strong>Ver el Total:</strong> Debajo de la tabla siempre verás el conteo total de bultos escaneados.</li>
-              </ul>
-            </div>
-
-            <div>
-              <h4 className="font-semibold text-lg text-indigo-600">4. Acciones Finales y Exportación</h4>
-              <p>Cuando hayas terminado de escanear, tienes varias opciones:</p>
-              <ul className="list-disc list-inside ml-4 mt-1">
-                <li><strong>Botón Principal (Compartir/Descargar):</strong> Es la acción más común. Genera un PDF y te permite compartirlo (en móviles) o descargarlo.</li>
-                <li><strong>Menú "Más Acciones" (▼):</strong> Despliega opciones adicionales como Imprimir, Enviar por Correo/WhatsApp o Copiar los datos en formato JSON.</li>
-                 <li><strong>Nuevo Escaneo:</strong> Limpia la pantalla y te permite iniciar una nueva lista de empaque, ya sea para otro cliente o con otro legajo.</li>
-                <li><strong>Volver al Menú:</strong> Te regresa a la página principal de la aplicación.</li>
-              </ul>
-               <p className="mt-2 text-sm font-bold text-blue-600">Importante: Al generar un PDF (por cualquier método), el sistema intentará actualizar automáticamente el estado de los pallets y el cliente de despacho en el archivo de control de GitHub.</p>
-            </div>
-          </div>
-
-          <div className="text-center mt-6">
-            <button onClick={onClose} className="bg-indigo-600 text-white font-semibold py-2 px-6 rounded-md shadow-md hover:bg-indigo-700">
-              Entendido
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-
-    // --- MAIN APP COMPONENT ---
-    const App = () => {
-      const [isAppReady, setIsAppReady] = useState(false);
-      const [apiToken, setApiToken] = useState(null);
-      const [items, setItems] = useState([]);
-      const [operarioLegajo, setOperarioLegajo] = useState('');
-      const [clienteNombre, setClienteNombre] = useState('');
-      const [isDataEntered, setIsDataEntered] = useState(false);
-      const [mockQrValue, setMockQrValue] = useState('');
-      const [isGenerating, setIsGenerating] = useState(false);
-      const [isPdfLibLoaded, setIsPdfLibLoaded] = useState(false);
-      const [isCameraActive, setIsCameraActive] = useState(false);
-      const [showInfoModal, setShowInfoModal] = useState(false);
-      const [showHelpModal, setShowHelpModal] = useState(false);
-      const [modalContent, setModalContent] = useState({ title: '', message: '' });
-      const [isActionsOpen, setIsActionsOpen] = useState(false);
-      const [feedbackMessage, setFeedbackMessage] = useState('');
-      const [isShareApiSupported, setIsShareApiSupported] = useState(false);
-      
-      const [clientList, setClientList] = useState([]);
-      const [showSuggestions, setShowSuggestions] = useState(false);
-
-      const legajoInputRef = useRef(null);
-      const actionsMenuRef = useRef(null);
-      const clientInputRef = useRef(null);
-      const fileInputRef = useRef(null);
-      const manualInputRef = useRef(null);
-      
-      async function getApiToken() {
-        try {
-            const response = await fetch('cls.txt');
-            if (!response.ok) {
-                console.warn('Advertencia: No se pudo cargar el archivo de clave. La función de guardado estará deshabilitada.');
-                return null;
-            }
-            let rawToken = await response.text();
-            rawToken = rawToken.replace(/aaaa/g, '').replace(/bbbb/g, '').replace(/cccc/g, '');
-            return rawToken.trim();
-        } catch (error) {
-            console.error("Error al obtener el token de GitHub:", error);
-            return null;
-        }
-      }
-
-      useEffect(() => {
-        const staticLoader = document.getElementById('static-loader');
-        const loaderStatus = document.getElementById('loader-status');
-        const loaderProgress = document.getElementById('loader-progress');
-
-        if (navigator.share) {
-            setIsShareApiSupported(true);
-        }
-
-        const loadingTasks = [
-          { status: "Inicializando aplicación...", duration: 200, progress: 15 },
-          { status: "Cargando librerías...", duration: 500, progress: 30, action: () => setIsPdfLibLoaded(!!window.jspdf) },
-          { status: "Verificando acceso a GitHub...", duration: 600, progress: 50, action: async () => {
-              const token = await getApiToken();
-              setApiToken(token);
-            }
-          },
-          { status: "Cargando lista de clientes...", duration: 600, progress: 75, action: async () => {
-              try {
-                const response = await fetch('clientes.txt');
-                const text = await response.text();
-                const clients = text.split('\n').map(client => client.trim().toUpperCase()).filter(Boolean);
-                setClientList(clients);
-              } catch (error) {
-                console.error("Failed to load client list:", error);
-                setModalContent({ title: 'Error', message: 'No se pudo cargar la lista de clientes (clientes.txt).' });
-                setShowInfoModal(true);
-              }
-            }
-          },
-          { status: "¡Listo!", duration: 400, progress: 100 }
-        ];
-
-        let currentTask = 0;
-        const runLoadingTask = () => {
-          if (currentTask < loadingTasks.length) {
-            const task = loadingTasks[currentTask];
-            if (loaderStatus) loaderStatus.textContent = task.status;
-            if (loaderProgress) loaderProgress.style.width = `${task.progress}%`;
-            if(task.action) task.action();
-            
-            setTimeout(() => {
-              currentTask++;
-              runLoadingTask();
-            }, task.duration);
-          } else {
-            if (staticLoader) {
-                staticLoader.classList.add('opacity-0');
-                setTimeout(() => {
-                    staticLoader.remove();
-                }, 500);
-            }
-            setIsAppReady(true);
-          }
-        };
-
-        runLoadingTask();
-      }, []);
-
-
-      useEffect(() => {
-        if (isAppReady && !isDataEntered && legajoInputRef.current) {
-          legajoInputRef.current.focus();
-        }
-      }, [isAppReady, isDataEntered]);
-      
-      useEffect(() => {
-        if (isDataEntered && manualInputRef.current) {
-          setTimeout(() => {
-            manualInputRef.current.focus();
-          }, 100); 
-        }
-      }, [isDataEntered]);
-
-      useEffect(() => {
-        const handleClickOutside = (event) => {
-          if (actionsMenuRef.current && !actionsMenuRef.current.contains(event.target)) setIsActionsOpen(false);
-          if (clientInputRef.current && !clientInputRef.current.contains(event.target)) setShowSuggestions(false);
-        };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-      }, []);
-
-      // --- GITHUB UPDATE FUNCTION ---
-      const actualizarEstadoPalletsEnGitHub = async (itemsScaneados, clienteNombre) => {
-        if (!apiToken) {
-            console.warn("No hay token de API. La actualización en GitHub se omite.");
-            return;
-        }
-        if (itemsScaneados.length === 0) {
-            console.log("No hay items para actualizar. La actualización en GitHub se omite.");
-            return;
-        }
-
-        const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${RUTA_HISTORICO_CSV}`;
-        
-        try {
-            const fileResponse = await fetch(url, { 
-                headers: { 'Authorization': `token ${apiToken}` },
-                cache: 'no-store'
-            });
-
-            if (!fileResponse.ok) {
-                throw new Error(`Error ${fileResponse.status}: No se pudo obtener el archivo ${RUTA_HISTORICO_CSV} de GitHub.`);
-            }
-            const fileData = await fileResponse.json();
-            const sha = fileData.sha;
-            const contenidoBase64 = fileData.content;
-            
-            let contenidoCsv = atob(contenidoBase64);
-            let lineas = contenidoCsv.split('\n');
-            let cambiosRealizados = 0;
-
-            itemsScaneados.forEach(item => {
-                const indiceLinea = lineas.findIndex(linea => 
-                    linea.includes(item.sku) && linea.includes(item.numeroDePallet)
-                );
-
-                if (indiceLinea !== -1) {
-                    let columnas = lineas[indiceLinea].split(';');
-                    
-                    while (columnas.length < 9) {
-                        columnas.push('');
-                    }
-
-                    const clientesExistentes = columnas[8] ? columnas[8].trim().split('#').filter(Boolean) : [];
-                    
-                    if (!clientesExistentes.includes(clienteNombre.toUpperCase())) {
-                        clientesExistentes.push(clienteNombre.toUpperCase());
-                        columnas[8] = clientesExistentes.join('#');
-                        columnas[7] = 'TRUE'; // Asegurar que está despachado
-                        lineas[indiceLinea] = columnas.join(';');
-                        cambiosRealizados++;
-                    }
-                }
-            });
-
-            if (cambiosRealizados === 0) {
-                console.log("No se encontraron pallets que necesiten actualización o el cliente ya estaba asignado.");
-                showFeedback('Sincronización OK (sin cambios).');
-                return;
-            }
-
-            const nuevoContenidoCsv = lineas.join('\n');
-            const nuevoContenidoBase64 = btoa(unescape(encodeURIComponent(nuevoContenidoCsv)));
-
-            const updateResponse = await fetch(url, {
-                method: 'PUT',
-                headers: { 
-                    'Authorization': `token ${apiToken}`, 
-                    'Content-Type': 'application/json' 
-                },
-                body: JSON.stringify({
-                    message: `Actualización de clientes para ${cambiosRealizados} pallet(s)`,
-                    content: nuevoContenidoBase64,
-                    sha: sha,
-                }),
-            });
-
-            if (!updateResponse.ok) {
-                const errorData = await updateResponse.json();
-                throw new Error(`Error ${updateResponse.status}: No se pudo actualizar el archivo en GitHub. ${errorData.message}`);
-            }
-
-            console.log(`¡Éxito! Se actualizaron ${cambiosRealizados} pallets en ${RUTA_HISTORICO_CSV}.`);
-            showFeedback('Sincronización con GitHub OK.');
-
-        } catch (error) {
-            console.error("FALLO la sincronización con GitHub:", error);
-            setModalContent({ title: 'Error de Sincronización', message: `No se pudo actualizar el estado en GitHub. La operación local (PDF) no fue afectada.\n\nDetalle: ${error.message}` });
-            setShowInfoModal(true);
-        }
-      };
-
-
-      const parseSpanishNumber = (str) => {
-          if (typeof str !== 'string') return NaN;
-          const cleanedStr = str.replace(/\./g, '').replace(',', '.');
-          return parseFloat(cleanedStr);
-      };
-
-      const parseDate = (dateStr) => {
-          if (typeof dateStr !== 'string') return null;
-          const parts = dateStr.match(/(\d+)/g);
-          if (!parts || parts.length < 3) return null;
-          
-          let day, month, year;
-          if (parts[2].length === 4) { // dd/mm/yyyy
-              day = parseInt(parts[0], 10);
-              month = parseInt(parts[1], 10) - 1;
-              year = parseInt(parts[2], 10);
-          } else { // yyyy/mm/dd
-              day = parseInt(parts[2], 10);
-              month = parseInt(parts[1], 10) - 1;
-              year = parseInt(parts[0], 10);
-          }
-          
-          const date = new Date(year, month, day);
-          if (isNaN(date.getTime()) || date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) {
-              return null;
-          }
-          return date;
-      };
-
-      const formatDate = (dateObj) => {
-          if (!(dateObj instanceof Date)) return '';
-          const day = String(dateObj.getDate()).padStart(2, '0');
-          const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-          const year = dateObj.getFullYear();
-          return `${day}/${month}/${year}`;
-      };
-
-      const formatSpanishNumber = (num) => {
-          if (isNaN(num)) return '';
-          return new Intl.NumberFormat('es-ES', {minimumFractionDigits: 0, maximumFractionDigits: 2}).format(num);
-      };
-
-      const validateQrData = (parts) => {
-          if (parts.length < 7) return "El código QR no tiene los 7 campos requeridos.";
-          
-          const [, , , , fechaProduccion, cantidad] = parts;
-          
-          if (!parseDate(fechaProduccion)) {
-              return "La fecha de producción no tiene un formato válido.";
-          }
-
-          if (isNaN(parseSpanishNumber(cantidad))) {
-              return "La cantidad debe ser un valor numérico.";
-          }
-
-          return null;
-      };
-
-      const handleScan = (value) => {
-        if (!value) return;
-        const parts = value.split(';');
-        
-        const validationError = validateQrData(parts);
-        if (validationError) {
-            setModalContent({ title: 'Error en Datos de QR', message: validationError });
-            setShowInfoModal(true);
-            return;
-        }
-
-        const [sku, descripcion, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida] = parts;
-        if (items.some(item => item.numeroDePallet === numeroDePallet)) {
-          setModalContent({ title: 'Pallet Duplicado', message: `Error: El Pallet Nº "${numeroDePallet}" ya fue cargado.` });
-          setShowInfoModal(true);
-          return;
-        }
-
-        const newItem = { 
-            id: Date.now(), 
-            sku, 
-            descripcion, 
-            numeroDePallet,
-            lotesProduccion: lotesProduccion.replace(/#/g, ', '),
-            fechaProduccion: formatDate(parseDate(fechaProduccion)),
-            cantidad: formatSpanishNumber(parseSpanishNumber(cantidad)),
-            unidadMedida, 
-            controlado: false 
-        };
-        setItems([newItem, ...items]);
-        setMockQrValue('');
-        setTimeout(() => manualInputRef.current?.focus(), 0);
-      };
-
-      const handleDelete = (id) => setItems(items.filter(item => item.id !== id));
-      
-      const handleControlCheck = (id) => setItems(prev => prev.map(item => item.id === id ? { ...item, controlado: !item.controlado } : item));
-      
-      const handleKeyDown = (e) => { if (e.key === 'Enter') handleScan(mockQrValue); };
-
-      const handleContinue = () => {
-        if (operarioLegajo && clienteNombre) {
-          const formattedLegajo = parseInt(operarioLegajo, 10).toString();
-          setOperarioLegajo(formattedLegajo);
-          setIsDataEntered(true);
-          setShowSuggestions(false);
-        }
-      };
-
-      const handleFormEnter = (e) => { if (e.key === 'Enter') handleContinue(); };
-      
-      const handleImageUpload = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const html5QrCode = new Html5Qrcode("reader-placeholder");
-        html5QrCode.scanFile(file, true)
-        .then(decodedText => {
-            handleScan(decodedText);
-        })
-        .catch(err => {
-            console.error(`Error scanning file. Reason: ${err}`);
-            setModalContent({ title: 'Error de Escaneo', message: 'No se pudo encontrar un código QR en la imagen. Intenta con una imagen más clara o mejor recortada.' });
-            setShowInfoModal(true);
-        });
-        e.target.value = '';
-      };
-
-      const createPdfDocument = async () => {
-        setIsGenerating(true);
-        try {
-          if (!isPdfLibLoaded) throw new Error("La librería jsPDF no está cargada.");
-          const { jsPDF } = window.jspdf;
-          const pdf = new jsPDF('l', 'mm', 'a4');
-          const pdfWidth = pdf.internal.pageSize.getWidth();
-          const pdfHeight = pdf.internal.pageSize.getHeight();
-          let y = 10;
-          const m = 10;
-          const pageWidth = pdfWidth - (2 * m);
-          const midPoint = pdfWidth / 2;
-
-          pdf.setDrawColor(150, 150, 150);
-          pdf.rect(m, y, pageWidth, 30);
-          pdf.line(midPoint, y, midPoint, y + 30);
-
-          let yLeft = y + 7;
-          pdf.setFont('helvetica', 'bold');
-          pdf.setFontSize(26);
-          pdf.text("MOLDERIL S.A.", m + 5, yLeft);
-          pdf.setFont('helvetica', 'normal');
-          pdf.setFontSize(8);
-          yLeft += 8;
-          pdf.text("ADMINISTRACION Y VENTAS:", m + 5, yLeft);
-          yLeft += 4;
-          pdf.text("AV. Hermanos Lescano 550 - Rio Primero (Cordoba)", m + 5, yLeft);
-          yLeft += 4;
-          pdf.text("Tel/Fax: 03574-420768 (lineas Rotativas)", m + 5, yLeft);
-
-          let yRight = y + 7;
-          pdf.setFont('helvetica', 'bold');
-          pdf.setFontSize(14);
-          pdf.text("LISTA DE EMPAQUE", midPoint + 5, yRight);
-          pdf.setLineWidth(0.5);
-          pdf.line(midPoint + 5, yRight + 1.5, midPoint + 60, yRight + 1.5);
-          pdf.setLineWidth(0.2);
-
-          pdf.setFont('helvetica', 'normal');
-          pdf.setFontSize(9);
-          yRight += 8;
-          pdf.text(`Cliente:`, midPoint + 5, yRight);
-          pdf.setFont('helvetica', 'bold');
-          pdf.setFontSize(11);
-          pdf.text(`${clienteNombre || 'N/A'}`, midPoint + 20, yRight);
-          pdf.setFont('helvetica', 'normal');
-          pdf.setFontSize(9);
-          yRight += 5;
-          pdf.text(`Operario (Legajo):`, midPoint + 5, yRight);
-          pdf.setFont('helvetica', 'bold');
-          pdf.text(`${operarioLegajo || 'N/A'}`, midPoint + 33, yRight);
-          pdf.setFont('helvetica', 'normal');
-          yRight += 5;
-          const now = new Date();
-          const formattedDate = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
-          const formattedTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-          pdf.text(`Fecha y Hora:`, midPoint + 5, yRight);
-          pdf.setFont('helvetica', 'bold');
-          pdf.text(`${formattedDate} ${formattedTime}`, midPoint + 26, yRight);
-          
-          y = 45;
-          const headers = ["SKU", "Descripción", "Nº Pallet", "Lotes Prod.", "F. Prod.", "Cant.", "U.M.", "Control"];
-          const colWidths = [0.12, 0.33, 0.12, 0.13, 0.08, 0.06, 0.05, 0.11];
-          const colPos = colWidths.reduce((acc, width, i) => {
-              acc.push( (i === 0 ? m : acc[i - 1]) + (i === 0 ? 0 : pageWidth * colWidths[i - 1]) );
-              return acc;
-          }, []);
-          
-          const drawHeader = (currentY) => {
-              pdf.setFont('helvetica', 'bold');
-              pdf.setFontSize(8);
-              pdf.setFillColor(230, 230, 230);
-              pdf.rect(m, currentY, pageWidth, 6, 'F');
-              headers.forEach((h, i) => pdf.text(h, colPos[i] + 2, currentY + 4.5));
-              return currentY + 6;
-          };
-          y = drawHeader(y);
-          
-          const rowHeight = 5;
-          const startTableY = y;
-          pdf.setFont('helvetica', 'normal');
-          pdf.setFontSize(7);
-
-          items.forEach((item) => {
-            if (y + rowHeight > pdfHeight - m - 20) {
-              pdf.addPage();
-              y = m;
-              y = drawHeader(y);
-              pdf.setFontSize(7);
-            }
-            pdf.line(m, y, pdfWidth - m, y);
-            const itemData = [item.sku, item.descripcion, item.numeroDePallet, item.lotesProduccion, item.fechaProduccion, item.cantidad, item.unidadMedida].map(d => String(d || ''));
-            itemData.forEach((data, i) => pdf.text(data, colPos[i] + 2, y + 3.5));
-            const boxSize = 3;
-            pdf.rect(colPos[7] + (pageWidth * colWidths[7] / 2) - (boxSize / 2), y + (rowHeight / 2) - (boxSize / 2), boxSize, boxSize);
-            y += rowHeight;
-          });
-          
-          pdf.line(m, y, pdfWidth - m, y);
-          colPos.forEach(pos => pdf.line(pos, startTableY, pos, y));
-          pdf.line(pdfWidth - m, startTableY, pdfWidth - m, y);
-          
-          pdf.setFont('helvetica', 'bold');
-          pdf.setFontSize(12);
-          pdf.text(`Total de bultos escaneados: ${items.length}`, m, y + 10);
-          
-          const totalPages = pdf.internal.getNumberOfPages();
-          for (let i = 1; i <= totalPages; i++) {
-              pdf.setPage(i);
-              let footerY = pdfHeight - 20;
-              pdf.setFontSize(10);
-              pdf.text("Responsable de Carga:", m, footerY);
-              pdf.line(m + 45, footerY, m + 125, footerY);
-              footerY += 5;
-              pdf.setFontSize(8);
-              pdf.text("Firma y Aclaración", m + 65, footerY);
-          }
-
-          return pdf;
-        } catch (error) {
-          console.error("Error al crear el documento PDF:", error);
-          setModalContent({ title: 'Error de PDF', message: `Error: ${error.message}` });
-          setShowInfoModal(true);
-          return null;
-        } finally {
-          setIsGenerating(false);
-          setIsActionsOpen(false);
-        }
-      };
-
-      const showFeedback = (message) => {
-        setFeedbackMessage(message);
-        setTimeout(() => setFeedbackMessage(''), 2500);
-      };
-
-      const getPdfFilename = () => {
-        const date = new Date();
-        const dateString = `${date.getFullYear()}${(date.getMonth() + 1).toString().padStart(2, '0')}${date.getDate().toString().padStart(2, '0')}`;
-        const timeString = `${date.getHours().toString().padStart(2, '0')}${date.getMinutes().toString().padStart(2, '0')}`;
-        return `Lista_Empaque_${dateString}-${timeString}_${operarioLegajo}.pdf`;
-      }
-
-      const handleDownloadPdf = async () => { 
-        const pdf = await createPdfDocument(); 
-        if (pdf) { 
-          pdf.save(getPdfFilename()); 
-          showFeedback('PDF descargado.'); 
-          await actualizarEstadoPalletsEnGitHub(items, clienteNombre);
-        } 
-      };
-      
-      const handlePrintPdf = async () => { 
-        const pdf = await createPdfDocument(); 
-        if (pdf) {
-            const iframe = document.createElement('iframe');
-            iframe.style.display = 'none';
-            iframe.src = pdf.output('bloburl');
-            document.body.appendChild(iframe);
-            iframe.contentWindow.print();
-            await actualizarEstadoPalletsEnGitHub(items, clienteNombre);
-        }
-      };
-      
-      const handleEmailPdf = async () => {
-        const pdf = await createPdfDocument();
-        if (pdf) {
-            const pdfName = getPdfFilename();
-            pdf.save(pdfName);
-            const mailtoLink = `mailto:?subject=${encodeURIComponent(`Lista de Empaque - Cliente: ${clienteNombre || 'N/A'}`)}&body=${encodeURIComponent(`Hola,\n\nEl archivo "${pdfName}" se ha descargado. Por favor, adjúntalo a este correo.\n\nGenerado por MOLDERIL Inventory Scanner.`)}`;
-            const iframe = document.createElement('iframe');
-            iframe.style.display = 'none';
-            document.body.appendChild(iframe);
-            iframe.src = mailtoLink;
-            setTimeout(() => {
-                document.body.removeChild(iframe);
-            }, 500);
-            await actualizarEstadoPalletsEnGitHub(items, clienteNombre);
-        }
-      };
-
-      const handleWhatsAppPdf = async () => {
-        const pdf = await createPdfDocument();
-        if (pdf) {
-            const pdfName = getPdfFilename();
-            pdf.save(pdfName);
-            setModalContent({ title: 'Enviar por WhatsApp', message: `El archivo "${pdfName}" se ha descargado. Ahora se abrirá WhatsApp Web para que lo adjuntes.` });
-            setShowInfoModal(true);
-            window.open('[https://web.whatsapp.com/](https://web.whatsapp.com/)', '_blank');
-            await actualizarEstadoPalletsEnGitHub(items, clienteNombre);
-        }
-      };
-
-      const handleShare = async () => {
-        const pdf = await createPdfDocument();
-        if (!pdf) return;
-
-        const pdfBlob = pdf.output('blob');
-        const pdfFile = new File([pdfBlob], getPdfFilename(), { type: 'application/pdf' });
-        const shareData = {
-            files: [pdfFile],
-            title: `Lista de Empaque - ${clienteNombre}`,
-            text: `Lista de empaque generada para el cliente ${clienteNombre}.`,
-        };
-
-        if (navigator.canShare && navigator.canShare(shareData)) {
-            try {
-                await navigator.share(shareData);
-                showFeedback('¡Contenido compartido!');
-                await actualizarEstadoPalletsEnGitHub(items, clienteNombre);
-            } catch (error) {
-                if (error.name !== 'AbortError') {
-                    console.error('Error al compartir:', error);
-                    setModalContent({ title: 'Error al Compartir', message: `Ocurrió un error: ${error.message}` });
-                    setShowInfoModal(true);
-                }
-            }
-        } else {
-            setModalContent({ title: 'No se puede compartir', message: `Tu navegador no soporta compartir este tipo de archivo. Por favor, descarga el PDF y compártelo manualmente.` });
-            setShowInfoModal(true);
-        }
-      };
-
-      const handleCopyJson = () => {
-        setIsActionsOpen(false);
-        const jsonString = JSON.stringify(items.map(({ id, controlado, ...rest }) => rest), null, 2);
-
-        const copyToClipboard = (text) => {
-          if (navigator.clipboard && window.isSecureContext) {
-            return navigator.clipboard.writeText(text);
-          } else {
-            let textArea = document.createElement("textarea");
-            textArea.value = text;
-            textArea.style.position = "fixed";
-            textArea.style.left = "-999999px";
-            textArea.style.top = "-999999px";
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
-            return new Promise((res, rej) => {
-              document.execCommand('copy') ? res() : rej();
-              textArea.remove();
-            });
-          }
-        };
-
-        copyToClipboard(jsonString)
-          .then(() => showFeedback('¡JSON copiado!'))
-          .catch(() => {
-            setModalContent({ title: 'Error', message: 'No se pudo copiar el contenido JSON.' });
-            setShowInfoModal(true);
-          });
-      };
-
-      const handleReset = () => { setIsDataEntered(false); setOperarioLegajo(''); setClienteNombre(''); setItems([]); };
-      
-      const InfoModal = ({ onClose, title, message }) => (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50">
-          <div className="relative p-8 bg-white w-full max-w-lg rounded-xl shadow-lg m-4">
-            <h3 className={`text-2xl font-bold ${title.toLowerCase().includes('error') ? 'text-red-600' : 'text-blue-600'} mb-4`}>{title}</h3>
-            <p className="text-xl text-gray-700 mb-4 whitespace-pre-wrap">{message}</p>
-            <div className="text-center">
-              <button onClick={onClose} className="bg-blue-600 text-white font-semibold py-3 px-6 rounded-md shadow-md hover:bg-blue-700">Entendido</button>
-            </div>
-          </div>
-        </div>
-      );
-      
-      if (!isAppReady) {
-        return null;
-      }
-
-      if (!isDataEntered) {
-        const filteredSuggestions = clientList.filter(client => clienteNombre && client.toLowerCase().includes(clienteNombre.toLowerCase()));
-        return (
-          <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
-            {showInfoModal && <InfoModal onClose={() => setShowInfoModal(false)} title={modalContent.title} message={modalContent.message} />}
-            {showHelpModal && <HelpModal onClose={() => setShowHelpModal(false)} />}
-            <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md relative">
-              <button onClick={() => setShowHelpModal(true)} title="Ayuda" className="absolute top-4 right-4 text-gray-400 hover:text-indigo-600 transition-colors">
-                  <i className="fas fa-question-circle text-2xl"></i>
-              </button>
-              <h1 className="text-4xl font-extrabold text-center text-gray-900 mb-6">MOLDERIL S.A.</h1>
-              <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">Lista de Empaque</h2>
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="legajo" className="block text-xl font-medium text-gray-700">Legajo</label>
-                  <input 
-                    type="text" 
-                    id="legajo" 
-                    ref={legajoInputRef} 
-                    value={operarioLegajo} 
-                    onChange={(e) => {
-                        const value = e.target.value.replace(/[^0-9]/g, '');
-                        setOperarioLegajo(value);
-                    }} 
-                    onKeyDown={handleFormEnter} 
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border text-2xl" 
-                    placeholder="Ej: 12345"
-                  />
-                </div>
-                <div className="relative" ref={clientInputRef}>
-                  <label htmlFor="cliente" className="block text-xl font-medium text-gray-700">Cliente</label>
-                  <input 
-                    type="text" 
-                    id="cliente" 
-                    value={clienteNombre} 
-                    onChange={(e) => { 
-                        setClienteNombre(e.target.value.toUpperCase()); 
-                        setShowSuggestions(true); 
-                    }} 
-                    onKeyDown={handleFormEnter} 
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border text-2xl" 
-                    placeholder="Buscar cliente..." 
-                    autoComplete="off"
-                  />
-                  {showSuggestions && filteredSuggestions.length > 0 && (
-                    <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">
-                      {filteredSuggestions.map(client => (
-                        <li key={client} className="p-2 hover:bg-indigo-100 cursor-pointer text-xl" onClick={() => { setClienteNombre(client); setShowSuggestions(false); }}>
-                          {client}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-                <button onClick={handleContinue} disabled={!operarioLegajo || !clienteNombre} className="w-full bg-indigo-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-indigo-700 disabled:opacity-50 text-xl">
-                  Continuar
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      }
-
-      return (
-        <div className="min-h-screen bg-gray-100 p-4 flex flex-col">
-          {showInfoModal && <InfoModal onClose={() => setShowInfoModal(false)} title={modalContent.title} message={modalContent.message} />}
-          {showHelpModal && <HelpModal onClose={() => setShowHelpModal(false)} />}
-          {feedbackMessage && <div className="fixed top-5 right-5 bg-green-500 text-white py-2 px-4 rounded-lg shadow-lg z-50">{feedbackMessage}</div>}
-          <div className="bg-white p-6 rounded-xl shadow-lg flex-grow">
-            
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6 shadow-sm">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h1 className="text-4xl font-extrabold text-gray-900">MOLDERIL S.A.</h1>
-                  <p className="text-xs text-gray-500 mt-1">AV. Hermanos Lescano 550 - Rio Primero (Cordoba)</p>
-                  <p className="text-xs text-gray-500">Tel/Fax: 03574-420768</p>
-                </div>
-                <div className="flex items-start space-x-4">
-                    <div className="text-right space-y-2">
-                      <div className="flex items-center justify-end">
-                        <div className="text-right mr-3">
-                          <p className="text-xs text-gray-500">Operario (Legajo)</p>
-                          <p className="font-semibold text-gray-800 text-lg">{operarioLegajo}</p>
-                        </div>
-                        <i className="fas fa-user-circle text-gray-400 text-2xl"></i>
-                      </div>
-                      <div className="flex items-center justify-end">
-                         <div className="text-right mr-3">
-                          <p className="text-xs text-gray-500">Cliente</p>
-                          <p className="font-semibold text-gray-800 text-lg">{clienteNombre}</p>
-                        </div>
-                        <i className="fas fa-building text-gray-400 text-2xl"></i>
-                      </div>
-                    </div>
-                    <button onClick={() => setShowHelpModal(true)} title="Ayuda" className="text-gray-400 hover:text-indigo-600 transition-colors">
-                        <i className="fas fa-question-circle text-2xl"></i>
-                    </button>
-                </div>
-              </div>
-            </div>
-
-            {isCameraActive ? (
-              <div className="flex flex-col items-center space-y-4">
-                <QrScanner onScanSuccess={handleScan} onStop={() => setIsCameraActive(false)} onError={(msg) => { setModalContent({ title: 'Error de Cámara', message: msg }); setShowInfoModal(true); }} />
-                <button onClick={() => setIsCameraActive(false)} className="w-full max-w-sm bg-red-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-red-700 text-xl">
-                  Cancelar Escaneo
-                </button>
-              </div>
-            ) : (
-              <>
-                <div className="space-y-4 mb-4">
-                  <button onClick={() => setIsCameraActive(true)} className="w-full bg-purple-600 text-white font-semibold py-4 px-4 rounded-md shadow-md hover:bg-purple-700 text-xl flex items-center justify-center">
-                      <i className="fas fa-camera mr-3"></i> Escanear con Cámara
-                  </button>
-                  <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
-                    <div className="flex-grow">
-                      <input type="text" ref={manualInputRef} value={mockQrValue} onChange={(e) => setMockQrValue(e.target.value)} onKeyDown={handleKeyDown} className="w-full rounded-md p-2 border text-xl" placeholder="Ingresar QR manual o con pistola"/>
-                    </div>
-                    <button onClick={() => handleScan(mockQrValue)} disabled={!mockQrValue} className="bg-green-600 text-white font-semibold py-2 px-4 rounded-md shadow-md hover:bg-green-700 disabled:opacity-50 text-lg">
-                      Agregar
-                    </button>
-                    <button onClick={() => fileInputRef.current.click()} className="bg-orange-500 text-white font-semibold py-2 px-4 rounded-md shadow-md hover:bg-orange-600 text-lg flex items-center justify-center">
-                      <i className="fas fa-file-image mr-2"></i> Adjuntar QR
-                    </button>
-                    <input type="file" ref={fileInputRef} onChange={handleImageUpload} className="hidden" accept="image/*" />
-                  </div>
-                </div>
-
-                <div className="overflow-x-auto rounded-lg shadow-md mb-6 border">
-                  <table className="min-w-full divide-y divide-gray-200 table-auto">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
-                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Descripción</th>
-                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nº Pallet</th>
-                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lotes Prod.</th>
-                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">F. Prod</th>
-                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cant.</th>
-                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">U.M.</th>
-                        <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase">Control</th>
-                        <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase">Acción</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {items.length === 0 ? (
-                        <tr><td colSpan="9" className="px-2 py-4 text-center text-sm text-gray-500 italic">Aún no hay registros.</td></tr>
-                      ) : (
-                        items.map((item) => (
-                          <tr key={item.id} className="hover:bg-gray-50">
-                            <td className="px-2 py-4 whitespace-nowrap text-sm">{item.sku}</td>
-                            <td className="px-2 py-4 whitespace-nowrap text-sm">{item.descripcion}</td>
-                            <td className="px-2 py-4 whitespace-nowrap text-sm">{item.numeroDePallet}</td>
-                            <td className="px-2 py-4 whitespace-nowrap text-sm">{item.lotesProduccion}</td>
-                            <td className="px-2 py-4 whitespace-nowrap text-sm">{item.fechaProduccion}</td>
-                            <td className="px-2 py-4 whitespace-nowrap text-sm">{item.cantidad}</td>
-                            <td className="px-2 py-4 whitespace-nowrap text-sm">{item.unidadMedida}</td>
-                            <td className="px-2 py-4 text-center"><input type="checkbox" checked={item.controlado} onChange={() => handleControlCheck(item.id)} className="h-4 w-4"/></td>
-                            <td className="px-2 py-4 text-center"><button onClick={() => handleDelete(item.id)} className="text-red-600 hover:text-red-900"><i className="fas fa-trash"></i></button></td>
-                          </tr>
-                        ))
-                      )}
-                      <tr className="bg-gray-100 font-bold">
-                        <td colSpan="8" className="px-2 py-4 text-right text-sm">Total de bultos:</td>
-                        <td className="px-2 py-4 text-sm">{items.length}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* === SECCIÓN DE BOTONES MODIFICADA === */}
-                <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4">
-                  <div className="relative w-full sm:w-auto flex-grow" ref={actionsMenuRef}>
-                    <div className="flex rounded-md shadow-sm">
-                        <button 
-                            onClick={isShareApiSupported ? handleShare : handleDownloadPdf} 
-                            disabled={items.length === 0 || isGenerating || !isPdfLibLoaded} 
                             className="flex-grow bg-blue-600 text-white font-semibold py-3 px-5 rounded-l-md hover:bg-blue-700 disabled:opacity-50 text-xl flex items-center justify-center"
                         >
                             {isGenerating ? 'Generando...' : (isShareApiSupported ? 'Compartir PDF' : 'Descargar PDF')}
                         </button>
-                        <button 
-                            onClick={() => setIsActionsOpen(prev => !prev)} 
+                        <button
+                            onClick={() => setIsActionsOpen(prev => !prev)}
                             disabled={items.length === 0 || isGenerating || !isPdfLibLoaded}
                             className="bg-blue-700 text-white font-semibold py-3 px-4 rounded-r-md hover:bg-blue-800 disabled:opacity-50"
                         >
