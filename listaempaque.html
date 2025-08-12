@@ -171,7 +171,7 @@
         try {
             const response = await fetch('cls.txt');
             if (!response.ok) {
-                console.warn('Advertencia: No se pudo cargar el archivo de clave (cls.txt). La función de guardado en GitHub estará deshabilitada.');
+                console.warn('Advertencia: No se pudo cargar el archivo de clave. La función de guardado estará deshabilitada.');
                 return null;
             }
             let rawToken = await response.text();
@@ -983,3 +983,4 @@
   </script>
 </body>
 </ht
+
