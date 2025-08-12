@@ -490,3 +490,496 @@
 </script>
 </body>
 </html>
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MOLDERIL - Generar Etiqueta QR</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        #preview-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            background-color: #e5e7eb;
+        }
+        #preview-iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans">
+
+<div id="static-loader" class="fixed inset-0 bg-gray-100 flex items-center justify-center p-4 font-sans z-50 transition-opacity duration-500">
+    <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md text-center">
+        <h1 class="text-4xl font-extrabold text-gray-900 tracking-wide mb-6" style="font-family: 'Arial', sans-serif;">MOLDERIL S.A.</h1>
+        <p id="loader-status" class="text-xl text-gray-600 mb-4">Cargando aplicación...</p>
+        <div class="w-full bg-gray-200 rounded-full h-4">
+            <div id="loader-progress" class="bg-indigo-600 h-4 rounded-full transition-all duration-500" style="width: 10%"></div>
+        </div>
+    </div>
+</div>
+
+<div id="root"></div>
+
+<script type="text/babel">
+    const { useState, useEffect, Fragment } = React;
+    const { createRoot } = ReactDOM;
+    const { jsPDF } = window.jspdf;
+
+    // =================================================================
+    // ### CONFIGURACIÓN: DATOS DEL REPOSITORIO ###
+    // =================================================================
+    const USUARIO_GITHUB = 'gagegfg';
+    const REPO_NOMBRE = 'Molderil_ListaEmpaque';
+    const RUTA_LOTE_LOGISTICO = 'lotelogistica.txt';
+    const RUTA_HISTORICO_CSV = 'detallelotes.csv';
+    // =================================================================
+
+    const App = ({ apiToken }) => {
+        const [articulos, setArticulos] = useState([]);
+        const [searchTerm, setSearchTerm] = useState('');
+        const [selectedArticulo, setSelectedArticulo] = useState(null);
+        const [lotesProduccion, setLotesProduccion] = useState(['']);
+        const [numeroDePallet, setNumeroDePallet] = useState('');
+        const [isPalletNumEditable, setIsPalletNumEditable] = useState(false);
+        const [cantidadCopias, setCantidadCopias] = useState(2);
+        const [fechaProd, setFechaProd] = useState(new Date().toISOString().split('T')[0]);
+        const [cantidad, setCantidad] = useState('');
+        const [uom, setUom] = useState('Unidad');
+        const [previewPdfUrl, setPreviewPdfUrl] = useState(null);
+
+        useEffect(() => {
+            const staticLoader = document.getElementById('static-loader');
+            const loaderStatus = document.getElementById('loader-status');
+            const loaderProgress = document.getElementById('loader-progress');
+
+            const fetchNumeroPallet = async () => {
+                const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_LOTE_LOGISTICO}`;
+                try {
+                    const response = await fetch(url, { cache: "no-store" });
+                    if (!response.ok) throw new Error('No se pudo obtener el número de pallet desde GitHub.');
+                    const text = await response.text();
+                    const numeroBase = parseInt(text.trim(), 10);
+                    if (isNaN(numeroBase)) throw new Error('El contenido del archivo no es un número.');
+                    setNumeroDePallet(numeroBase + 1);
+                } catch (error) {
+                    console.error("Error al cargar número de pallet:", error);
+                    alert(`Error: ${error.message}\nPor favor, ingrese el número de pallet manualmente.`);
+                    setNumeroDePallet('');
+                    setIsPalletNumEditable(true);
+                }
+            };
+
+            const fetchArticulos = async () => {
+                try {
+                    const response = await fetch('articulos.csv');
+                    const text = await response.text();
+                    const rows = text.split('\n').slice(1);
+                    const parsedArticulos = rows.map(row => {
+                        const [tipo_articulo, codigo_articulo, descripcion] = row.split(';');
+                        return { tipo: tipo_articulo?.trim().toUpperCase(), sku: codigo_articulo, descripcion: descripcion?.trim() };
+                    }).filter(art => art.sku && art.descripcion);
+                    setArticulos(parsedArticulos);
+                } catch (error) {
+                    console.error("Error loading articulos.csv:", error);
+                    alert("Error al cargar la lista de artículos.");
+                }
+            };
+
+            const loadingTasks = [
+                { status: "Inicializando...", duration: 300, progress: 20 },
+                { status: "Cargando número de pallet...", duration: 800, progress: 50, action: fetchNumeroPallet },
+                { status: "Cargando lista de artículos...", duration: 800, progress: 85, action: fetchArticulos },
+                { status: "¡Listo!", duration: 500, progress: 100 }
+            ];
+
+            let currentTask = 0;
+            const runLoadingTask = () => {
+                if (currentTask < loadingTasks.length) {
+                    const task = loadingTasks[currentTask];
+                    if (loaderStatus) loaderStatus.textContent = task.status;
+                    if (loaderProgress) loaderProgress.style.width = `${task.progress}%`;
+                    if (task.action) task.action();
+                    setTimeout(() => {
+                        currentTask++;
+                        runLoadingTask();
+                    }, task.duration);
+                } else {
+                    if (staticLoader) {
+                        staticLoader.classList.add('opacity-0');
+                        setTimeout(() => staticLoader.remove(), 500);
+                    }
+                }
+            };
+            runLoadingTask();
+        }, []);
+        
+        const updateLoteFile = async (nuevoContenido) => {
+            if (!apiToken) {
+                alert("ERROR: Clave de API no disponible. No se puede guardar en GitHub.");
+                return;
+            }
+            const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${RUTA_LOTE_LOGISTICO}`;
+            try {
+                const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${apiToken}` } });
+                if (!fileResponse.ok) throw new Error(`Error ${fileResponse.status}: No se pudo obtener info del archivo de lotes.`);
+                const fileData = await fileResponse.json();
+                await fetch(url, {
+                    method: 'PUT',
+                    headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: `Actualizando pallet a ${nuevoContenido}`,
+                        content: btoa(String(nuevoContenido)),
+                        sha: fileData.sha,
+                    }),
+                });
+                alert(`Número de Pallet ${nuevoContenido} guardado correctamente en GitHub.`);
+            } catch (error) {
+                alert(`ERROR: No se pudo guardar el número de pallet en GitHub.\n\n${error.message}\n\nPor favor, actualícelo manualmente.`);
+            }
+        };
+
+        const appendToHistoryFile = async (lineaCsv) => {
+            if (!apiToken) return;
+            const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${RUTA_HISTORICO_CSV}`;
+            try {
+                const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${apiToken}` } });
+                if (!fileResponse.ok) {
+                     if (fileResponse.status === 404) { // El archivo no existe, lo creamos
+                        await fetch(url, {
+                            method: 'PUT',
+                            headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                message: 'Creando archivo histórico detallelotes.csv',
+                                content: btoa(lineaCsv),
+                            }),
+                        });
+                        console.log("Archivo histórico creado y primer registro guardado.");
+                        return;
+                    }
+                    throw new Error(`Error ${fileResponse.status}: No se pudo obtener info del archivo histórico.`);
+                }
+                const fileData = await fileResponse.json();
+                const contenidoActual = atob(fileData.content);
+                const nuevoContenido = contenidoActual + '\n' + lineaCsv;
+                
+                await fetch(url, {
+                    method: 'PUT',
+                    headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: `Añadiendo pallet ${numeroDePallet} al histórico`,
+                        content: btoa(nuevoContenido),
+                        sha: fileData.sha,
+                    }),
+                });
+                console.log("Registro añadido al histórico correctamente.");
+            } catch (error) {
+                alert(`ERROR: No se pudo guardar el registro en el histórico CSV.\n\n${error.message}`);
+            }
+        };
+
+
+        useEffect(() => {
+            if (selectedArticulo) {
+                const specialTypes = ['TULIPAS', 'PIROTINES', 'MADALENAS', 'FUNDAS'];
+                if (specialTypes.includes(selectedArticulo.tipo)) { setUom('Millar'); }
+                else { setUom('Unidad'); }
+            }
+        }, [selectedArticulo]);
+
+        const handleLoteProdChange = (index, value) => {
+            const nuevosLotes = [...lotesProduccion];
+            nuevosLotes[index] = value;
+            setLotesProduccion(nuevosLotes);
+        };
+
+        const addLoteProdField = () => {
+            if (lotesProduccion.length < 4) {
+                setLotesProduccion([...lotesProduccion, '']);
+            }
+        };
+        
+        const handleCantidadChange = (e) => {
+            const rawValue = e.target.value;
+            const regex = /^\d*(,?\d*)?$/;
+            if (regex.test(rawValue)) {
+                setCantidad(rawValue);
+            }
+        };
+
+        const filteredArticulos = searchTerm ? articulos.filter(art => art.sku.toLowerCase().includes(searchTerm.toLowerCase()) || art.descripcion.toLowerCase().includes(searchTerm.toLowerCase())) : [];
+
+        const drawLabelOnDoc = async (doc, data) => {
+            const pageW = 210;
+            const pageH = 297;
+            const margin = 10;
+            const contentW = pageW - (margin * 2);
+
+            let currentY = margin + 10;
+
+            doc.setFontSize(28);
+            doc.setFont("helvetica", "bold");
+            doc.text("MOLDERIL S.A.", pageW / 2, currentY + 10, { align: "center" });
+            doc.line(margin, currentY + 20, pageW - margin, currentY + 20);
+            currentY += 30;
+
+            doc.setFontSize(16);
+            doc.setFont("helvetica", "normal");
+            doc.text("Artículo", margin, currentY);
+            currentY += 20;
+            doc.setFontSize(48);
+            doc.setFont("helvetica", "bold");
+            const descLines = doc.splitTextToSize(data.descripcion, contentW);
+            doc.text(descLines, pageW / 2, currentY, { align: "center" });
+            currentY += (descLines.length * 16);
+
+            doc.setFontSize(18);
+            doc.setFont("helvetica", "bold");
+            doc.text(`SKU: ${data.sku}`, margin, currentY);
+            
+            const lotesProdString = data.lotes.join('; ');
+            if(lotesProdString) {
+                doc.setFontSize(18);
+                doc.text(`Lotes: ${lotesProdString}`, pageW - margin, currentY, { align: "right" });
+            }
+            currentY += 10;
+            doc.line(margin, currentY, pageW - margin, currentY);
+
+            currentY += 15;
+            doc.setFontSize(16);
+            doc.setFont("helvetica", "normal");
+            doc.text("Cantidad", margin, currentY);
+            currentY += 20;
+            doc.setFontSize(44);
+            doc.setFont("helvetica", "bold");
+            doc.text(`${data.cantidad} ${data.uom}`, pageW / 2, currentY, { align: "center" });
+            currentY += 10;
+            doc.line(margin, currentY, pageW - margin, currentY);
+            
+            currentY += 10;
+            const qrSize = 80;
+            const qrX = (pageW - qrSize) / 2;
+            const qrY = currentY;
+            const qrImageData = await QRCode.toDataURL(data.qrString, { width: 300, margin: 1 });
+            doc.addImage(qrImageData, 'PNG', qrX, qrY, qrSize, qrSize);
+            currentY += qrSize + 15;
+            
+            doc.line(margin, currentY, pageW - margin, currentY);
+            currentY += 5;
+
+            doc.setFontSize(22);
+            doc.setFont("helvetica", "bold");
+            doc.text("Nº de Pallet", margin, currentY + 10);
+            doc.text("Fabricación", pageW - margin, currentY + 10, { align: "right" });
+
+            doc.setFontSize(30);
+            doc.text(String(data.palletId), margin, currentY + 22);
+            doc.setFontSize(22);
+            doc.text(new Date(data.fechaProd + 'T00:00:00').toLocaleDateString('es-ES'), pageW - margin, currentY + 22, { align: "right" });
+        };
+
+        const getLabelData = () => {
+             const formatQrDate = (dateString) => {
+                if (!dateString) return '';
+                const date = new Date(dateString + 'T00:00:00');
+                const day = String(date.getDate()).padStart(2, '0');
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const year = date.getFullYear();
+                return `${day}/${month}/${year}`;
+            };
+            
+            const cantidadParaQR = cantidad.replace(',', '.');
+            const lotesProduccionFiltrados = lotesProduccion.filter(lote => lote.trim() !== '');
+            const lotesParaQR = lotesProduccionFiltrados.length > 0 ? `<${lotesProduccionFiltrados.join('#')}>` : '';
+
+            const qrString = [
+                selectedArticulo.sku || '',
+                selectedArticulo.descripcion || '',
+                String(numeroDePallet) || '',
+                lotesParaQR,
+                formatQrDate(fechaProd),
+                cantidadParaQR || '',
+                uom || ''
+            ].join(';');
+
+            return {
+                sku: selectedArticulo.sku,
+                descripcion: selectedArticulo.descripcion,
+                lotes: lotesProduccionFiltrados,
+                cantidad: cantidad,
+                uom,
+                fechaProd,
+                palletId: numeroDePallet,
+                qrString: qrString
+            };
+        }
+
+        const handleGeneratePreview = async () => {
+            const lotesValidos = lotesProduccion.some(lote => lote.trim() !== '');
+            if (!selectedArticulo || !cantidad || !lotesValidos) {
+                alert("Por favor, complete Artículo, Cantidad y al menos un Lote de Producción.");
+                return;
+            }
+            const data = getLabelData();
+            const doc = new jsPDF('p', 'mm', 'a4');
+            await drawLabelOnDoc(doc, data);
+            const pdfDataUrl = doc.output('datauristring');
+            setPreviewPdfUrl(pdfDataUrl);
+        };
+        
+        const handleGenerateAndPrintPDF = async () => {
+            const numCopias = parseInt(cantidadCopias, 10);
+            const palletNum = parseInt(numeroDePallet, 10);
+
+            if (isNaN(numCopias) || numCopias < 1 || isNaN(palletNum) || !previewPdfUrl) {
+                alert("Primero genere una vista previa y verifique la cantidad de copias y el número de pallet.");
+                return;
+            }
+
+            const data = getLabelData();
+            const isConfirmed = window.confirm(`Se generará un PDF con ${numCopias} copias para el Pallet Nº ${palletNum}.\n\nAl confirmar, se guardará el número de pallet y se registrará la información en el histórico.`);
+
+            if (isConfirmed) {
+                const doc = new jsPDF('p', 'mm', 'a4');
+                for (let i = 0; i < numCopias; i++) {
+                    if (i > 0) doc.addPage();
+                    await drawLabelOnDoc(doc, data);
+                }
+
+                doc.autoPrint();
+                doc.save(`etiqueta_pallet_${palletNum}.pdf`);
+
+                // Guardar en GitHub
+                await updateLoteFile(palletNum);
+                await appendToHistoryFile(data.qrString);
+            }
+        };
+
+        return (
+            <Fragment>
+                <div className="min-h-screen bg-gray-100 p-4 flex flex-col">
+                    <div className="bg-white p-6 rounded-xl shadow-lg flex-grow">
+                        <div className="flex justify-between items-center mb-6">
+                            <h1 className="text-3xl font-extrabold text-gray-900">Generar Etiqueta de Pallet</h1>
+                            <a href="index.html" className="bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-md hover:bg-gray-300">Volver al Menú</a>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="space-y-4">
+                                <div className="relative">
+                                    <label className="block text-sm font-medium text-gray-700">Artículo (Buscar por SKU o Descripción)</label>
+                                    <input type="text" value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setSelectedArticulo(null); setPreviewPdfUrl(null); }} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
+                                    {searchTerm && filteredArticulos.length > 0 && (
+                                        <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">
+                                            {filteredArticulos.map(art => (
+                                                <li key={art.sku} className="p-2 hover:bg-indigo-100 cursor-pointer" onClick={() => { setSelectedArticulo(art); setSearchTerm(`${art.sku} - ${art.descripcion}`); }}>
+                                                    {art.sku} - {art.descripcion}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700">Lotes de Producción</label>
+                                    {lotesProduccion.map((lote, index) => (
+                                        <input 
+                                            key={index}
+                                            type="text" 
+                                            value={lote} 
+                                            onChange={e => handleLoteProdChange(index, e.target.value)} 
+                                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" 
+                                        />
+                                    ))}
+                                    {lotesProduccion.length < 4 && (
+                                        <button onClick={addLoteProdField} className="mt-2 text-sm font-semibold text-blue-600 hover:text-blue-800">+ Añadir otro lote</button>
+                                    )}
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700">Número de Pallet (Automático)</label>
+                                    <input type="number" value={numeroDePallet} readOnly={!isPalletNumEditable} onChange={e => setNumeroDePallet(e.target.value)} className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border ${!isPalletNumEditable ? 'bg-gray-100' : ''}`} />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700">Cantidad de Copias</label>
+                                    <input type="number" min="1" value={cantidadCopias} onChange={e => setCantidadCopias(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700">Fecha de Producción</label>
+                                    <input type="date" value={fechaProd} onChange={e => setFechaProd(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700">Cantidad (por etiqueta)</label>
+                                    <input type="text" value={cantidad} onChange={handleCantidadChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" placeholder="Ej: 12,5"/>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700">Unidad de Medida</label>
+                                    <select value={uom} onChange={e => setUom(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border">
+                                        <option>Unidad</option>
+                                        <option>Millar</option>
+                                    </select>
+                                </div>
+                                <button onClick={handleGeneratePreview} className="w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-blue-700 text-xl">
+                                    Generar Vista Previa
+                                </button>
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-medium text-gray-900 mb-2">Vista Previa de Etiqueta</h3>
+                                <div id="preview-container" className="border-2 border-dashed border-gray-400 w-full" style={{height: '65vh'}}>
+                                    {previewPdfUrl ? (
+                                        <iframe id="preview-iframe" src={previewPdfUrl} title="Vista Previa de Etiqueta"></iframe>
+                                    ) : (
+                                        <div className="text-center text-gray-500 flex items-center justify-center h-full">
+                                            <p>Complete el formulario y genere la vista previa</p>
+                                        </div>
+                                    )}
+                                </div>
+                                {previewPdfUrl && (
+                                    <button onClick={handleGenerateAndPrintPDF} className="w-full mt-4 bg-green-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-green-700 text-xl">
+                                        Imprimir y Guardar Nº Pallet
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </Fragment>
+        );
+    };
+
+    async function getApiToken() {
+        try {
+            const response = await fetch('cls.txt');
+            if (!response.ok) {
+                console.warn('Advertencia: No se pudo cargar el archivo de clave (cls.txt). La función de guardado en GitHub estará deshabilitada.');
+                return null;
+            }
+            let rawToken = await response.text();
+            rawToken = rawToken.replace(/aaaa/g, '').replace(/bbbb/g, '').replace(/cccc/g, '');
+            return rawToken.trim();
+        } catch (error) {
+            console.error("Error al obtener el token:", error);
+            return null;
+        }
+    }
+
+    (async () => {
+        const token = await getApiToken();
+        const rootElement = document.getElementById('root');
+        const root = createRoot(rootElement);
+        root.render(<App apiToken={token} />);
+    })();
+
+</script>
+</body>
+</html>
