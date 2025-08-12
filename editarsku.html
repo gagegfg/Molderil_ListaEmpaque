@@ -276,8 +276,8 @@
             return (
                 <div className="min-h-screen bg-gray-100 p-4 sm:p-6">
                     {isModalOpen && <ArticleModal article={editingArticle} onSave={handleSaveArticle} onClose={() => setIsModalOpen(false)} />}
-                    <div className="bg-white p-6 rounded-2xl shadow-xl">
-                        <div className="sticky top-0 bg-white z-10 pt-2 pb-4 -mt-2">
+                    <div className="bg-white p-6 rounded-2xl shadow-xl flex flex-col h-[calc(100vh-2rem)] sm:h-[calc(100vh-3rem)]">
+                        <div className="flex-shrink-0">
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b pb-4 border-gray-200">
                                 <div>
                                     <h1 className="text-3xl font-extrabold text-gray-800">Editor de Artículos</h1>
@@ -323,9 +323,9 @@
                             </div>
                         </div>
 
-                        <div className="overflow-x-auto rounded-lg shadow-md border">
+                        <div className="flex-grow overflow-auto rounded-lg shadow-md border">
                             <table className="min-w-full divide-y divide-gray-200">
-                                <thead className="bg-gray-800 text-white">
+                                <thead className="bg-gray-800 text-white sticky top-0 z-10">
                                     <tr>
                                         <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Tipo</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">SKU</th>
