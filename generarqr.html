@@ -42,7 +42,7 @@
 <div id="root"></div>
 
 <script type="text/babel">
-    const { useState, useEffect, Fragment } = React;
+    const { useState, useEffect, Fragment, useRef } = React;
     const { createRoot } = ReactDOM;
     const { jsPDF } = window.jspdf;
 
@@ -55,8 +55,36 @@
     const RUTA_HISTORICO_CSV = 'detallelotes.csv';
     // =================================================================
 
+    const AppWrapper = () => {
+        const [apiToken, setApiToken] = useState(null);
+        const [isReady, setIsReady] = useState(false);
+
+        useEffect(() => {
+            const fetchToken = async () => {
+                try {
+                    const response = await fetch('cls.txt');
+                    if (!response.ok) throw new Error('No se pudo cargar cls.txt');
+                    let rawToken = await response.text();
+                    rawToken = rawToken.replace(/aaaa/g, '').replace(/bbbb/g, '').replace(/cccc/g, '');
+                    setApiToken(rawToken.trim());
+                } catch (error) {
+                    console.error("Error al obtener el token:", error);
+                } finally {
+                    setIsReady(true);
+                }
+            };
+            fetchToken();
+        }, []);
+        
+        if (!isReady) return null; // O un loader simple si se prefiere
+
+        return <App apiToken={apiToken} />;
+    };
+
     const App = ({ apiToken }) => {
+        // --- ESTADOS DE LA APLICACIÓN ---
         const [articulos, setArticulos] = useState([]);
+        const [clientList, setClientList] = useState([]);
         const [searchTerm, setSearchTerm] = useState('');
         const [selectedArticulo, setSelectedArticulo] = useState(null);
         const [lotesProduccion, setLotesProduccion] = useState(['']);
@@ -67,13 +95,21 @@
         const [cantidad, setCantidad] = useState('');
         const [uom, setUom] = useState('Unidad');
         const [previewPdfUrl, setPreviewPdfUrl] = useState(null);
+        
+        // --- ESTADOS DE LA PANTALLA DE INICIO ---
+        const [isDataEntered, setIsDataEntered] = useState(false);
+        const [legajo, setLegajo] = useState('');
+        const [cliente, setCliente] = useState('');
+        const [showSuggestions, setShowSuggestions] = useState(false);
+        const clientInputRef = useRef(null);
 
+        // --- EFECTOS ---
         useEffect(() => {
             const staticLoader = document.getElementById('static-loader');
             const loaderStatus = document.getElementById('loader-status');
             const loaderProgress = document.getElementById('loader-progress');
 
-            const fetchNumeroPallet = async () => {
+            const fetchInitialData = async () => {
                 const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_LOTE_LOGISTICO}`;
                 try {
                     const response = await fetch(url, { cache: "no-store" });
@@ -110,11 +146,23 @@
                     alert("Error al cargar la lista de artículos.");
                 }
             };
+            
+            const fetchClients = async () => {
+                 try {
+                    const response = await fetch('clientes.txt');
+                    const text = await response.text();
+                    const clients = text.split('\n').map(c => c.trim().toUpperCase()).filter(Boolean);
+                    setClientList(clients);
+                } catch (error) {
+                    console.error("Error al cargar la lista de clientes:", error);
+                }
+            };
 
             const loadingTasks = [
                 { status: "Inicializando...", duration: 300, progress: 20 },
-                { status: "Cargando número de pallet...", duration: 800, progress: 50, action: fetchNumeroPallet },
-                { status: "Cargando lista de artículos...", duration: 800, progress: 85, action: fetchArticulos },
+                { status: "Cargando número de pallet...", duration: 800, progress: 40, action: fetchInitialData },
+                { status: "Cargando lista de artículos...", duration: 800, progress: 70, action: fetchArticulos },
+                { status: "Cargando lista de clientes...", duration: 500, progress: 90, action: fetchClients },
                 { status: "¡Listo!", duration: 500, progress: 100 }
             ];
 
@@ -138,7 +186,26 @@
             };
             runLoadingTask();
         }, []);
+
+        useEffect(() => {
+            const handleClickOutside = (event) => {
+                if (clientInputRef.current && !clientInputRef.current.contains(event.target)) {
+                    setShowSuggestions(false);
+                }
+            };
+            document.addEventListener("mousedown", handleClickOutside);
+            return () => document.removeEventListener("mousedown", handleClickOutside);
+        }, []);
         
+        useEffect(() => {
+            if (selectedArticulo) {
+                const specialTypes = ['TULIPAS', 'PIROTINES', 'MADALENAS', 'FUNDAS'];
+                if (specialTypes.includes(selectedArticulo.tipo)) { setUom('Millar'); }
+                else { setUom('Unidad'); }
+            }
+        }, [selectedArticulo]);
+
+        // --- FUNCIONES DE GITHUB ---
         const updateLoteFile = async (nuevoContenido) => {
             if (!apiToken) {
                 alert("ERROR: Clave de API no disponible. No se puede guardar en GitHub.");
@@ -158,7 +225,7 @@
                         sha: fileData.sha,
                     }),
                 });
-                alert(`Número de Pallet ${nuevoContenido} guardado correctamente en GitHub.`);
+                console.log(`Número de Pallet ${nuevoContenido} guardado correctamente en GitHub.`);
             } catch (error) {
                 alert(`ERROR: No se pudo guardar el número de pallet en GitHub.\n\n${error.message}\n\nPor favor, actualícelo manualmente.`);
             }
@@ -170,7 +237,7 @@
             try {
                 const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${apiToken}` } });
                 if (!fileResponse.ok) {
-                     if (fileResponse.status === 404) { // El archivo no existe, lo creamos
+                     if (fileResponse.status === 404) {
                         await fetch(url, {
                             method: 'PUT',
                             headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
@@ -202,18 +269,10 @@
                 alert(`ERROR: No se pudo guardar el registro en el histórico CSV.\n\n${error.message}`);
             }
         };
-
-
-        useEffect(() => {
-            if (selectedArticulo) {
-                const specialTypes = ['TULIPAS', 'PIROTINES', 'MADALENAS', 'FUNDAS'];
-                if (specialTypes.includes(selectedArticulo.tipo)) { setUom('Millar'); }
-                else { setUom('Unidad'); }
-            }
-        }, [selectedArticulo]);
-
+        
+        // --- MANEJADORES DE EVENTOS ---
         const handleLoteProdChange = (index, value) => {
-            const regex = /^\d*$/; // Solo permite números
+            const regex = /^\d*$/;
             if (regex.test(value)) {
                 const nuevosLotes = [...lotesProduccion];
                 nuevosLotes[index] = value;
@@ -229,10 +288,15 @@
         
         const handleCantidadChange = (e) => {
             const rawValue = e.target.value;
-            // Permite números y una sola coma para decimales
             const regex = /^\d*(,?\d*)?$/;
             if (regex.test(rawValue)) {
                 setCantidad(rawValue);
+            }
+        };
+        
+        const handleContinue = () => {
+            if (legajo && cliente && clientList.includes(cliente.toUpperCase())) {
+                setIsDataEntered(true);
             }
         };
 
@@ -245,12 +309,12 @@
             return new Intl.NumberFormat('es-ES', {minimumFractionDigits: 0, maximumFractionDigits: 2}).format(num);
         };
 
+        // --- GENERACIÓN DE PDF ---
         const drawLabelOnDoc = async (doc, data) => {
             const pageW = 210;
-            const margin = 5; // Margen reducido
+            const margin = 5;
             const contentW = pageW - (margin * 2);
-
-            let currentY = margin; // Empezar más arriba
+            let currentY = margin;
 
             doc.setFontSize(26);
             doc.setFont("helvetica", "bold");
@@ -262,11 +326,11 @@
             doc.setFont("helvetica", "normal");
             doc.text("Artículo", margin, currentY);
             currentY += 18;
-            doc.setFontSize(60); // Aumentado
+            doc.setFontSize(60);
             doc.setFont("helvetica", "bold");
             const descLines = doc.splitTextToSize(data.descripcion, contentW);
             doc.text(descLines, pageW / 2, currentY, { align: "center" });
-            currentY += (descLines.length * 22); // Ajustado
+            currentY += (descLines.length * 22);
 
             doc.setFontSize(18);
             doc.setFont("helvetica", "bold");
@@ -294,7 +358,7 @@
             
             const numeroWidth = doc.getStringUnitWidth(formattedCantidad) * doc.getFontSize() / doc.internal.scaleFactor;
             const uomWidth = doc.getStringUnitWidth(uomText) * 18 / doc.internal.scaleFactor;
-            const totalWidth = numeroWidth + uomWidth + 3; // 3 for spacing
+            const totalWidth = numeroWidth + uomWidth + 3;
             const startX = (pageW - totalWidth) / 2;
             
             doc.text(formattedCantidad, startX, currentY, { align: 'left' });
@@ -398,14 +462,68 @@
                 doc.autoPrint();
                 doc.save(`etiqueta_pallet_${palletNum}.pdf`);
 
-                // Crear la línea para el CSV con el estado de despacho
-                const lineaCsv = `${data.qrString};FALSE`;
+                const lineaCsv = `${data.qrString};FALSE;${cliente}`;
 
-                // Guardar en GitHub
                 await updateLoteFile(palletNum);
                 await appendToHistoryFile(lineaCsv);
             }
         };
+        
+        // --- RENDERIZADO ---
+        if (!isDataEntered) {
+            const isClienteValido = clientList.includes(cliente.toUpperCase());
+            const filteredSuggestions = clientList.filter(c => c.toLowerCase().includes(cliente.toLowerCase()));
+            
+            return (
+                <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
+                    <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
+                        <h1 className="text-4xl font-extrabold text-center text-gray-900 mb-6">MOLDERIL S.A.</h1>
+                        <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">Generar Etiqueta</h2>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xl font-medium text-gray-700">Legajo</label>
+                                <input 
+                                    type="text"
+                                    value={legajo}
+                                    onChange={e => setLegajo(e.target.value.replace(/[^0-9]/g, ''))}
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border text-2xl" 
+                                    placeholder="Ej: 12345"
+                                />
+                            </div>
+                            <div className="relative" ref={clientInputRef}>
+                                <label className="block text-xl font-medium text-gray-700">Cliente</label>
+                                <input 
+                                    type="text"
+                                    value={cliente}
+                                    onChange={e => { setCliente(e.target.value.toUpperCase()); setShowSuggestions(true); }}
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border text-2xl" 
+                                    placeholder="Buscar cliente..."
+                                    autoComplete="off"
+                                />
+                                {showSuggestions && filteredSuggestions.length > 0 && (
+                                    <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">
+                                        {filteredSuggestions.map(c => (
+                                            <li key={c} className="p-2 hover:bg-indigo-100 cursor-pointer text-xl" onClick={() => { setCliente(c); setShowSuggestions(false); }}>
+                                                {c}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                                {cliente && !isClienteValido &&
+                                    <p className="text-red-500 text-sm mt-1">Cliente no válido. Seleccione uno de la lista.</p>
+                                }
+                            </div>
+                            <button onClick={handleContinue} disabled={!legajo || !cliente || !isClienteValido} className="w-full bg-indigo-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-indigo-700 disabled:opacity-50 text-xl">
+                                Continuar
+                            </button>
+                            <a href="index.html" className="block w-full text-center bg-gray-500 text-white font-semibold py-2 px-4 rounded-md shadow-md hover:bg-gray-600 mt-2">
+                                Volver al Menú Principal
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
 
         return (
             <Fragment>
@@ -496,28 +614,8 @@
         );
     };
 
-    async function getApiToken() {
-        try {
-            const response = await fetch('cls.txt');
-            if (!response.ok) {
-                console.warn('Advertencia: No se pudo cargar el archivo de clave (cls.txt). La función de guardado en GitHub estará deshabilitada.');
-                return null;
-            }
-            let rawToken = await response.text();
-            rawToken = rawToken.replace(/aaaa/g, '').replace(/bbbb/g, '').replace(/cccc/g, '');
-            return rawToken.trim();
-        } catch (error) {
-            console.error("Error al obtener el token:", error);
-            return null;
-        }
-    }
-
-    (async () => {
-        const token = await getApiToken();
-        const rootElement = document.getElementById('root');
-        const root = createRoot(rootElement);
-        root.render(<App apiToken={token} />);
-    })();
+    const root = createRoot(document.getElementById('root'));
+    root.render(<AppWrapper />);
 
 </script>
 </body>
