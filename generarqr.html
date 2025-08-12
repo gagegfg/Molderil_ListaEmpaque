@@ -238,22 +238,21 @@
 
         const drawLabelOnDoc = async (doc, data) => {
             const pageW = 210;
-            const pageH = 297;
-            const margin = 10;
+            const margin = 5; // Margen reducido
             const contentW = pageW - (margin * 2);
 
-            let currentY = margin + 10;
+            let currentY = margin; // Empezar más arriba
 
             doc.setFontSize(26);
             doc.setFont("helvetica", "bold");
-            doc.text("MOLDERIL S.A.", pageW / 2, currentY + 10, { align: "center" });
-            doc.line(margin, currentY + 20, pageW - margin, currentY + 20);
-            currentY += 30;
+            doc.text("MOLDERIL S.A.", pageW / 2, currentY + 8, { align: "center" });
+            doc.line(margin, currentY + 12, pageW - margin, currentY + 12);
+            currentY += 22;
 
             doc.setFontSize(16);
             doc.setFont("helvetica", "normal");
             doc.text("Artículo", margin, currentY);
-            currentY += 20;
+            currentY += 18;
             doc.setFontSize(56);
             doc.setFont("helvetica", "bold");
             const descLines = doc.splitTextToSize(data.descripcion, contentW);
@@ -331,7 +330,7 @@
             
             const cantidadParaQR = cantidad.replace(',', '.');
             const lotesProduccionFiltrados = lotesProduccion.filter(lote => lote.trim() !== '');
-            const lotesParaQR = lotesProduccionFiltrados.join('; ');
+            const lotesParaQR = lotesProduccionFiltrados.join('#');
 
             const qrString = [
                 selectedArticulo.sku || '',
