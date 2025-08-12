@@ -71,6 +71,7 @@
 
             // Estado para modales y menús
             const [modalState, setModalState] = useState({ isOpen: false, type: null, title: '', message: '', onConfirm: null });
+            const [showHelpModal, setShowHelpModal] = useState(false);
             const [activeActionMenu, setActiveActionMenu] = useState(null);
             const actionMenuRef = useRef(null);
             
@@ -272,14 +273,22 @@
             const handleDeleteRow = (rowId) => {
                 setModalState({ 
                     isOpen: true, 
-                    type: 'password', 
+                    type: 'confirm', 
                     title: `Confirmar Eliminación`,
                     message: `¿Seguro que quieres eliminar la fila? Esta acción es irreversible.`,
-                    onConfirm: (password) => {
-                        verifyPasswordAndExecute(() => {
-                            const newData = allData.filter(item => item.id !== rowId);
-                            saveToGitHub(newData);
-                        }, password);
+                    onConfirm: () => {
+                        setModalState({
+                            isOpen: true,
+                            type: 'password',
+                            title: 'Ingrese Contraseña',
+                            message: 'Para confirmar la eliminación, ingrese la contraseña de administrador.',
+                            onConfirm: (password) => {
+                                verifyPasswordAndExecute(() => {
+                                    const newData = allData.filter(item => item.id !== rowId);
+                                    saveToGitHub(newData);
+                                }, password);
+                            }
+                        });
                     }
                 });
             };
@@ -293,19 +302,27 @@
 
                 setModalState({
                     isOpen: true,
-                    type: 'password',
+                    type: 'confirm',
                     title: 'Confirmar Reversión',
                     message: 'Esta acción marcará el lote como NO despachado y limpiará el cliente.',
-                    onConfirm: (password) => {
-                        verifyPasswordAndExecute(() => {
-                            const newData = allData.map(item => {
-                                if (item.id === rowId) {
-                                    return { ...item, despachado: 'FALSE', cliente: '' };
-                                }
-                                return item;
-                            });
-                            saveToGitHub(newData);
-                        }, password);
+                    onConfirm: () => {
+                        setModalState({
+                            isOpen: true,
+                            type: 'password',
+                            title: 'Ingrese Contraseña',
+                            message: 'Para confirmar la reversión, ingrese la contraseña de administrador.',
+                            onConfirm: (password) => {
+                                verifyPasswordAndExecute(() => {
+                                    const newData = allData.map(item => {
+                                        if (item.id === rowId) {
+                                            return { ...item, despachado: 'FALSE', cliente: '' };
+                                        }
+                                        return item;
+                                    });
+                                    saveToGitHub(newData);
+                                }, password);
+                            }
+                        });
                     }
                 });
             };
@@ -423,29 +440,31 @@
                         <div ref={modalContentRef} className="bg-white p-6 rounded-xl shadow-lg w-full max-w-sm">
                             <h3 className="text-lg font-bold text-gray-800 mb-4">{title}</h3>
                             <p className="text-sm text-gray-600 mb-4">{message}</p>
-                            <div className="relative">
-                                <input
-                                    ref={inputRef}
-                                    type={type === 'password' ? 'password' : 'text'}
-                                    value={inputValue}
-                                    onChange={e => {
-                                        setInputValue(e.target.value);
-                                        if (type === 'textInputWithSuggestions') setShowSuggestions(true);
-                                    }}
-                                    onKeyDown={e => e.key === 'Enter' && handleConfirm()}
-                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
-                                    autoComplete="off"
-                                />
-                                {type === 'textInputWithSuggestions' && showSuggestions && filteredSuggestions.length > 0 && (
-                                    <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">
-                                        {filteredSuggestions.map(client => (
-                                            <li key={client} className="p-2 hover:bg-indigo-100 cursor-pointer" onClick={() => { setInputValue(client); setShowSuggestions(false); }}>
-                                                {client}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                )}
-                            </div>
+                            {type !== 'confirm' && (
+                                <div className="relative">
+                                    <input
+                                        ref={inputRef}
+                                        type={type === 'password' ? 'password' : 'text'}
+                                        value={inputValue}
+                                        onChange={e => {
+                                            setInputValue(e.target.value);
+                                            if (type === 'textInputWithSuggestions') setShowSuggestions(true);
+                                        }}
+                                        onKeyDown={e => e.key === 'Enter' && handleConfirm()}
+                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
+                                        autoComplete="off"
+                                    />
+                                    {type === 'textInputWithSuggestions' && showSuggestions && filteredSuggestions.length > 0 && (
+                                        <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">
+                                            {filteredSuggestions.map(client => (
+                                                <li key={client} className="p-2 hover:bg-indigo-100 cursor-pointer" onClick={() => { setInputValue(client); setShowSuggestions(false); }}>
+                                                    {client}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                </div>
+                            )}
                             <div className="flex justify-end space-x-3 mt-6">
                                 <button onClick={onClose} className="bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300">Cancelar</button>
                                 <button onClick={handleConfirm} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Aceptar</button>
@@ -454,6 +473,47 @@
                     </div>
                 );
             };
+            
+            const HelpModal = ({ onClose }) => (
+                <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
+                    <div className="relative p-6 bg-white w-full max-w-2xl rounded-xl shadow-lg m-4 max-h-[90vh] overflow-y-auto">
+                        <h3 className="text-2xl font-bold text-gray-800 mb-4 border-b pb-2">Guía de Uso del Histórico</h3>
+                        <div className="space-y-4 text-gray-700">
+                            <div>
+                                <h4 className="font-semibold text-lg text-indigo-600">1. Filtrado de Datos</h4>
+                                <p>Puedes acotar tu búsqueda de varias formas:</p>
+                                <ul className="list-disc list-inside ml-4 mt-1">
+                                    <li><strong>Filtros de Columna:</strong> Escribe en los campos debajo de los títulos de la tabla para filtrar por cualquier columna. Por ejemplo, escribe "Sí" o "No" en el filtro de "Despachado".</li>
+                                    <li><strong>Filtro por Fechas:</strong> Utiliza los calendarios "Fecha Desde" y "Fecha Hasta" para ver los registros de un período específico.</li>
+                                    <li><strong>Limpiar Filtros:</strong> Usa el botón para borrar todos los filtros aplicados y ver todos los registros.</li>
+                                </ul>
+                            </div>
+                             <div>
+                                <h4 className="font-semibold text-lg text-indigo-600">2. Acciones Principales</h4>
+                                <ul className="list-disc list-inside ml-4 mt-1">
+                                    <li><strong>Refrescar:</strong> Vuelve a cargar los datos directamente desde el archivo en GitHub.</li>
+                                    <li><strong>Exportar:</strong> Despliega un menú para descargar la vista actual de la tabla en formato PDF o Excel.</li>
+                                </ul>
+                            </div>
+                            <div>
+                                <h4 className="font-semibold text-lg text-indigo-600">3. Acciones por Fila</h4>
+                                <p>En la última columna ("Acciones"), haz clic en el ícono de tres puntos (⋮) para desplegar un menú con las siguientes opciones:</p>
+                                <ul className="list-disc list-inside ml-4 mt-1">
+                                    <li><strong>Cambiar Cliente:</strong> Permite asignar o cambiar el cliente de un lote. Al hacerlo, el estado del lote pasará automáticamente a "Despachado: Sí".</li>
+                                    <li><strong>Revertir Despacho:</strong> Cambia el estado de un lote de "Sí" a "No" y elimina el nombre del cliente. Esta opción solo está disponible si el lote ya fue despachado.</li>
+                                    <li><strong>Eliminar Fila:</strong> Borra permanentemente el registro del lote del archivo.</li>
+                                </ul>
+                                <p className="mt-2 text-sm font-bold text-red-600">Importante: Todas las acciones por fila (cambiar cliente, revertir y eliminar) requieren una contraseña de administrador para confirmar y guardar los cambios.</p>
+                            </div>
+                        </div>
+                        <div className="text-center mt-6">
+                            <button onClick={onClose} className="bg-indigo-600 text-white font-semibold py-2 px-6 rounded-md shadow-md hover:bg-indigo-700">
+                                Entendido
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
 
             return (
                 <div className="min-h-screen bg-gray-100 p-4 sm:p-6">
@@ -474,11 +534,14 @@
                         onConfirm={modalState.onConfirm}
                         suggestions={clientList}
                     />
+                    {showHelpModal && <HelpModal onClose={() => setShowHelpModal(false)} />}
                     <div className="bg-white p-6 rounded-2xl shadow-xl">
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b pb-4 border-gray-200">
-                            <div>
+                            <div className="flex items-center space-x-4">
                                 <h1 className="text-3xl font-extrabold text-gray-800">Histórico de Lotes</h1>
-                                <p className="text-gray-500 mt-1">Consulta y exporta los registros de pallets generados.</p>
+                                <button onClick={() => setShowHelpModal(true)} title="Ayuda" className="text-gray-400 hover:text-indigo-600 transition-colors">
+                                    <i className="fas fa-question-circle text-2xl"></i>
+                                </button>
                             </div>
                             <a href="index.html" className="mt-4 sm:mt-0 bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">Volver al Menú</a>
                         </div>
