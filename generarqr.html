@@ -229,6 +229,13 @@
 
         const filteredArticulos = searchTerm ? articulos.filter(art => art.sku.toLowerCase().includes(searchTerm.toLowerCase()) || art.descripcion.toLowerCase().includes(searchTerm.toLowerCase())) : [];
 
+        const formatNumberES = (numStr) => {
+            if (!numStr) return '';
+            const [integerPart, decimalPart] = numStr.split(',');
+            const formattedIntegerPart = new Intl.NumberFormat('es-ES').format(parseInt(integerPart, 10));
+            return decimalPart !== undefined ? `${formattedIntegerPart},${decimalPart}` : formattedIntegerPart;
+        };
+
         const drawLabelOnDoc = async (doc, data) => {
             const pageW = 210;
             const pageH = 297;
@@ -237,7 +244,7 @@
 
             let currentY = margin + 10;
 
-            doc.setFontSize(28);
+            doc.setFontSize(26); // Reducido
             doc.setFont("helvetica", "bold");
             doc.text("MOLDERIL S.A.", pageW / 2, currentY + 10, { align: "center" });
             doc.line(margin, currentY + 20, pageW - margin, currentY + 20);
@@ -247,11 +254,11 @@
             doc.setFont("helvetica", "normal");
             doc.text("Artículo", margin, currentY);
             currentY += 20;
-            doc.setFontSize(52); // Aumentado de 48 a 52
+            doc.setFontSize(56); // Aumentado
             doc.setFont("helvetica", "bold");
             const descLines = doc.splitTextToSize(data.descripcion, contentW);
             doc.text(descLines, pageW / 2, currentY, { align: "center" });
-            currentY += (descLines.length * 18); // Ajustado para nuevo tamaño
+            currentY += (descLines.length * 20); // Ajustado para nuevo tamaño
 
             doc.setFontSize(18);
             doc.setFont("helvetica", "bold");
@@ -265,16 +272,28 @@
             currentY += 10;
             doc.line(margin, currentY, pageW - margin, currentY);
 
-            // Sección de Cantidad compactada
+            // Sección de Cantidad
             currentY += 12;
-            doc.setFontSize(14); // Reducido de 16 a 14
+            doc.setFontSize(14);
             doc.setFont("helvetica", "normal");
             doc.text("Cantidad", margin, currentY);
-            currentY += 15; // Reducido de 20 a 15
-            doc.setFontSize(40); // Reducido de 44 a 40
+            currentY += 15;
+            
+            const formattedCantidad = formatNumberES(data.cantidad);
+            const uomText = data.uom === 'Unidad' ? 'Unidades' : 'Millares';
+
             doc.setFont("helvetica", "bold");
-            doc.text(`${data.cantidad} ${data.uom}`, pageW / 2, currentY, { align: "center" });
-            currentY += 8; // Reducido de 10 a 8
+            doc.setFontSize(40);
+            const numeroWidth = doc.getStringUnitWidth(formattedCantidad) * doc.getFontSize() / doc.internal.scaleFactor;
+            const totalWidth = numeroWidth + 15;
+            const startX = (pageW - totalWidth) / 2;
+            
+            doc.text(formattedCantidad, startX, currentY, { align: 'left' });
+            
+            doc.setFontSize(18); // Tamaño reducido para UOM
+            doc.text(uomText, startX + numeroWidth + 3, currentY);
+
+            currentY += 8;
             doc.line(margin, currentY, pageW - margin, currentY);
             
             currentY += 10;
@@ -428,7 +447,7 @@
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">Cantidad (por etiqueta)</label>
-                                    <input type="text" value={cantidad} onChange={handleCantidadChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" placeholder="Ej: 12,5"/>
+                                    <input type="text" value={cantidad} onChange={handleCantidadChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" placeholder="Ej: 12345,67"/>
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">Unidad de Medida</label>
