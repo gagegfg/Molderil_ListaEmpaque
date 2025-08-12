@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -61,16 +61,18 @@
             const [filteredData, setFilteredData] = useState([]);
             const [isLoading, setIsLoading] = useState(true);
             
-            // Lógica para fechas por defecto
             const getInitialDate = (daysOffset = 0) => {
                 const date = new Date();
                 date.setDate(date.getDate() + daysOffset);
                 return date.toISOString().split('T')[0];
             };
 
-            // Estados de los filtros usando el hook de localStorage
-            const [searchTerm, setSearchTerm] = useLocalStorage('grillaqr_searchTerm', '');
-            const [loteTerm, setLoteTerm] = useLocalStorage('grillaqr_loteTerm', '');
+            const [columnFilters, setColumnFilters] = useLocalStorage('grillaqr_columnFilters', {
+                sku: '',
+                descripcion: '',
+                numeroDePallet: '',
+                lotesProduccion: ''
+            });
             const [fechaDesde, setFechaDesde] = useLocalStorage('grillaqr_fechaDesde', getInitialDate(-365));
             const [fechaHasta, setFechaHasta] = useLocalStorage('grillaqr_fechaHasta', getInitialDate());
             
@@ -132,21 +134,17 @@
             useEffect(() => {
                 let data = [...allData];
 
-                if (searchTerm) {
-                    const lowercasedTerm = searchTerm.toLowerCase();
-                    data = data.filter(item =>
-                        (item.sku && item.sku.toLowerCase().includes(lowercasedTerm)) ||
-                        (item.descripcion && item.descripcion.toLowerCase().includes(lowercasedTerm))
-                    );
-                }
+                // Filtros de columna
+                Object.keys(columnFilters).forEach(key => {
+                    const filterValue = columnFilters[key].toLowerCase();
+                    if (filterValue) {
+                        data = data.filter(item =>
+                            item[key] && item[key].toString().toLowerCase().includes(filterValue)
+                        );
+                    }
+                });
 
-                if (loteTerm) {
-                    const lowercasedLote = loteTerm.toLowerCase();
-                    data = data.filter(item => 
-                        item.lotesProduccion && item.lotesProduccion.toLowerCase().includes(lowercasedLote)
-                    );
-                }
-
+                // Filtros de fecha
                 const desde = fechaDesde ? new Date(fechaDesde + 'T00:00:00') : null;
                 const hasta = fechaHasta ? new Date(fechaHasta + 'T23:59:59') : null;
 
@@ -165,7 +163,7 @@
                 }
 
                 setFilteredData(data);
-            }, [searchTerm, loteTerm, fechaDesde, fechaHasta, allData]);
+            }, [columnFilters, fechaDesde, fechaHasta, allData]);
             
             useEffect(() => {
                 const handleClickOutside = (event) => {
@@ -177,37 +175,28 @@
                 return () => document.removeEventListener("mousedown", handleClickOutside);
             }, []);
 
+            const handleColumnFilterChange = (columnId, value) => {
+                setColumnFilters(prev => ({ ...prev, [columnId]: value }));
+            };
+
             const clearFilters = () => {
-                setSearchTerm('');
-                setLoteTerm('');
+                setColumnFilters({ sku: '', descripcion: '', numeroDePallet: '', lotesProduccion: '' });
                 setFechaDesde('');
                 setFechaHasta('');
             };
 
             const exportToPDF = () => {
                 const doc = new jsPDF({ orientation: 'landscape' });
-                const pageTitle = "Histórico de Lotes Generados";
-                const filtersApplied = `Filtros: Artículo: "${searchTerm || 'Todos'}" | Lote: "${loteTerm || 'Todos'}" | Desde: ${fechaDesde || 'N/A'} | Hasta: ${fechaHasta || 'N/A'}`;
-                const generationDate = `Generado el: ${new Date().toLocaleDateString('es-ES')} ${new Date().toLocaleTimeString('es-ES')}`;
-
                 doc.setFontSize(18);
-                doc.text(pageTitle, 14, 16);
-                doc.setFontSize(8);
-                doc.text(filtersApplied, 14, 22);
-                doc.text(generationDate, 14, 26);
+                doc.text("Histórico de Lotes Generados", 14, 16);
                 
                 const tableColumn = ["SKU", "Descripción", "Nº Pallet", "Lotes Prod.", "F. Prod.", "Cantidad", "U.M."];
                 const tableRows = [];
 
                 filteredData.forEach(item => {
                     const rowData = [
-                        item.sku,
-                        item.descripcion,
-                        item.numeroDePallet,
-                        item.lotesProduccion,
-                        item.fechaProduccion,
-                        item.cantidad,
-                        item.unidadMedida
+                        item.sku, item.descripcion, item.numeroDePallet, item.lotesProduccion,
+                        item.fechaProduccion, item.cantidad, item.unidadMedida
                     ];
                     tableRows.push(rowData);
                 });
@@ -215,7 +204,7 @@
                 doc.autoTable({
                     head: [tableColumn],
                     body: tableRows,
-                    startY: 30,
+                    startY: 22,
                     theme: 'grid',
                     headStyles: { fillColor: [22, 160, 133] }
                 });
@@ -226,13 +215,9 @@
 
             const exportToExcel = () => {
                 const worksheet = XLSX.utils.json_to_sheet(filteredData.map(item => ({
-                    'SKU': item.sku,
-                    'Descripción': item.descripcion,
-                    'Nº Pallet': item.numeroDePallet,
-                    'Lotes Producción': item.lotesProduccion,
-                    'Fecha Producción': item.fechaProduccion,
-                    'Cantidad': item.cantidad,
-                    'Unidad Medida': item.unidadMedida
+                    'SKU': item.sku, 'Descripción': item.descripcion, 'Nº Pallet': item.numeroDePallet,
+                    'Lotes Producción': item.lotesProduccion, 'Fecha Producción': item.fechaProduccion,
+                    'Cantidad': item.cantidad, 'Unidad Medida': item.unidadMedida
                 })));
                 const workbook = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(workbook, worksheet, "Histórico");
@@ -252,29 +237,7 @@
                         </div>
                         
                         <div className="mb-6 p-4 border rounded-lg bg-gray-50 space-y-4">
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                <div className="relative">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Buscar por Artículo</label>
-                                    <i className="fa fa-search absolute left-3 top-9 text-gray-400"></i>
-                                    <input 
-                                        type="text"
-                                        placeholder="SKU o descripción..."
-                                        value={searchTerm}
-                                        onChange={e => setSearchTerm(e.target.value)}
-                                        className="w-full rounded-md border-gray-300 shadow-sm p-2 pl-10 border"
-                                    />
-                                </div>
-                                <div className="relative">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Buscar por Lote</label>
-                                    <i className="fa fa-tag absolute left-3 top-9 text-gray-400"></i>
-                                    <input 
-                                        type="text"
-                                        placeholder="Lote de producción..."
-                                        value={loteTerm}
-                                        onChange={e => setLoteTerm(e.target.value)}
-                                        className="w-full rounded-md border-gray-300 shadow-sm p-2 pl-10 border"
-                                    />
-                                </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Fecha Desde</label>
                                     <input 
@@ -293,11 +256,11 @@
                                         className="w-full rounded-md border-gray-300 shadow-sm p-2 border"
                                     />
                                 </div>
-                            </div>
-                            <div className="flex justify-end">
-                                <button onClick={clearFilters} className="text-sm text-gray-600 hover:text-gray-900 font-semibold flex items-center">
-                                    <i className="fas fa-times-circle mr-1"></i>Limpiar Filtros
-                                </button>
+                                <div className="flex items-end">
+                                    <button onClick={clearFilters} className="w-full bg-white text-gray-700 border border-gray-300 font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-gray-50 flex items-center justify-center">
+                                        <i className="fas fa-times-circle mr-2"></i>Limpiar Filtros
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
@@ -347,6 +310,15 @@
                                         <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">F. Prod.</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Cantidad</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">U.M.</th>
+                                    </tr>
+                                    <tr className="bg-gray-200">
+                                        <th className="p-1"><input type="text" placeholder="Filtrar..." value={columnFilters.sku} onChange={e => handleColumnFilterChange('sku', e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
+                                        <th className="p-1"><input type="text" placeholder="Filtrar..." value={columnFilters.descripcion} onChange={e => handleColumnFilterChange('descripcion', e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
+                                        <th className="p-1"><input type="text" placeholder="Filtrar..." value={columnFilters.numeroDePallet} onChange={e => handleColumnFilterChange('numeroDePallet', e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
+                                        <th className="p-1"><input type="text" placeholder="Filtrar..." value={columnFilters.lotesProduccion} onChange={e => handleColumnFilterChange('lotesProduccion', e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
+                                        <th className="p-1"></th>
+                                        <th className="p-1"></th>
+                                        <th className="p-1"></th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
