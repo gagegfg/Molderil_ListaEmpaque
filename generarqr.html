@@ -262,11 +262,11 @@
             doc.setFont("helvetica", "normal");
             doc.text("Artículo", margin, currentY);
             currentY += 18;
-            doc.setFontSize(56);
+            doc.setFontSize(60); // Aumentado
             doc.setFont("helvetica", "bold");
             const descLines = doc.splitTextToSize(data.descripcion, contentW);
             doc.text(descLines, pageW / 2, currentY, { align: "center" });
-            currentY += (descLines.length * 20);
+            currentY += (descLines.length * 22); // Ajustado
 
             doc.setFontSize(18);
             doc.setFont("helvetica", "bold");
@@ -515,3 +515,7 @@
         const root = createRoot(rootElement);
         root.render(<App apiToken={token} />);
     })();
+
+</script>
+</body>
+</html>
