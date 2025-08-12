@@ -231,9 +231,9 @@
 
         const formatNumberES = (numStr) => {
             if (!numStr) return '';
-            const [integerPart, decimalPart] = numStr.split(',');
-            const formattedIntegerPart = new Intl.NumberFormat('es-ES').format(parseInt(integerPart, 10));
-            return decimalPart !== undefined ? `${formattedIntegerPart},${decimalPart}` : formattedIntegerPart;
+            const num = parseFloat(numStr.replace(',', '.'));
+            if (isNaN(num)) return '';
+            return new Intl.NumberFormat('es-ES').format(num);
         };
 
         const drawLabelOnDoc = async (doc, data) => {
@@ -244,7 +244,7 @@
 
             let currentY = margin + 10;
 
-            doc.setFontSize(26); // Reducido
+            doc.setFontSize(26);
             doc.setFont("helvetica", "bold");
             doc.text("MOLDERIL S.A.", pageW / 2, currentY + 10, { align: "center" });
             doc.line(margin, currentY + 20, pageW - margin, currentY + 20);
@@ -254,11 +254,11 @@
             doc.setFont("helvetica", "normal");
             doc.text("Artículo", margin, currentY);
             currentY += 20;
-            doc.setFontSize(56); // Aumentado
+            doc.setFontSize(56);
             doc.setFont("helvetica", "bold");
             const descLines = doc.splitTextToSize(data.descripcion, contentW);
             doc.text(descLines, pageW / 2, currentY, { align: "center" });
-            currentY += (descLines.length * 20); // Ajustado para nuevo tamaño
+            currentY += (descLines.length * 20);
 
             doc.setFontSize(18);
             doc.setFont("helvetica", "bold");
@@ -272,7 +272,6 @@
             currentY += 10;
             doc.line(margin, currentY, pageW - margin, currentY);
 
-            // Sección de Cantidad
             currentY += 12;
             doc.setFontSize(14);
             doc.setFont("helvetica", "normal");
@@ -284,13 +283,15 @@
 
             doc.setFont("helvetica", "bold");
             doc.setFontSize(40);
+            
             const numeroWidth = doc.getStringUnitWidth(formattedCantidad) * doc.getFontSize() / doc.internal.scaleFactor;
-            const totalWidth = numeroWidth + 15;
+            const uomWidth = doc.getStringUnitWidth(uomText) * 18 / doc.internal.scaleFactor;
+            const totalWidth = numeroWidth + uomWidth + 3; // 3 for spacing
             const startX = (pageW - totalWidth) / 2;
             
             doc.text(formattedCantidad, startX, currentY, { align: 'left' });
             
-            doc.setFontSize(18); // Tamaño reducido para UOM
+            doc.setFontSize(18);
             doc.text(uomText, startX + numeroWidth + 3, currentY);
 
             currentY += 8;
@@ -330,7 +331,7 @@
             
             const cantidadParaQR = cantidad.replace(',', '.');
             const lotesProduccionFiltrados = lotesProduccion.filter(lote => lote.trim() !== '');
-            const lotesParaQR = lotesProduccionFiltrados.length > 0 ? `<${lotesProduccionFiltrados.join('#')}>` : '';
+            const lotesParaQR = lotesProduccionFiltrados.join('; ');
 
             const qrString = [
                 selectedArticulo.sku || '',
