@@ -112,7 +112,7 @@
                 <li><strong>Imprimir PDF:</strong> Abre la ventana de impresión de tu navegador.</li>
                 <li><strong>Copiar JSON:</strong> Copia todos los datos de la lista en formato de texto (JSON) a tu portapapeles.</li>
               </ul>
-               <p className="mt-2 text-sm text-gray-500">Al realizar cualquiera de estas acciones, el sistema intentará actualizar automáticamente el estado de los pallets en el archivo de control de GitHub.</p>
+               <p className="mt-2 text-sm text-gray-500">Al realizar cualquiera de estas acciones, el sistema intentará actualizar automáticamente el estado de los pallets y el cliente de despacho en el archivo de control de GitHub.</p>
             </div>
           </div>
 
@@ -263,7 +263,7 @@
       }, []);
 
       // --- GITHUB UPDATE FUNCTION ---
-      const actualizarEstadoPalletsEnGitHub = async (itemsScaneados) => {
+      const actualizarEstadoPalletsEnGitHub = async (itemsScaneados, clienteNombre) => {
         if (!apiToken) {
             console.warn("No hay token de API. La actualización en GitHub se omite.");
             return;
@@ -301,8 +301,15 @@
 
                 if (indiceLinea !== -1) {
                     let columnas = lineas[indiceLinea].split(';');
+                    
+                    // Solo modificar si el estado es FALSE
                     if (columnas.length >= 8 && columnas[7].trim().toUpperCase() === 'FALSE') {
-                        columnas[7] = 'TRUE';
+                        // Asegurarse de que la línea tiene suficientes columnas
+                        while (columnas.length < 9) {
+                            columnas.push('');
+                        }
+                        columnas[7] = 'TRUE'; // Columna 8: Estado de despacho
+                        columnas[8] = clienteNombre; // Columna 9: Nombre del cliente
                         lineas[indiceLinea] = columnas.join(';');
                         cambiosRealizados++;
                     }
@@ -341,7 +348,6 @@
 
         } catch (error) {
             console.error("FALLO la sincronización con GitHub:", error);
-            // Opcional: Mostrar un modal de error no intrusivo
             setModalContent({ title: 'Error de Sincronización', message: `No se pudo actualizar el estado en GitHub. La operación local (PDF) no fue afectada.\n\nDetalle: ${error.message}` });
             setShowInfoModal(true);
         }
@@ -621,7 +627,7 @@
         if (pdf) { 
           pdf.save(getPdfFilename()); 
           showFeedback('PDF descargado.'); 
-          await actualizarEstadoPalletsEnGitHub(items);
+          await actualizarEstadoPalletsEnGitHub(items, clienteNombre);
         } 
       };
       
@@ -633,7 +639,7 @@
             iframe.src = pdf.output('bloburl');
             document.body.appendChild(iframe);
             iframe.contentWindow.print();
-            await actualizarEstadoPalletsEnGitHub(items);
+            await actualizarEstadoPalletsEnGitHub(items, clienteNombre);
         }
       };
       
@@ -650,7 +656,7 @@
             setTimeout(() => {
                 document.body.removeChild(iframe);
             }, 500);
-            await actualizarEstadoPalletsEnGitHub(items);
+            await actualizarEstadoPalletsEnGitHub(items, clienteNombre);
         }
       };
 
@@ -662,7 +668,7 @@
             setModalContent({ title: 'Enviar por WhatsApp', message: `El archivo "${pdfName}" se ha descargado. Ahora se abrirá WhatsApp Web para que lo adjuntes.` });
             setShowInfoModal(true);
             window.open('https://web.whatsapp.com/', '_blank');
-            await actualizarEstadoPalletsEnGitHub(items);
+            await actualizarEstadoPalletsEnGitHub(items, clienteNombre);
         }
       };
 
@@ -682,7 +688,7 @@
             try {
                 await navigator.share(shareData);
                 showFeedback('¡Contenido compartido!');
-                await actualizarEstadoPalletsEnGitHub(items);
+                await actualizarEstadoPalletsEnGitHub(items, clienteNombre);
             } catch (error) {
                 if (error.name !== 'AbortError') {
                     console.error('Error al compartir:', error);
@@ -691,7 +697,7 @@
                 }
             }
         } else {
-            setModalContent({ title: 'No se puede compartir', message: `Tu navegador no soporta compartir este tipo de archivo. Por favor, descarga el PDF y compártelo manually.` });
+            setModalContent({ title: 'No se puede compartir', message: `Tu navegador no soporta compartir este tipo de archivo. Por favor, descarga el PDF y compártelo manualmente.` });
             setShowInfoModal(true);
         }
       };
