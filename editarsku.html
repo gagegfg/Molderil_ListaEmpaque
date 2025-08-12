@@ -117,6 +117,7 @@
                     setAllData(parsedData);
                     const uniqueTipos = [...new Set(parsedData.map(item => item.tipo))].sort();
                     setTiposArticulo(uniqueTipos);
+                    setHasChanges(false); // Resetea el estado de cambios al refrescar
                 } catch (e) {
                     alert(`Error al cargar artículos: ${e.message}`);
                 } finally {
@@ -204,6 +205,15 @@
                 }
             };
             
+            const handleRefresh = () => {
+                if (hasChanges) {
+                    if (!confirm("Tienes cambios sin guardar. ¿Estás seguro de que quieres refrescar y perder los cambios?")) {
+                        return;
+                    }
+                }
+                fetchData();
+            };
+
             // --- Autenticación ---
             const handleLogin = async () => {
                 try {
@@ -267,44 +277,49 @@
                 <div className="min-h-screen bg-gray-100 p-4 sm:p-6">
                     {isModalOpen && <ArticleModal article={editingArticle} onSave={handleSaveArticle} onClose={() => setIsModalOpen(false)} />}
                     <div className="bg-white p-6 rounded-2xl shadow-xl">
-                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b pb-4 border-gray-200">
-                            <div>
-                                <h1 className="text-3xl font-extrabold text-gray-800">Editor de Artículos</h1>
-                                <p className="text-gray-500 mt-1">Modifica las descripciones cortas o añade nuevos artículos.</p>
+                        <div className="sticky top-0 bg-white z-10 pt-2 pb-4 -mt-2">
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b pb-4 border-gray-200">
+                                <div>
+                                    <h1 className="text-3xl font-extrabold text-gray-800">Editor de Artículos</h1>
+                                    <p className="text-gray-500 mt-1">Modifica las descripciones cortas o añade nuevos artículos.</p>
+                                </div>
+                                <a href="index.html" className="mt-4 sm:mt-0 bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">Volver al Menú</a>
                             </div>
-                            <a href="index.html" className="mt-4 sm:mt-0 bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">Volver al Menú</a>
-                        </div>
-                        
-                        <div className="mb-6 p-4 border rounded-lg bg-gray-50 grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Filtrar por Tipo</label>
-                                <select value={tipoFilter} onChange={e => setTipoFilter(e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm p-2 border">
-                                    <option value="">Todos los tipos</option>
-                                    {tiposArticulo.map(tipo => <option key={tipo} value={tipo}>{tipo}</option>)}
-                                </select>
+                            
+                            <div className="mb-6 p-4 border rounded-lg bg-gray-50 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Filtrar por Tipo</label>
+                                    <select value={tipoFilter} onChange={e => setTipoFilter(e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm p-2 border">
+                                        <option value="">Todos los tipos</option>
+                                        {tiposArticulo.map(tipo => <option key={tipo} value={tipo}>{tipo}</option>)}
+                                    </select>
+                                </div>
+                                <div className="relative">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Buscar por SKU o Descripción</label>
+                                    <i className="fa fa-search absolute left-3 top-9 text-gray-400"></i>
+                                    <input 
+                                        type="text"
+                                        placeholder="Buscar..."
+                                        value={searchTerm}
+                                        onChange={e => setSearchTerm(e.target.value)}
+                                        className="w-full rounded-md border-gray-300 shadow-sm p-2 pl-10 border"
+                                    />
+                                </div>
                             </div>
-                            <div className="relative">
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Buscar por SKU o Descripción</label>
-                                <i className="fa fa-search absolute left-3 top-9 text-gray-400"></i>
-                                <input 
-                                    type="text"
-                                    placeholder="Buscar..."
-                                    value={searchTerm}
-                                    onChange={e => setSearchTerm(e.target.value)}
-                                    className="w-full rounded-md border-gray-300 shadow-sm p-2 pl-10 border"
-                                />
-                            </div>
-                        </div>
 
-                        <div className="flex flex-col sm:flex-row justify-between items-center mb-4">
-                            <p className="text-gray-600 font-semibold">{filteredData.length} artículo(s) encontrado(s)</p>
-                            <div className="flex space-x-2 mt-4 sm:mt-0">
-                                <button onClick={() => { setEditingArticle(null); setIsModalOpen(true); }} className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-green-700 flex items-center">
-                                    <i className="fas fa-plus mr-2"></i>Añadir Artículo
-                                </button>
-                                <button onClick={saveToGitHub} className={`font-semibold py-2 px-4 rounded-lg shadow-md flex items-center ${hasChanges ? 'bg-orange-500 hover:bg-orange-600 text-white' : 'bg-gray-600 text-white'}`}>
-                                    <i className="fab fa-github mr-2"></i>Guardar Cambios
-                                </button>
+                            <div className="flex flex-col sm:flex-row justify-between items-center mb-4">
+                                <p className="text-gray-600 font-semibold">{filteredData.length} artículo(s) encontrado(s)</p>
+                                <div className="flex space-x-2 mt-4 sm:mt-0">
+                                    <button onClick={handleRefresh} className="bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-gray-700 flex items-center">
+                                        <i className={`fas fa-sync-alt ${isLoading ? 'animate-spin' : ''} mr-2`}></i>Refrescar
+                                    </button>
+                                    <button onClick={() => { setEditingArticle(null); setIsModalOpen(true); }} className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-green-700 flex items-center">
+                                        <i className="fas fa-plus mr-2"></i>Añadir Artículo
+                                    </button>
+                                    <button onClick={saveToGitHub} className={`font-semibold py-2 px-4 rounded-lg shadow-md flex items-center ${hasChanges ? 'bg-orange-500 hover:bg-orange-600 text-white' : 'bg-gray-600 text-white'}`}>
+                                        <i className="fab fa-github mr-2"></i>Guardar Cambios
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
