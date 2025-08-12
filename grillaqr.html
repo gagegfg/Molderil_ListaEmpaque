@@ -69,7 +69,7 @@
             const [apiToken, setApiToken] = useState(null);
 
             // Estado para modales y menús
-            const [modalState, setModalState] = useState({ isOpen: false, type: null, data: null, onConfirm: null });
+            const [modalState, setModalState] = useState({ isOpen: false, type: null, title: '', message: '', onConfirm: null });
             const [activeActionMenu, setActiveActionMenu] = useState(null);
             const actionMenuRef = useRef(null);
             
@@ -97,7 +97,7 @@
 
             const getApiToken = async (file) => {
                 try {
-                    const response = await fetch(file);
+                    const response = await fetch(file + '?t=' + new Date().getTime()); // Evitar cache
                     if (!response.ok) throw new Error(`No se pudo cargar ${file}.`);
                     let rawText = await response.text();
                     return rawText.replace(/aaaa/g, '').replace(/bbbb/g, '').replace(/cccc/g, '').trim();
@@ -153,7 +153,7 @@
 
                     if (!updateResponse.ok) throw new Error(`Error ${updateResponse.status}: Falló la actualización.`);
                     alert("¡Histórico guardado correctamente en GitHub!");
-                    setAllData(dataToSave); // Actualizar el estado local con los datos guardados
+                    setAllData(dataToSave);
                     return true;
                 } catch (e) {
                     alert(`ERROR al guardar en GitHub: ${e.message}`);
@@ -163,15 +163,14 @@
                 }
             };
             
-            const verifyPasswordAndExecute = async (actionCallback) => {
-                const password = modalState.data;
+            const verifyPasswordAndExecute = async (actionCallback, password) => {
                 if (!password) {
                     alert("Por favor, ingrese la contraseña.");
                     return;
                 }
                 const correctPassword = await getApiToken('pswsku.txt');
                 if (password === correctPassword) {
-                    setModalState({ isOpen: false });
+                    setModalState({ isOpen: false }); // Cerrar modal antes de ejecutar
                     actionCallback();
                 } else {
                     alert("Contraseña incorrecta.");
@@ -264,9 +263,11 @@
                     type: 'password', 
                     title: `Confirmar Eliminación`,
                     message: `¿Seguro que quieres eliminar la fila? Esta acción es irreversible.`,
-                    onConfirm: () => {
-                        const newData = allData.filter(item => item.id !== rowId);
-                        saveToGitHub(newData);
+                    onConfirm: (password) => {
+                        verifyPasswordAndExecute(() => {
+                            const newData = allData.filter(item => item.id !== rowId);
+                            saveToGitHub(newData);
+                        }, password);
                     }
                 });
             };
@@ -277,14 +278,16 @@
                     type: 'password',
                     title: 'Confirmar Reversión',
                     message: 'Esta acción marcará el lote como NO despachado y limpiará el cliente.',
-                    onConfirm: () => {
-                        const newData = allData.map(item => {
-                            if (item.id === rowId) {
-                                return { ...item, despachado: 'FALSE', cliente: '' };
-                            }
-                            return item;
-                        });
-                        saveToGitHub(newData);
+                    onConfirm: (password) => {
+                        verifyPasswordAndExecute(() => {
+                            const newData = allData.map(item => {
+                                if (item.id === rowId) {
+                                    return { ...item, despachado: 'FALSE', cliente: '' };
+                                }
+                                return item;
+                            });
+                            saveToGitHub(newData);
+                        }, password);
                     }
                 });
             };
@@ -301,14 +304,16 @@
                             type: 'password',
                             title: 'Confirmar Cambio de Cliente',
                             message: `Se cambiará el cliente a "${newClient}". Ingrese la contraseña para confirmar.`,
-                            onConfirm: () => {
-                                const newData = allData.map(item => {
-                                    if (item.id === rowId) {
-                                        return { ...item, cliente: newClient };
-                                    }
-                                    return item;
-                                });
-                                saveToGitHub(newData);
+                            onConfirm: (password) => {
+                                verifyPasswordAndExecute(() => {
+                                    const newData = allData.map(item => {
+                                        if (item.id === rowId) {
+                                            return { ...item, cliente: newClient };
+                                        }
+                                        return item;
+                                    });
+                                    saveToGitHub(newData);
+                                }, password);
                             }
                         });
                     }
@@ -419,13 +424,7 @@
                         title={modalState.title}
                         message={modalState.message}
                         onClose={() => setModalState({ isOpen: false })}
-                        onConfirm={(value) => {
-                            if (modalState.type === 'password') {
-                                verifyPasswordAndExecute(modalState.onConfirm, value);
-                            } else {
-                                modalState.onConfirm(value);
-                            }
-                        }}
+                        onConfirm={modalState.onConfirm}
                     />
                     <div className="bg-white p-6 rounded-2xl shadow-xl">
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b pb-4 border-gray-200">
