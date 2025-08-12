@@ -289,7 +289,11 @@
                                         ref={passwordInputRef}
                                         value={password}
                                         onChange={e => setPassword(e.target.value)}
-                                        onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                                        onKeyDown={e => {
+                                            if (e.key === 'Enter') {
+                                                handleLogin();
+                                            }
+                                        }}
                                         className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
                                     />
                                 </div>
@@ -297,6 +301,9 @@
                                 <button onClick={handleLogin} className="w-full bg-indigo-600 text-white font-semibold py-2 px-4 rounded-md shadow-md hover:bg-indigo-700">
                                     Ingresar
                                 </button>
+                                <a href="index.html" className="block w-full text-center bg-gray-500 text-white font-semibold py-2 px-4 rounded-md shadow-md hover:bg-gray-600">
+                                    Volver al Menú Principal
+                                </a>
                             </div>
                         </div>
                     </div>
