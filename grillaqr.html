@@ -36,6 +36,7 @@
         const GITHUB_USER = 'gagegfg';
         const GITHUB_REPO = 'Molderil_ListaEmpaque';
         const CSV_PATH = 'detallelotes.csv';
+        const AUTH_TIMEOUT = 5 * 60 * 1000; // 5 minutos en milisegundos
 
         // Hook personalizado para manejar el estado con localStorage
         const useLocalStorage = (key, initialValue) => {
@@ -68,6 +69,7 @@
             const [isSaving, setIsSaving] = useState(false);
             const [apiToken, setApiToken] = useState(null);
             const [clientList, setClientList] = useState([]);
+            const [authTimestamp, setAuthTimestamp] = useState(null);
 
             // Estado para modales y menús
             const [modalState, setModalState] = useState({ isOpen: false, type: null, title: '', message: '', onConfirm: null });
@@ -172,10 +174,28 @@
                 }
                 const correctPassword = await getApiToken('pswsku.txt');
                 if (password.trim() === correctPassword) {
-                    setModalState({ isOpen: false }); // Cerrar modal antes de ejecutar
+                    setAuthTimestamp(Date.now()); // Guardar timestamp de autenticación exitosa
+                    setModalState({ isOpen: false });
                     actionCallback();
                 } else {
                     alert("Contraseña incorrecta.");
+                }
+            };
+
+            const executeActionWithAuth = (actionCallback) => {
+                const now = Date.now();
+                if (authTimestamp && (now - authTimestamp < AUTH_TIMEOUT)) {
+                    actionCallback();
+                } else {
+                    setModalState({
+                        isOpen: true,
+                        type: 'password',
+                        title: 'Autorización Requerida',
+                        message: 'Por seguridad, ingrese la contraseña de administrador para continuar.',
+                        onConfirm: (password) => {
+                            verifyPasswordAndExecute(actionCallback, password);
+                        }
+                    });
                 }
             };
             
@@ -277,17 +297,9 @@
                     title: `Confirmar Eliminación`,
                     message: `¿Seguro que quieres eliminar la fila? Esta acción es irreversible.`,
                     onConfirm: () => {
-                        setModalState({
-                            isOpen: true,
-                            type: 'password',
-                            title: 'Ingrese Contraseña',
-                            message: 'Para confirmar la eliminación, ingrese la contraseña de administrador.',
-                            onConfirm: (password) => {
-                                verifyPasswordAndExecute(() => {
-                                    const newData = allData.filter(item => item.id !== rowId);
-                                    saveToGitHub(newData);
-                                }, password);
-                            }
+                        executeActionWithAuth(() => {
+                            const newData = allData.filter(item => item.id !== rowId);
+                            saveToGitHub(newData);
                         });
                     }
                 });
@@ -306,22 +318,14 @@
                     title: 'Confirmar Reversión',
                     message: 'Esta acción marcará el lote como NO despachado y limpiará el cliente.',
                     onConfirm: () => {
-                        setModalState({
-                            isOpen: true,
-                            type: 'password',
-                            title: 'Ingrese Contraseña',
-                            message: 'Para confirmar la reversión, ingrese la contraseña de administrador.',
-                            onConfirm: (password) => {
-                                verifyPasswordAndExecute(() => {
-                                    const newData = allData.map(item => {
-                                        if (item.id === rowId) {
-                                            return { ...item, despachado: 'FALSE', cliente: '' };
-                                        }
-                                        return item;
-                                    });
-                                    saveToGitHub(newData);
-                                }, password);
-                            }
+                        executeActionWithAuth(() => {
+                            const newData = allData.map(item => {
+                                if (item.id === rowId) {
+                                    return { ...item, despachado: 'FALSE', cliente: '' };
+                                }
+                                return item;
+                            });
+                            saveToGitHub(newData);
                         });
                     }
                 });
@@ -340,11 +344,11 @@
                          }
                          setModalState({
                             isOpen: true,
-                            type: 'password',
+                            type: 'confirm',
                             title: 'Confirmar Cambio de Cliente',
-                            message: `Se asignará el cliente "${newClient}" y el lote se marcará como despachado. Ingrese la contraseña para confirmar.`,
-                            onConfirm: (password) => {
-                                verifyPasswordAndExecute(() => {
+                            message: `Se asignará el cliente "${newClient}" y el lote se marcará como despachado.`,
+                            onConfirm: () => {
+                                executeActionWithAuth(() => {
                                     const newData = allData.map(item => {
                                         if (item.id === rowId) {
                                             return { ...item, cliente: newClient.toUpperCase(), despachado: 'TRUE' };
@@ -352,7 +356,7 @@
                                         return item;
                                     });
                                     saveToGitHub(newData);
-                                }, password);
+                                });
                             }
                         });
                     }
