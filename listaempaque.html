@@ -268,16 +268,16 @@
 
       const formatSpanishNumber = (num) => {
           if (isNaN(num)) return '';
-          return new Intl.NumberFormat('es-ES').format(num);
+          return new Intl.NumberFormat('es-ES', {minimumFractionDigits: 0, maximumFractionDigits: 2}).format(num);
       };
 
       const validateQrData = (parts) => {
           if (parts.length < 7) return "El código QR no tiene los 7 campos requeridos.";
           
-          const [, , , fechaProduccion, fechaVencimiento, cantidad] = parts;
+          const [, , , , fechaProduccion, cantidad] = parts;
           
-          if (!parseDate(fechaProduccion) || !parseDate(fechaVencimiento)) {
-              return "Una o ambas fechas no tienen un formato válido.";
+          if (!parseDate(fechaProduccion)) {
+              return "La fecha de producción no tiene un formato válido.";
           }
 
           if (isNaN(parseSpanishNumber(cantidad))) {
@@ -298,9 +298,9 @@
             return;
         }
 
-        const [sku, descripcion, lote, fechaProduccion, fechaVencimiento, cantidad, unidadMedida] = parts;
-        if (items.some(item => item.sku === sku && item.lote === lote)) {
-          setModalContent({ title: 'Artículo Duplicado', message: `Error: El artículo con SKU "${sku}" y Lote "${lote}" ya fue cargado.` });
+        const [sku, descripcion, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida] = parts;
+        if (items.some(item => item.numeroDePallet === numeroDePallet)) {
+          setModalContent({ title: 'Pallet Duplicado', message: `Error: El Pallet Nº "${numeroDePallet}" ya fue cargado.` });
           setShowInfoModal(true);
           return;
         }
@@ -309,9 +309,9 @@
             id: Date.now(), 
             sku, 
             descripcion, 
-            lote, 
+            numeroDePallet,
+            lotesProduccion: lotesProduccion.replace(/#/g, ', '),
             fechaProduccion: formatDate(parseDate(fechaProduccion)),
-            fechaVencimiento: formatDate(parseDate(fechaVencimiento)),
             cantidad: formatSpanishNumber(parseSpanishNumber(cantidad)),
             unidadMedida, 
             controlado: false 
@@ -415,8 +415,8 @@
           pdf.text(`${formattedDate} ${formattedTime}`, midPoint + 26, yRight);
           
           y = 45;
-          const headers = ["SKU", "Descripción", "Lote", "F. Prod.", "F. Venc.", "Cant.", "U.M.", "Control"];
-          const colWidths = [0.12, 0.33, 0.15, 0.1, 0.1, 0.06, 0.05, 0.09];
+          const headers = ["SKU", "Descripción", "Nº Pallet", "Lotes Prod.", "F. Prod.", "Cant.", "U.M.", "Control"];
+          const colWidths = [0.12, 0.33, 0.12, 0.13, 0.08, 0.06, 0.05, 0.11];
           const colPos = colWidths.reduce((acc, width, i) => {
               acc.push( (i === 0 ? m : acc[i - 1]) + (i === 0 ? 0 : pageWidth * colWidths[i - 1]) );
               return acc;
@@ -445,7 +445,7 @@
               pdf.setFontSize(7);
             }
             pdf.line(m, y, pdfWidth - m, y);
-            const itemData = [item.sku, item.descripcion, item.lote, item.fechaProduccion, item.fechaVencimiento, item.cantidad, item.unidadMedida].map(d => String(d || ''));
+            const itemData = [item.sku, item.descripcion, item.numeroDePallet, item.lotesProduccion, item.fechaProduccion, item.cantidad, item.unidadMedida].map(d => String(d || ''));
             itemData.forEach((data, i) => pdf.text(data, colPos[i] + 2, y + 3.5));
             const boxSize = 3;
             pdf.rect(colPos[7] + (pageWidth * colWidths[7] / 2) - (boxSize / 2), y + (rowHeight / 2) - (boxSize / 2), boxSize, boxSize);
@@ -754,9 +754,9 @@
                       <tr>
                         <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
                         <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Descripción</th>
-                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lote</th>
+                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nº Pallet</th>
+                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lotes Prod.</th>
                         <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">F. Prod</th>
-                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">F. Venc</th>
                         <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cant.</th>
                         <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">U.M.</th>
                         <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase">Control</th>
@@ -771,9 +771,9 @@
                           <tr key={item.id} className="hover:bg-gray-50">
                             <td className="px-2 py-4 whitespace-nowrap text-sm">{item.sku}</td>
                             <td className="px-2 py-4 whitespace-nowrap text-sm">{item.descripcion}</td>
-                            <td className="px-2 py-4 whitespace-nowrap text-sm">{item.lote}</td>
+                            <td className="px-2 py-4 whitespace-nowrap text-sm">{item.numeroDePallet}</td>
+                            <td className="px-2 py-4 whitespace-nowrap text-sm">{item.lotesProduccion}</td>
                             <td className="px-2 py-4 whitespace-nowrap text-sm">{item.fechaProduccion}</td>
-                            <td className="px-2 py-4 whitespace-nowrap text-sm">{item.fechaVencimiento}</td>
                             <td className="px-2 py-4 whitespace-nowrap text-sm">{item.cantidad}</td>
                             <td className="px-2 py-4 whitespace-nowrap text-sm">{item.unidadMedida}</td>
                             <td className="px-2 py-4 text-center"><input type="checkbox" checked={item.controlado} onChange={() => handleControlCheck(item.id)} className="h-4 w-4"/></td>
@@ -842,4 +842,4 @@
     root.render(<App />);
   </script>
 </body>
-</html>
+</ht
