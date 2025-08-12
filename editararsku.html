@@ -34,6 +34,7 @@
             const [error, setError] = useState('');
             const [isLoading, setIsLoading] = useState(true);
             const [isAppReady, setIsAppReady] = useState(false);
+            const [apiToken, setApiToken] = useState(null);
             
             const [allData, setAllData] = useState([]);
             const [filteredData, setFilteredData] = useState([]);
@@ -56,8 +57,23 @@
                 const loaderStatus = document.getElementById('loader-status');
                 const loaderProgress = document.getElementById('loader-progress');
 
+                const fetchToken = async () => {
+                    try {
+                        const response = await fetch('cls.txt');
+                        if (!response.ok) {
+                            console.warn('Advertencia: No se pudo cargar el archivo de clave (cls.txt).');
+                            return;
+                        }
+                        let rawToken = await response.text();
+                        rawToken = rawToken.replace(/aaaa/g, '').replace(/bbbb/g, '').replace(/cccc/g, '');
+                        setApiToken(rawToken.trim());
+                    } catch (error) {
+                        console.error("Error al obtener el token:", error);
+                    }
+                };
+
                 const loadingTasks = [
-                    { status: "Inicializando...", duration: 500, progress: 50 },
+                    { status: "Inicializando...", duration: 500, progress: 50, action: fetchToken },
                     { status: "¡Listo!", duration: 500, progress: 100 }
                 ];
 
@@ -67,6 +83,7 @@
                         const task = loadingTasks[currentTask];
                         if (loaderStatus) loaderStatus.textContent = task.status;
                         if (loaderProgress) loaderProgress.style.width = `${task.progress}%`;
+                        if(task.action) task.action();
                         setTimeout(() => {
                             currentTask++;
                             runLoadingTask();
@@ -121,8 +138,8 @@
                 if (searchTerm) {
                     const lowerTerm = searchTerm.toLowerCase();
                     data = data.filter(item => 
-                        item.sku.toLowerCase().includes(lowerTerm) || 
-                        item.descLarga.toLowerCase().includes(lowerTerm)
+                        (item.sku && item.sku.toLowerCase().includes(lowerTerm)) || 
+                        (item.descLarga && item.descLarga.toLowerCase().includes(lowerTerm))
                     );
                 }
                 setFilteredData(data);
@@ -148,7 +165,11 @@
                 setEditingArticle(null);
             };
 
-            const saveToGitHub = async (apiToken) => {
+            const saveToGitHub = async () => {
+                if (!apiToken) {
+                    alert("Error: El token de API no está disponible. No se puede guardar.");
+                    return;
+                }
                 if (!hasChanges) {
                     alert("No hay cambios para guardar.");
                     return;
@@ -157,7 +178,7 @@
                     return;
                 }
 
-                const csvContent = allData.map(item => `${item.tipo};${item.sku};${item.descLarga};${item.descCorta}`).join('\n');
+                const csvContent = allData.map(item => `${item.tipo};${item.sku};${item.descLarga};${item.descCorta || ''}`).join('\n');
                 const url = `https://api.github.com/repos/gagegfg/Molderil_ListaEmpaque/contents/articulos.csv`;
 
                 try {
@@ -281,7 +302,7 @@
                                 <button onClick={() => { setEditingArticle(null); setIsModalOpen(true); }} className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-green-700 flex items-center">
                                     <i className="fas fa-plus mr-2"></i>Añadir Artículo
                                 </button>
-                                <button onClick={() => saveToGitHub('TU_TOKEN_DE_GITHUB_AQUI')} className={`font-semibold py-2 px-4 rounded-lg shadow-md flex items-center ${hasChanges ? 'bg-orange-500 hover:bg-orange-600 text-white' : 'bg-gray-600 text-white'}`}>
+                                <button onClick={saveToGitHub} className={`font-semibold py-2 px-4 rounded-lg shadow-md flex items-center ${hasChanges ? 'bg-orange-500 hover:bg-orange-600 text-white' : 'bg-gray-600 text-white'}`}>
                                     <i className="fab fa-github mr-2"></i>Guardar Cambios
                                 </button>
                             </div>
