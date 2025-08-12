@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MOLDERIL - Histórico de Lotes</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
+</head>
+<body class="bg-gray-100 font-sans">
+
+    <div id="static-loader" class="fixed inset-0 bg-gray-100 flex items-center justify-center p-4 font-sans z-50 transition-opacity duration-500">
+        <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md text-center">
+            <h1 class="text-4xl font-extrabold text-gray-900 tracking-wide mb-6" style="font-family: 'Arial', sans-serif;">MOLDERIL S.A.</h1>
+            <p id="loader-status" class="text-xl text-gray-600 mb-4">Cargando aplicación...</p>
+            <div class="w-full bg-gray-200 rounded-full h-4">
+                <div id="loader-progress" class="bg-indigo-600 h-4 rounded-full transition-all duration-500" style="width: 10%"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+        const { createRoot } = ReactDOM;
+        const { jsPDF } = window.jspdf;
+
+        const App = () => {
+            const [allData, setAllData] = useState([]);
+            const [filteredData, setFilteredData] = useState([]);
+            const [articulos, setArticulos] = useState([]);
+            const [searchTerm, setSearchTerm] = useState('');
+            const [fechaDesde, setFechaDesde] = useState('');
+            const [fechaHasta, setFechaHasta] = useState('');
+
+            useEffect(() => {
+                const staticLoader = document.getElementById('static-loader');
+                const loaderStatus = document.getElementById('loader-status');
+                const loaderProgress = document.getElementById('loader-progress');
+
+                const fetchData = async () => {
+                    try {
+                        const response = await fetch('https://raw.githubusercontent.com/gagegfg/Molderil_ListaEmpaque/main/detallelotes.csv');
+                        if (!response.ok) throw new Error('No se pudo cargar el histórico.');
+                        const text = await response.text();
+                        const rows = text.split('\n').filter(Boolean);
+                        const parsedData = rows.map((row, index) => {
+                            const [sku, descripcion, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida] = row.split(';');
+                            return { id: index, sku, descripcion, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida };
+                        });
+                        setAllData(parsedData);
+                        setFilteredData(parsedData);
+                    } catch (error) {
+                        console.error("Error cargando detallelotes.csv:", error);
+                        alert("Error al cargar el histórico de lotes.");
+                    }
+                };
+
+                const fetchArticulos = async () => {
+                    try {
+                        const response = await fetch('articulos.csv');
+                        const text = await response.text();
+                        const rows = text.split('\n').slice(1);
+                        const parsedArticulos = rows.map(row => {
+                            const [, sku, descripcionLarga] = row.split(';');
+                            return { sku, descripcion: descripcionLarga?.trim() };
+                        }).filter(art => art.sku && art.descripcion);
+                        setArticulos(parsedArticulos);
+                    } catch (error) {
+                        console.error("Error loading articulos.csv:", error);
+                    }
+                };
+
+                const loadingTasks = [
+                    { status: "Inicializando...", duration: 300, progress: 20 },
+                    { status: "Cargando artículos...", duration: 800, progress: 50, action: fetchArticulos },
+                    { status: "Cargando histórico...", duration: 800, progress: 85, action: fetchData },
+                    { status: "¡Listo!", duration: 500, progress: 100 }
+                ];
+
+                let currentTask = 0;
+                const runLoadingTask = () => {
+                    if (currentTask < loadingTasks.length) {
+                        const task = loadingTasks[currentTask];
+                        if (loaderStatus) loaderStatus.textContent = task.status;
+                        if (loaderProgress) loaderProgress.style.width = `${task.progress}%`;
+                        if (task.action) task.action();
+                        setTimeout(() => {
+                            currentTask++;
+                            runLoadingTask();
+                        }, task.duration);
+                    } else {
+                        if (staticLoader) {
+                            staticLoader.classList.add('opacity-0');
+                            setTimeout(() => staticLoader.remove(), 500);
+                        }
+                    }
+                };
+                runLoadingTask();
+            }, []);
+
+            const applyFilters = () => {
+                let data = [...allData];
+
+                // Filtro por término de búsqueda (SKU o descripción)
+                if (searchTerm) {
+                    const lowercasedTerm = searchTerm.toLowerCase();
+                    data = data.filter(item =>
+                        item.sku.toLowerCase().includes(lowercasedTerm) ||
+                        item.descripcion.toLowerCase().includes(lowercasedTerm)
+                    );
+                }
+
+                // Filtro por fecha
+                const desde = fechaDesde ? new Date(fechaDesde + 'T00:00:00') : null;
+                const hasta = fechaHasta ? new Date(fechaHasta + 'T23:59:59') : null;
+
+                if (desde || hasta) {
+                    data = data.filter(item => {
+                        const fechaItemParts = item.fechaProduccion.split('/');
+                        const fechaItem = new Date(`${fechaItemParts[2]}-${fechaItemParts[1]}-${fechaItemParts[0]}`);
+                        
+                        if (desde && hasta) return fechaItem >= desde && fechaItem <= hasta;
+                        if (desde) return fechaItem >= desde;
+                        if (hasta) return fechaItem <= hasta;
+                        return true;
+                    });
+                }
+
+                setFilteredData(data);
+            };
+            
+            useEffect(() => {
+                applyFilters();
+            }, [searchTerm, fechaDesde, fechaHasta, allData]);
+
+
+            const exportToPDF = () => {
+                const doc = new jsPDF();
+                doc.text("Histórico de Lotes Generados", 14, 16);
+                
+                const tableColumn = ["SKU", "Descripción", "Nº Pallet", "Lotes", "F. Prod.", "Cantidad", "U.M."];
+                const tableRows = [];
+
+                filteredData.forEach(item => {
+                    const rowData = [
+                        item.sku,
+                        item.descripcion,
+                        item.numeroDePallet,
+                        item.lotesProduccion,
+                        item.fechaProduccion,
+                        item.cantidad,
+                        item.unidadMedida
+                    ];
+                    tableRows.push(rowData);
+                });
+
+                doc.autoTable({
+                    head: [tableColumn],
+                    body: tableRows,
+                    startY: 20,
+                    theme: 'grid'
+                });
+                
+                doc.save("historico_lotes.pdf");
+            };
+
+            return (
+                <div className="min-h-screen bg-gray-100 p-4">
+                    <div className="bg-white p-6 rounded-xl shadow-lg">
+                        <div className="flex justify-between items-center mb-6">
+                            <h1 className="text-3xl font-extrabold text-gray-900">Histórico de Lotes Generados</h1>
+                            <a href="index.html" className="bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-md hover:bg-gray-300">Volver al Menú</a>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 p-4 border rounded-lg bg-gray-50">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Buscar por SKU o Descripción</label>
+                                <input 
+                                    type="text"
+                                    value={searchTerm}
+                                    onChange={e => setSearchTerm(e.target.value)}
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Fecha de Producción Desde</label>
+                                <input 
+                                    type="date"
+                                    value={fechaDesde}
+                                    onChange={e => setFechaDesde(e.target.value)}
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Fecha de Producción Hasta</label>
+                                <input 
+                                    type="date"
+                                    value={fechaHasta}
+                                    onChange={e => setFechaHasta(e.target.value)}
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end mb-4">
+                            <button 
+                                onClick={exportToPDF}
+                                disabled={filteredData.length === 0}
+                                className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-md shadow-md hover:bg-blue-700 disabled:opacity-50"
+                            >
+                                Exportar a PDF
+                            </button>
+                        </div>
+
+                        <div className="overflow-x-auto rounded-lg shadow-md border">
+                            <table className="min-w-full divide-y divide-gray-200 table-auto">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Descripción</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nº Pallet</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lotes Prod.</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">F. Prod.</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cantidad</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">U.M.</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {filteredData.length > 0 ? filteredData.map(item => (
+                                        <tr key={item.id} className="hover:bg-gray-50">
+                                            <td className="px-4 py-4 whitespace-nowrap text-sm">{item.sku}</td>
+                                            <td className="px-4 py-4 whitespace-nowrap text-sm">{item.descripcion}</td>
+                                            <td className="px-4 py-4 whitespace-nowrap text-sm">{item.numeroDePallet}</td>
+                                            <td className="px-4 py-4 whitespace-nowrap text-sm">{item.lotesProduccion}</td>
+                                            <td className="px-4 py-4 whitespace-nowrap text-sm">{item.fechaProduccion}</td>
+                                            <td className="px-4 py-4 whitespace-nowrap text-sm">{item.cantidad}</td>
+                                            <td className="px-4 py-4 whitespace-nowrap text-sm">{item.unidadMedida}</td>
+                                        </tr>
+                                    )) : (
+                                        <tr>
+                                            <td colSpan="7" className="px-4 py-4 text-center text-sm text-gray-500">No se encontraron registros con los filtros aplicados.</td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
