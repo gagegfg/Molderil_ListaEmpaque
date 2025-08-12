@@ -96,9 +96,14 @@
                     const text = await response.text();
                     const rows = text.split('\n').slice(1);
                     const parsedArticulos = rows.map(row => {
-                        const [tipo_articulo, codigo_articulo, descripcion] = row.split(';');
-                        return { tipo: tipo_articulo?.trim().toUpperCase(), sku: codigo_articulo, descripcion: descripcion?.trim() };
-                    }).filter(art => art.sku && art.descripcion);
+                        const [tipo_articulo, codigo_articulo, descripcionLarga, descripcionCorta] = row.split(';');
+                        return { 
+                            tipo: tipo_articulo?.trim().toUpperCase(), 
+                            sku: codigo_articulo, 
+                            descripcionLarga: descripcionLarga?.trim(),
+                            descripcionCorta: descripcionCorta?.trim() 
+                        };
+                    }).filter(art => art.sku && art.descripcionLarga);
                     setArticulos(parsedArticulos);
                 } catch (error) {
                     console.error("Error loading articulos.csv:", error);
@@ -227,7 +232,7 @@
             }
         };
 
-        const filteredArticulos = searchTerm ? articulos.filter(art => art.sku.toLowerCase().includes(searchTerm.toLowerCase()) || art.descripcion.toLowerCase().includes(searchTerm.toLowerCase())) : [];
+        const filteredArticulos = searchTerm ? articulos.filter(art => art.sku.toLowerCase().includes(searchTerm.toLowerCase()) || art.descripcionLarga.toLowerCase().includes(searchTerm.toLowerCase())) : [];
 
         const formatNumberES = (numStr) => {
             if (!numStr) return '';
@@ -334,7 +339,7 @@
 
             const qrString = [
                 selectedArticulo.sku || '',
-                selectedArticulo.descripcion || '',
+                selectedArticulo.descripcionLarga || '', // Usar descripción larga para QR
                 String(numeroDePallet) || '',
                 lotesParaQR,
                 formatQrDate(fechaProd),
@@ -344,7 +349,7 @@
 
             return {
                 sku: selectedArticulo.sku,
-                descripcion: selectedArticulo.descripcion,
+                descripcion: selectedArticulo.descripcionCorta || selectedArticulo.descripcionLarga, // Usar corta para PDF, con fallback a larga
                 lotes: lotesProduccionFiltrados,
                 cantidad: cantidad,
                 uom,
@@ -411,8 +416,8 @@
                                     {searchTerm && filteredArticulos.length > 0 && (
                                         <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">
                                             {filteredArticulos.map(art => (
-                                                <li key={art.sku} className="p-2 hover:bg-indigo-100 cursor-pointer" onClick={() => { setSelectedArticulo(art); setSearchTerm(`${art.sku} - ${art.descripcion}`); }}>
-                                                    {art.sku} - {art.descripcion}
+                                                <li key={art.sku} className="p-2 hover:bg-indigo-100 cursor-pointer" onClick={() => { setSelectedArticulo(art); setSearchTerm(`${art.sku} - ${art.descripcionLarga}`); }}>
+                                                    {art.sku} - {art.descripcionLarga}
                                                 </li>
                                             ))}
                                         </ul>
