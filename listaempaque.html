@@ -33,6 +33,15 @@
     const { useState, useRef, useEffect } = React;
     const { createRoot } = ReactDOM;
 
+    // =================================================================
+    // ### CONFIGURACIÓN: DATOS DEL REPOSITORIO DE GITHUB ###
+    // =================================================================
+    const USUARIO_GITHUB = 'gagegfg';
+    const REPO_NOMBRE = 'Molderil_ListaEmpaque';
+    const RUTA_HISTORICO_CSV = 'detallelotes.csv';
+    // =================================================================
+
+
     // --- QR SCANNER COMPONENT ---
     const QrScanner = ({ onScanSuccess, onStop, onError }) => {
       const qrCodeScanner = useRef(null);
@@ -103,6 +112,7 @@
                 <li><strong>Imprimir PDF:</strong> Abre la ventana de impresión de tu navegador.</li>
                 <li><strong>Copiar JSON:</strong> Copia todos los datos de la lista en formato de texto (JSON) a tu portapapeles.</li>
               </ul>
+               <p className="mt-2 text-sm text-gray-500">Al realizar cualquiera de estas acciones, el sistema intentará actualizar automáticamente el estado de los pallets en el archivo de control de GitHub.</p>
             </div>
           </div>
 
@@ -119,6 +129,7 @@
     const App = () => {
       // Loading state
       const [isAppReady, setIsAppReady] = useState(false);
+      const [apiToken, setApiToken] = useState(null);
 
       // Application state
       const [items, setItems] = useState([]);
@@ -146,6 +157,24 @@
       const fileInputRef = useRef(null);
       const manualInputRef = useRef(null);
       
+      // --- GITHUB API TOKEN FUNCTION ---
+      async function getApiToken() {
+        try {
+            const response = await fetch('cls.txt');
+            if (!response.ok) {
+                console.warn('Advertencia: No se pudo cargar el archivo de clave (cls.txt). La función de guardado en GitHub estará deshabilitada.');
+                return null;
+            }
+            let rawToken = await response.text();
+            // Limpieza del token por si tiene caracteres extra
+            rawToken = rawToken.replace(/aaaa/g, '').replace(/bbbb/g, '').replace(/cccc/g, '');
+            return rawToken.trim();
+        } catch (error) {
+            console.error("Error al obtener el token de GitHub:", error);
+            return null;
+        }
+      }
+
       // Effect for the loading sequence and feature detection
       useEffect(() => {
         const staticLoader = document.getElementById('static-loader');
@@ -157,8 +186,13 @@
         }
 
         const loadingTasks = [
-          { status: "Inicializando aplicación...", duration: 500, progress: 25 },
-          { status: "Cargando librerías...", duration: 800, progress: 50, action: () => setIsPdfLibLoaded(!!window.jspdf) },
+          { status: "Inicializando aplicación...", duration: 200, progress: 15 },
+          { status: "Cargando librerías...", duration: 500, progress: 30, action: () => setIsPdfLibLoaded(!!window.jspdf) },
+          { status: "Verificando acceso a GitHub...", duration: 600, progress: 50, action: async () => {
+              const token = await getApiToken();
+              setApiToken(token);
+            }
+          },
           { status: "Cargando lista de clientes...", duration: 600, progress: 75, action: async () => {
               try {
                 const response = await fetch('clientes.txt');
@@ -227,6 +261,92 @@
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
       }, []);
+
+      // --- GITHUB UPDATE FUNCTION ---
+      const actualizarEstadoPalletsEnGitHub = async (itemsScaneados) => {
+        if (!apiToken) {
+            console.warn("No hay token de API. La actualización en GitHub se omite.");
+            return;
+        }
+        if (itemsScaneados.length === 0) {
+            console.log("No hay items para actualizar. La actualización en GitHub se omite.");
+            return;
+        }
+
+        const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${RUTA_HISTORICO_CSV}`;
+        
+        try {
+            // 1. OBTENER el archivo y su SHA
+            const fileResponse = await fetch(url, { 
+                headers: { 'Authorization': `token ${apiToken}` },
+                cache: 'no-store' // Evitar caché
+            });
+
+            if (!fileResponse.ok) {
+                throw new Error(`Error ${fileResponse.status}: No se pudo obtener el archivo ${RUTA_HISTORICO_CSV} de GitHub.`);
+            }
+            const fileData = await fileResponse.json();
+            const sha = fileData.sha;
+            const contenidoBase64 = fileData.content;
+            
+            // 2. DECODIFICAR y PROCESAR el contenido
+            let contenidoCsv = atob(contenidoBase64);
+            let lineas = contenidoCsv.split('\n');
+            let cambiosRealizados = 0;
+
+            itemsScaneados.forEach(item => {
+                const indiceLinea = lineas.findIndex(linea => 
+                    linea.includes(item.sku) && linea.includes(item.numeroDePallet)
+                );
+
+                if (indiceLinea !== -1) {
+                    let columnas = lineas[indiceLinea].split(';');
+                    if (columnas.length >= 8 && columnas[7].trim().toUpperCase() === 'FALSE') {
+                        columnas[7] = 'TRUE';
+                        lineas[indiceLinea] = columnas.join(';');
+                        cambiosRealizados++;
+                    }
+                }
+            });
+
+            if (cambiosRealizados === 0) {
+                console.log("No se encontraron pallets que necesiten actualización en el archivo CSV.");
+                return;
+            }
+
+            // 3. CODIFICAR y ACTUALIZAR el archivo
+            const nuevoContenidoCsv = lineas.join('\n');
+            const nuevoContenidoBase64 = btoa(nuevoContenidoCsv);
+
+            const updateResponse = await fetch(url, {
+                method: 'PUT',
+                headers: { 
+                    'Authorization': `token ${apiToken}`, 
+                    'Content-Type': 'application/json' 
+                },
+                body: JSON.stringify({
+                    message: `Actualización automática de estado para ${cambiosRealizados} pallet(s)`,
+                    content: nuevoContenidoBase64,
+                    sha: sha,
+                }),
+            });
+
+            if (!updateResponse.ok) {
+                const errorData = await updateResponse.json();
+                throw new Error(`Error ${updateResponse.status}: No se pudo actualizar el archivo en GitHub. ${errorData.message}`);
+            }
+
+            console.log(`¡Éxito! Se actualizaron ${cambiosRealizados} pallets en ${RUTA_HISTORICO_CSV}.`);
+            showFeedback('Sincronización con GitHub OK.');
+
+        } catch (error) {
+            console.error("FALLO la sincronización con GitHub:", error);
+            // Opcional: Mostrar un modal de error no intrusivo
+            setModalContent({ title: 'Error de Sincronización', message: `No se pudo actualizar el estado en GitHub. La operación local (PDF) no fue afectada.\n\nDetalle: ${error.message}` });
+            setShowInfoModal(true);
+        }
+      };
+
 
       // --- DATA PARSING AND VALIDATION ---
       const parseSpanishNumber = (str) => {
@@ -486,7 +606,7 @@
 
       const showFeedback = (message) => {
         setFeedbackMessage(message);
-        setTimeout(() => setFeedbackMessage(''), 2000);
+        setTimeout(() => setFeedbackMessage(''), 2500);
       };
 
       const getPdfFilename = () => {
@@ -501,6 +621,7 @@
         if (pdf) { 
           pdf.save(getPdfFilename()); 
           showFeedback('PDF descargado.'); 
+          await actualizarEstadoPalletsEnGitHub(items);
         } 
       };
       
@@ -512,6 +633,7 @@
             iframe.src = pdf.output('bloburl');
             document.body.appendChild(iframe);
             iframe.contentWindow.print();
+            await actualizarEstadoPalletsEnGitHub(items);
         }
       };
       
@@ -528,6 +650,7 @@
             setTimeout(() => {
                 document.body.removeChild(iframe);
             }, 500);
+            await actualizarEstadoPalletsEnGitHub(items);
         }
       };
 
@@ -539,6 +662,7 @@
             setModalContent({ title: 'Enviar por WhatsApp', message: `El archivo "${pdfName}" se ha descargado. Ahora se abrirá WhatsApp Web para que lo adjuntes.` });
             setShowInfoModal(true);
             window.open('https://web.whatsapp.com/', '_blank');
+            await actualizarEstadoPalletsEnGitHub(items);
         }
       };
 
@@ -558,6 +682,7 @@
             try {
                 await navigator.share(shareData);
                 showFeedback('¡Contenido compartido!');
+                await actualizarEstadoPalletsEnGitHub(items);
             } catch (error) {
                 if (error.name !== 'AbortError') {
                     console.error('Error al compartir:', error);
@@ -566,7 +691,7 @@
                 }
             }
         } else {
-            setModalContent({ title: 'No se puede compartir', message: `Tu navegador no soporta compartir este tipo de archivo. Por favor, descarga el PDF y compártelo manualmente.` });
+            setModalContent({ title: 'No se puede compartir', message: `Tu navegador no soporta compartir este tipo de archivo. Por favor, descarga el PDF y compártelo manually.` });
             setShowInfoModal(true);
         }
       };
