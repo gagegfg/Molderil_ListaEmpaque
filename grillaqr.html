@@ -67,6 +67,7 @@
             const [isLoading, setIsLoading] = useState(true);
             const [isSaving, setIsSaving] = useState(false);
             const [apiToken, setApiToken] = useState(null);
+            const [clientList, setClientList] = useState([]);
 
             // Estado para modales y menús
             const [modalState, setModalState] = useState({ isOpen: false, type: null, title: '', message: '', onConfirm: null });
@@ -169,7 +170,7 @@
                     return;
                 }
                 const correctPassword = await getApiToken('pswsku.txt');
-                if (password === correctPassword) {
+                if (password.trim() === correctPassword) {
                     setModalState({ isOpen: false }); // Cerrar modal antes de ejecutar
                     actionCallback();
                 } else {
@@ -189,6 +190,17 @@
                     loaderProgress.style.width = '25%';
                     const token = await getApiToken('cls.txt');
                     setApiToken(token);
+
+                    loaderStatus.textContent = "Cargando lista de clientes...";
+                    loaderProgress.style.width = '50%';
+                    try {
+                        const clientResponse = await fetch('clientes.txt?t=' + new Date().getTime());
+                        const clientText = await clientResponse.text();
+                        const clients = clientText.split('\n').map(c => c.trim().toUpperCase()).filter(Boolean);
+                        setClientList(clients);
+                    } catch (e) {
+                        console.error("No se pudo cargar la lista de clientes.");
+                    }
 
                     loaderStatus.textContent = "Cargando histórico...";
                     loaderProgress.style.width = '75%';
@@ -301,7 +313,7 @@
             const handleChangeClient = (rowId) => {
                 setModalState({
                     isOpen: true,
-                    type: 'textInput',
+                    type: 'textInputWithSuggestions',
                     title: 'Cambiar Cliente',
                     message: 'Ingrese el nuevo nombre del cliente:',
                     onConfirm: (newClient) => {
@@ -318,7 +330,7 @@
                                 verifyPasswordAndExecute(() => {
                                     const newData = allData.map(item => {
                                         if (item.id === rowId) {
-                                            return { ...item, cliente: newClient, despachado: 'TRUE' };
+                                            return { ...item, cliente: newClient.toUpperCase(), despachado: 'TRUE' };
                                         }
                                         return item;
                                     });
@@ -381,34 +393,59 @@
             
             // --- COMPONENTES DE UI ---
 
-            const ActionModal = ({ isOpen, type, title, message, onConfirm, onClose }) => {
+            const ActionModal = ({ isOpen, type, title, message, onConfirm, onClose, suggestions }) => {
                 if (!isOpen) return null;
                 const [inputValue, setInputValue] = useState('');
+                const [showSuggestions, setShowSuggestions] = useState(false);
                 const inputRef = useRef(null);
+                const modalContentRef = useRef(null);
 
                 useEffect(() => {
-                    if (isOpen) {
-                        setTimeout(() => inputRef.current?.focus(), 100);
-                    }
+                    if (isOpen) setTimeout(() => inputRef.current?.focus(), 100);
                 }, [isOpen]);
 
-                const handleConfirm = () => {
-                    onConfirm(inputValue);
-                };
+                useEffect(() => {
+                    const handleClickOutside = (e) => {
+                        if (modalContentRef.current && !modalContentRef.current.contains(e.target)) {
+                           setShowSuggestions(false);
+                        }
+                    };
+                    document.addEventListener('mousedown', handleClickOutside);
+                    return () => document.removeEventListener('mousedown', handleClickOutside);
+                }, []);
+
+                const handleConfirm = () => onConfirm(inputValue);
+                
+                const filteredSuggestions = suggestions ? suggestions.filter(s => s.toLowerCase().includes(inputValue.toLowerCase())) : [];
 
                 return (
                     <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
-                        <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-sm">
+                        <div ref={modalContentRef} className="bg-white p-6 rounded-xl shadow-lg w-full max-w-sm">
                             <h3 className="text-lg font-bold text-gray-800 mb-4">{title}</h3>
                             <p className="text-sm text-gray-600 mb-4">{message}</p>
-                            <input
-                                ref={inputRef}
-                                type={type === 'password' ? 'password' : 'text'}
-                                value={inputValue}
-                                onChange={e => setInputValue(e.target.value)}
-                                onKeyDown={e => e.key === 'Enter' && handleConfirm()}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
-                            />
+                            <div className="relative">
+                                <input
+                                    ref={inputRef}
+                                    type={type === 'password' ? 'password' : 'text'}
+                                    value={inputValue}
+                                    onChange={e => {
+                                        setInputValue(e.target.value);
+                                        if (type === 'textInputWithSuggestions') setShowSuggestions(true);
+                                    }}
+                                    onKeyDown={e => e.key === 'Enter' && handleConfirm()}
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
+                                    autoComplete="off"
+                                />
+                                {type === 'textInputWithSuggestions' && showSuggestions && filteredSuggestions.length > 0 && (
+                                    <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">
+                                        {filteredSuggestions.map(client => (
+                                            <li key={client} className="p-2 hover:bg-indigo-100 cursor-pointer" onClick={() => { setInputValue(client); setShowSuggestions(false); }}>
+                                                {client}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
                             <div className="flex justify-end space-x-3 mt-6">
                                 <button onClick={onClose} className="bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300">Cancelar</button>
                                 <button onClick={handleConfirm} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Aceptar</button>
@@ -435,6 +472,7 @@
                         message={modalState.message}
                         onClose={() => setModalState({ isOpen: false })}
                         onConfirm={modalState.onConfirm}
+                        suggestions={clientList}
                     />
                     <div className="bg-white p-6 rounded-2xl shadow-xl">
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b pb-4 border-gray-200">
