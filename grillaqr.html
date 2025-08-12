@@ -335,33 +335,30 @@
                 setModalState({
                     isOpen: true,
                     type: 'textInputWithSuggestions',
-                    title: 'Cambiar Cliente',
-                    message: 'Ingrese el nuevo nombre del cliente:',
+                    title: 'Cambiar Cliente y Despachar',
+                    message: 'Ingrese el cliente para marcar el lote como despachado. La acción requiere contraseña.',
                     onConfirm: (newClient) => {
-                         if (!newClient) {
+                        // 1. Validar entrada
+                        if (!newClient) {
                             alert("El nombre del cliente no puede estar vacío.");
                             return;
-                         }
-                         if (!clientList.includes(newClient.toUpperCase())) {
+                        }
+                        if (!clientList.includes(newClient.toUpperCase())) {
                             alert(`El cliente "${newClient}" no es válido. Por favor, seleccione un cliente de la lista.`);
                             return;
-                         }
-                         setModalState({
-                            isOpen: true,
-                            type: 'confirm',
-                            title: 'Confirmar Cambio de Cliente',
-                            message: `Se asignará el cliente "${newClient}" y el lote se marcará como despachado.`,
-                            onConfirm: () => {
-                                executeActionWithAuth(() => {
-                                    const newData = allData.map(item => {
-                                        if (item.id === rowId) {
-                                            return { ...item, cliente: newClient.toUpperCase(), despachado: 'TRUE' };
-                                        }
-                                        return item;
-                                    });
-                                    saveToGitHub(newData);
-                                });
-                            }
+                        }
+                        
+                        // 2. Cerrar el modal actual y proceder con la acción segura
+                        setModalState({ isOpen: false });
+
+                        executeActionWithAuth(() => {
+                            const newData = allData.map(item => {
+                                if (item.id === rowId) {
+                                    return { ...item, cliente: newClient.toUpperCase(), despachado: 'TRUE' };
+                                }
+                                return item;
+                            });
+                            saveToGitHub(newData);
                         });
                     }
                 });
