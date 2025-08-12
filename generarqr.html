@@ -213,9 +213,12 @@
         }, [selectedArticulo]);
 
         const handleLoteProdChange = (index, value) => {
-            const nuevosLotes = [...lotesProduccion];
-            nuevosLotes[index] = value;
-            setLotesProduccion(nuevosLotes);
+            const regex = /^\d*$/; // Solo permite números
+            if (regex.test(value)) {
+                const nuevosLotes = [...lotesProduccion];
+                nuevosLotes[index] = value;
+                setLotesProduccion(nuevosLotes);
+            }
         };
 
         const addLoteProdField = () => {
@@ -226,6 +229,7 @@
         
         const handleCantidadChange = (e) => {
             const rawValue = e.target.value;
+            // Permite números y una sola coma para decimales
             const regex = /^\d*(,?\d*)?$/;
             if (regex.test(rawValue)) {
                 setCantidad(rawValue);
@@ -238,7 +242,7 @@
             if (!numStr) return '';
             const num = parseFloat(numStr.replace(',', '.'));
             if (isNaN(num)) return '';
-            return new Intl.NumberFormat('es-ES').format(num);
+            return new Intl.NumberFormat('es-ES', {minimumFractionDigits: 0, maximumFractionDigits: 2}).format(num);
         };
 
         const drawLabelOnDoc = async (doc, data) => {
@@ -511,7 +515,3 @@
         const root = createRoot(rootElement);
         root.render(<App apiToken={token} />);
     })();
-
-</script>
-</body>
-</html>
