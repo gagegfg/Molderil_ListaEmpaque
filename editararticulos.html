@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MOLDERIL - Editor de Artículos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+<body class="bg-gray-100 font-sans">
+
+    <div id="static-loader" class="fixed inset-0 bg-gray-100 flex items-center justify-center p-4 font-sans z-50 transition-opacity duration-500">
+        <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md text-center">
+            <h1 class="text-4xl font-extrabold text-gray-900 tracking-wide mb-6">MOLDERIL S.A.</h1>
+            <p id="loader-status" class="text-xl text-gray-600 mb-4">Cargando aplicación...</p>
+            <div class="w-full bg-gray-200 rounded-full h-4">
+                <div id="loader-progress" class="bg-indigo-600 h-4 rounded-full transition-all duration-500" style="width: 10%"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+        const { createRoot } = ReactDOM;
+
+        const App = () => {
+            const [isAuthenticated, setIsAuthenticated] = useState(false);
+            const [password, setPassword] = useState('');
+            const [error, setError] = useState('');
+            const [isLoading, setIsLoading] = useState(true);
+            const [isAppReady, setIsAppReady] = useState(false);
+            
+            const [allData, setAllData] = useState([]);
+            const [filteredData, setFilteredData] = useState([]);
+            const [tiposArticulo, setTiposArticulo] = useState([]);
+            const [hasChanges, setHasChanges] = useState(false);
+
+            // Filtros
+            const [tipoFilter, setTipoFilter] = useState('');
+            const [searchTerm, setSearchTerm] = useState('');
+
+            // Modal
+            const [isModalOpen, setIsModalOpen] = useState(false);
+            const [editingArticle, setEditingArticle] = useState(null); // null for new, object for editing
+
+            const passwordInputRef = useRef(null);
+
+            // --- Carga inicial y autenticación ---
+            useEffect(() => {
+                const staticLoader = document.getElementById('static-loader');
+                const loaderStatus = document.getElementById('loader-status');
+                const loaderProgress = document.getElementById('loader-progress');
+
+                const loadingTasks = [
+                    { status: "Inicializando...", duration: 500, progress: 50 },
+                    { status: "¡Listo!", duration: 500, progress: 100 }
+                ];
+
+                let currentTask = 0;
+                const runLoadingTask = () => {
+                    if (currentTask < loadingTasks.length) {
+                        const task = loadingTasks[currentTask];
+                        if (loaderStatus) loaderStatus.textContent = task.status;
+                        if (loaderProgress) loaderProgress.style.width = `${task.progress}%`;
+                        setTimeout(() => {
+                            currentTask++;
+                            runLoadingTask();
+                        }, task.duration);
+                    } else {
+                        if (staticLoader) {
+                            staticLoader.classList.add('opacity-0');
+                            setTimeout(() => {
+                                staticLoader.remove();
+                                setIsAppReady(true);
+                                setTimeout(() => passwordInputRef.current?.focus(), 100);
+                            }, 500);
+                        }
+                    }
+                };
+                runLoadingTask();
+            }, []);
+
+            // --- Lógica de datos y filtros ---
+            const fetchData = async () => {
+                setIsLoading(true);
+                try {
+                    const response = await fetch('https://raw.githubusercontent.com/gagegfg/Molderil_ListaEmpaque/main/articulos.csv?timestamp=' + new Date().getTime());
+                    if (!response.ok) throw new Error('No se pudo cargar el archivo de artículos.');
+                    const text = await response.text();
+                    const rows = text.split('\n').filter(Boolean);
+                    const parsedData = rows.map((row, index) => {
+                        const [tipo, sku, descLarga, descCorta] = row.split(';');
+                        return { id: sku || `temp-${index}`, tipo, sku, descLarga, descCorta };
+                    });
+                    setAllData(parsedData);
+                    const uniqueTipos = [...new Set(parsedData.map(item => item.tipo))].sort();
+                    setTiposArticulo(uniqueTipos);
+                } catch (e) {
+                    alert(`Error al cargar artículos: ${e.message}`);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            useEffect(() => {
+                if (isAuthenticated) {
+                    fetchData();
+                }
+            }, [isAuthenticated]);
+
+            useEffect(() => {
+                let data = [...allData];
+                if (tipoFilter) {
+                    data = data.filter(item => item.tipo === tipoFilter);
+                }
+                if (searchTerm) {
+                    const lowerTerm = searchTerm.toLowerCase();
+                    data = data.filter(item => 
+                        item.sku.toLowerCase().includes(lowerTerm) || 
+                        item.descLarga.toLowerCase().includes(lowerTerm)
+                    );
+                }
+                setFilteredData(data);
+            }, [tipoFilter, searchTerm, allData]);
+            
+            // --- Manejo de cambios y guardado ---
+            const handleDescriptionChange = (sku, newDescription) => {
+                setAllData(prevData => prevData.map(item => 
+                    item.sku === sku ? { ...item, descCorta: newDescription } : item
+                ));
+                setHasChanges(true);
+            };
+
+            const handleSaveArticle = (article) => {
+                if (editingArticle && editingArticle.id) { // Editando
+                    setAllData(prev => prev.map(item => item.id === article.id ? article : item));
+                } else { // Agregando
+                    const newArticle = { ...article, id: article.sku };
+                    setAllData(prev => [...prev, newArticle]);
+                }
+                setHasChanges(true);
+                setIsModalOpen(false);
+                setEditingArticle(null);
+            };
+
+            const saveToGitHub = async (apiToken) => {
+                if (!hasChanges) {
+                    alert("No hay cambios para guardar.");
+                    return;
+                }
+                if (!confirm("¿Estás seguro de que quieres guardar todos los cambios en GitHub? Esta acción sobrescribirá el archivo de artículos.")) {
+                    return;
+                }
+
+                const csvContent = allData.map(item => `${item.tipo};${item.sku};${item.descLarga};${item.descCorta}`).join('\n');
+                const url = `https://api.github.com/repos/gagegfg/Molderil_ListaEmpaque/contents/articulos.csv`;
+
+                try {
+                    const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${apiToken}` } });
+                    if (!fileResponse.ok) throw new Error(`Error ${fileResponse.status}: No se pudo obtener info del archivo.`);
+                    const fileData = await fileResponse.json();
+
+                    const updateResponse = await fetch(url, {
+                        method: 'PUT',
+                        headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            message: 'Actualización de maestro de artículos',
+                            content: btoa(unescape(encodeURIComponent(csvContent))), // Para manejar caracteres especiales
+                            sha: fileData.sha,
+                        }),
+                    });
+
+                    if (!updateResponse.ok) throw new Error(`Error ${updateResponse.status}: Falló la actualización.`);
+                    alert("¡Archivo de artículos guardado correctamente en GitHub!");
+                    setHasChanges(false);
+                } catch (e) {
+                    alert(`ERROR al guardar en GitHub: ${e.message}`);
+                }
+            };
+            
+            // --- Autenticación ---
+            const handleLogin = async () => {
+                try {
+                    const response = await fetch('pswsku.txt');
+                    if (!response.ok) throw new Error('No se encontró el archivo de contraseña.');
+                    const correctPassword = await response.text();
+                    if (password.trim() === correctPassword.trim()) {
+                        setIsAuthenticated(true);
+                    } else {
+                        setError("Contraseña incorrecta.");
+                    }
+                } catch (e) {
+                    setError(`Error: ${e.message}`);
+                }
+            };
+            
+            // --- Aviso de cambios sin guardar ---
+            useEffect(() => {
+                const handleBeforeUnload = (e) => {
+                    if (hasChanges) {
+                        e.preventDefault();
+                        e.returnValue = '';
+                    }
+                };
+                window.addEventListener('beforeunload', handleBeforeUnload);
+                return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+            }, [hasChanges]);
+
+
+            // --- Renderizado ---
+            if (!isAppReady) return null;
+
+            if (!isAuthenticated) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center p-4">
+                        <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm">
+                            <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">Acceso Restringido</h2>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700">Contraseña</label>
+                                    <input 
+                                        type="password"
+                                        ref={passwordInputRef}
+                                        value={password}
+                                        onChange={e => setPassword(e.target.value)}
+                                        onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
+                                    />
+                                </div>
+                                {error && <p className="text-red-500 text-sm">{error}</p>}
+                                <button onClick={handleLogin} className="w-full bg-indigo-600 text-white font-semibold py-2 px-4 rounded-md shadow-md hover:bg-indigo-700">
+                                    Ingresar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen bg-gray-100 p-4 sm:p-6">
+                    {isModalOpen && <ArticleModal article={editingArticle} onSave={handleSaveArticle} onClose={() => setIsModalOpen(false)} />}
+                    <div className="bg-white p-6 rounded-2xl shadow-xl">
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b pb-4 border-gray-200">
+                            <div>
+                                <h1 className="text-3xl font-extrabold text-gray-800">Editor de Artículos</h1>
+                                <p className="text-gray-500 mt-1">Modifica las descripciones cortas o añade nuevos artículos.</p>
+                            </div>
+                            <a href="index.html" className="mt-4 sm:mt-0 bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">Volver al Menú</a>
+                        </div>
+                        
+                        <div className="mb-6 p-4 border rounded-lg bg-gray-50 grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Filtrar por Tipo</label>
+                                <select value={tipoFilter} onChange={e => setTipoFilter(e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm p-2 border">
+                                    <option value="">Todos los tipos</option>
+                                    {tiposArticulo.map(tipo => <option key={tipo} value={tipo}>{tipo}</option>)}
+                                </select>
+                            </div>
+                            <div className="relative">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Buscar por SKU o Descripción</label>
+                                <i className="fa fa-search absolute left-3 top-9 text-gray-400"></i>
+                                <input 
+                                    type="text"
+                                    placeholder="Buscar..."
+                                    value={searchTerm}
+                                    onChange={e => setSearchTerm(e.target.value)}
+                                    className="w-full rounded-md border-gray-300 shadow-sm p-2 pl-10 border"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row justify-between items-center mb-4">
+                            <p className="text-gray-600 font-semibold">{filteredData.length} artículo(s) encontrado(s)</p>
+                            <div className="flex space-x-2 mt-4 sm:mt-0">
+                                <button onClick={() => { setEditingArticle(null); setIsModalOpen(true); }} className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-green-700 flex items-center">
+                                    <i className="fas fa-plus mr-2"></i>Añadir Artículo
+                                </button>
+                                <button onClick={() => saveToGitHub('TU_TOKEN_DE_GITHUB_AQUI')} className={`font-semibold py-2 px-4 rounded-lg shadow-md flex items-center ${hasChanges ? 'bg-orange-500 hover:bg-orange-600 text-white' : 'bg-gray-600 text-white'}`}>
+                                    <i className="fab fa-github mr-2"></i>Guardar Cambios
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="overflow-x-auto rounded-lg shadow-md border">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-800 text-white">
+                                    <tr>
+                                        <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Tipo</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">SKU</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Descripción Larga</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Descripción Corta (Editable)</th>
+                                        <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider">Acción</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {isLoading ? (
+                                        <tr><td colSpan="5" className="p-8 text-center text-gray-500">Cargando datos...</td></tr>
+                                    ) : (
+                                        filteredData.map((item, index) => (
+                                            <tr key={item.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{item.tipo}</td>
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">{item.sku}</td>
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{item.descLarga}</td>
+                                                <td className="px-4 py-2 text-sm text-gray-600">
+                                                    <input 
+                                                        type="text"
+                                                        value={item.descCorta || ''}
+                                                        onChange={(e) => handleDescriptionChange(item.sku, e.target.value)}
+                                                        className="w-full p-1 border border-gray-300 rounded"
+                                                    />
+                                                </td>
+                                                <td className="px-4 py-2 text-center">
+                                                    <button onClick={() => { setEditingArticle(item); setIsModalOpen(true); }} className="text-blue-600 hover:text-blue-900">
+                                                        <i className="fas fa-pencil-alt"></i>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const ArticleModal = ({ article, onSave, onClose }) => {
+            const [formData, setFormData] = useState(article || { tipo: '', sku: '', descLarga: '', descCorta: '' });
+
+            const handleChange = (e) => {
+                const { name, value } = e.target;
+                setFormData(prev => ({ ...prev, [name]: value }));
+            };
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onSave(formData);
+            };
+
+            return (
+                <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-lg">
+                        <h2 className="text-2xl font-bold text-gray-800 mb-4">{article ? 'Editar' : 'Añadir'} Artículo</h2>
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Tipo de Artículo</label>
+                                <input type="text" name="tipo" value={formData.tipo} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md" required />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">SKU</label>
+                                <input type="text" name="sku" value={formData.sku} onChange={handleChange} disabled={!!article} className="mt-1 block w-full p-2 border border-gray-300 rounded-md disabled:bg-gray-100" required />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Descripción Larga</label>
+                                <input type="text" name="descLarga" value={formData.descLarga} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md" required />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Descripción Corta</label>
+                                <input type="text" name="descCorta" value={formData.descCorta} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md" />
+                            </div>
+                            <div className="flex justify-end space-x-4 pt-4">
+                                <button type="button" onClick={onClose} className="bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300">Cancelar</button>
+                                <button type="submit" className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Aceptar</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
