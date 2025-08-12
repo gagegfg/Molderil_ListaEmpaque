@@ -1,4 +1,4 @@
-V<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -42,7 +42,7 @@ V<!DOCTYPE html>
 <div id="root"></div>
 
 <script type="text/babel">
-    const { useState, useRef, useEffect, Fragment } = React;
+    const { useState, useEffect, Fragment } = React;
     const { createRoot } = ReactDOM;
     const { jsPDF } = window.jspdf;
 
@@ -51,19 +51,19 @@ V<!DOCTYPE html>
     // =================================================================
     const USUARIO_GITHUB = 'gagegfg';
     const REPO_NOMBRE = 'Molderil_ListaEmpaque';
-    const RUTA_DEL_ARCHIVO = 'lotelogistica.txt';
+    const RUTA_LOTE_LOGISTICO = 'lotelogistica.txt';
+    const RUTA_HISTORICO_CSV = 'detallelotes.csv';
     // =================================================================
 
     const App = ({ apiToken }) => {
         const [articulos, setArticulos] = useState([]);
         const [searchTerm, setSearchTerm] = useState('');
         const [selectedArticulo, setSelectedArticulo] = useState(null);
-        const [loteProduccion, setLoteProduccion] = useState('');
-        const [loteLogistico, setLoteLogistico] = useState('');
-        const [isLoteLogisticoEditable, setIsLoteLogisticoEditable] = useState(false);
-        const [cantidadEtiquetas, setCantidadEtiquetas] = useState(1);
+        const [lotesProduccion, setLotesProduccion] = useState(['']);
+        const [numeroDePallet, setNumeroDePallet] = useState('');
+        const [isPalletNumEditable, setIsPalletNumEditable] = useState(false);
+        const [cantidadCopias, setCantidadCopias] = useState(2);
         const [fechaProd, setFechaProd] = useState(new Date().toISOString().split('T')[0]);
-        const [fechaVenc, setFechaVenc] = useState('');
         const [cantidad, setCantidad] = useState('');
         const [uom, setUom] = useState('Unidad');
         const [previewPdfUrl, setPreviewPdfUrl] = useState(null);
@@ -73,20 +73,20 @@ V<!DOCTYPE html>
             const loaderStatus = document.getElementById('loader-status');
             const loaderProgress = document.getElementById('loader-progress');
 
-            const fetchLoteLogistico = async () => {
-                const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_DEL_ARCHIVO}`;
+            const fetchNumeroPallet = async () => {
+                const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_LOTE_LOGISTICO}`;
                 try {
                     const response = await fetch(url, { cache: "no-store" });
-                    if (!response.ok) throw new Error('No se pudo obtener el lote desde GitHub.');
+                    if (!response.ok) throw new Error('No se pudo obtener el número de pallet desde GitHub.');
                     const text = await response.text();
-                    const numeroLote = parseInt(text.trim(), 10);
-                    if (isNaN(numeroLote)) throw new Error('El contenido del archivo no es un número.');
-                    setLoteLogistico(numeroLote + 1);
+                    const numeroBase = parseInt(text.trim(), 10);
+                    if (isNaN(numeroBase)) throw new Error('El contenido del archivo no es un número.');
+                    setNumeroDePallet(numeroBase + 1);
                 } catch (error) {
-                    console.error("Error al cargar lote logístico:", error);
-                    alert(`Error: ${error.message}\nPor favor, ingrese el lote logístico manualmente.`);
-                    setLoteLogistico('');
-                    setIsLoteLogisticoEditable(true);
+                    console.error("Error al cargar número de pallet:", error);
+                    alert(`Error: ${error.message}\nPor favor, ingrese el número de pallet manualmente.`);
+                    setNumeroDePallet('');
+                    setIsPalletNumEditable(true);
                 }
             };
 
@@ -108,7 +108,7 @@ V<!DOCTYPE html>
 
             const loadingTasks = [
                 { status: "Inicializando...", duration: 300, progress: 20 },
-                { status: "Cargando lote logístico...", duration: 800, progress: 50, action: fetchLoteLogistico },
+                { status: "Cargando número de pallet...", duration: 800, progress: 50, action: fetchNumeroPallet },
                 { status: "Cargando lista de artículos...", duration: 800, progress: 85, action: fetchArticulos },
                 { status: "¡Listo!", duration: 500, progress: 100 }
             ];
@@ -116,7 +116,7 @@ V<!DOCTYPE html>
             let currentTask = 0;
             const runLoadingTask = () => {
                 if (currentTask < loadingTasks.length) {
-                    const task = loadingTasks [currentTask];
+                    const task = loadingTasks[currentTask];
                     if (loaderStatus) loaderStatus.textContent = task.status;
                     if (loaderProgress) loaderProgress.style.width = `${task.progress}%`;
                     if (task.action) task.action();
@@ -133,36 +133,71 @@ V<!DOCTYPE html>
             };
             runLoadingTask();
         }, []);
-
-        const updateGitHubFile = async (nuevoContenido) => {
-            const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${RUTA_DEL_ARCHIVO}`;
+        
+        const updateLoteFile = async (nuevoContenido) => {
+            if (!apiToken) {
+                alert("ERROR: Clave de API no disponible. No se puede guardar en GitHub.");
+                return;
+            }
+            const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${RUTA_LOTE_LOGISTICO}`;
             try {
                 const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${apiToken}` } });
-                if (!fileResponse.ok) throw new Error(`Error ${fileResponse.status}: No se pudo obtener info del archivo.`);
+                if (!fileResponse.ok) throw new Error(`Error ${fileResponse.status}: No se pudo obtener info del archivo de lotes.`);
                 const fileData = await fileResponse.json();
-                const updateResponse = await fetch(url, {
+                await fetch(url, {
                     method: 'PUT',
                     headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        message: `Actualizando lote a ${nuevoContenido}`,
+                        message: `Actualizando pallet a ${nuevoContenido}`,
                         content: btoa(String(nuevoContenido)),
                         sha: fileData.sha,
                     }),
                 });
-                if (!updateResponse.ok) throw new Error(`Error ${updateResponse.status}: Falló la actualización.`);
-                alert(`Lote ${nuevoContenido} guardado correctamente en GitHub.`);
+                alert(`Número de Pallet ${nuevoContenido} guardado correctamente en GitHub.`);
             } catch (error) {
-                alert(`ERROR: No se pudo guardar el lote en GitHub.\n\n${error.message}\n\nPor favor, actualícelo manualmente.`);
+                alert(`ERROR: No se pudo guardar el número de pallet en GitHub.\n\n${error.message}\n\nPor favor, actualícelo manualmente.`);
             }
         };
 
-        useEffect(() => {
-            if (fechaProd) {
-                const prodDate = new Date(fechaProd);
-                prodDate.setFullYear(prodDate.getFullYear() + 3);
-                setFechaVenc(prodDate.toISOString().split('T')[0]);
+        const appendToHistoryFile = async (lineaCsv) => {
+            if (!apiToken) return;
+            const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${RUTA_HISTORICO_CSV}`;
+            try {
+                const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${apiToken}` } });
+                if (!fileResponse.ok) {
+                     if (fileResponse.status === 404) { // El archivo no existe, lo creamos
+                        await fetch(url, {
+                            method: 'PUT',
+                            headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                message: 'Creando archivo histórico detallelotes.csv',
+                                content: btoa(lineaCsv),
+                            }),
+                        });
+                        console.log("Archivo histórico creado y primer registro guardado.");
+                        return;
+                    }
+                    throw new Error(`Error ${fileResponse.status}: No se pudo obtener info del archivo histórico.`);
+                }
+                const fileData = await fileResponse.json();
+                const contenidoActual = atob(fileData.content);
+                const nuevoContenido = contenidoActual + '\n' + lineaCsv;
+                
+                await fetch(url, {
+                    method: 'PUT',
+                    headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: `Añadiendo pallet ${numeroDePallet} al histórico`,
+                        content: btoa(nuevoContenido),
+                        sha: fileData.sha,
+                    }),
+                });
+                console.log("Registro añadido al histórico correctamente.");
+            } catch (error) {
+                alert(`ERROR: No se pudo guardar el registro en el histórico CSV.\n\n${error.message}`);
             }
-        }, [fechaProd]);
+        };
+
 
         useEffect(() => {
             if (selectedArticulo) {
@@ -172,6 +207,18 @@ V<!DOCTYPE html>
             }
         }, [selectedArticulo]);
 
+        const handleLoteProdChange = (index, value) => {
+            const nuevosLotes = [...lotesProduccion];
+            nuevosLotes[index] = value;
+            setLotesProduccion(nuevosLotes);
+        };
+
+        const addLoteProdField = () => {
+            if (lotesProduccion.length < 4) {
+                setLotesProduccion([...lotesProduccion, '']);
+            }
+        };
+        
         const handleCantidadChange = (e) => {
             const rawValue = e.target.value;
             const regex = /^\d*(,?\d*)?$/;
@@ -188,85 +235,71 @@ V<!DOCTYPE html>
             const margin = 10;
             const contentW = pageW - (margin * 2);
 
-            let currentY = margin + 10; // Mover el inicio un poco hacia arriba
+            let currentY = margin + 10;
 
-            // --- Header ---
-            doc.setFontSize(28); // Reducir tamaño de "MOLDERIL S.A."
+            doc.setFontSize(28);
             doc.setFont("helvetica", "bold");
             doc.text("MOLDERIL S.A.", pageW / 2, currentY + 10, { align: "center" });
             doc.line(margin, currentY + 20, pageW - margin, currentY + 20);
             currentY += 30;
 
-            // --- Artículo ---
             doc.setFontSize(16);
             doc.setFont("helvetica", "normal");
             doc.text("Artículo", margin, currentY);
             currentY += 20;
-            doc.setFontSize(48); // Reducir tamaño de la descripción
+            doc.setFontSize(48);
             doc.setFont("helvetica", "bold");
             const descLines = doc.splitTextToSize(data.descripcion, contentW);
             doc.text(descLines, pageW / 2, currentY, { align: "center" });
-            currentY += (descLines.length * 16); // Ajustar según el nuevo tamaño
+            currentY += (descLines.length * 16);
 
             doc.setFontSize(18);
             doc.setFont("helvetica", "bold");
             doc.text(`SKU: ${data.sku}`, margin, currentY);
-            if(data.lote) {
-                doc.text(`Lote Prod: ${data.lote}`, pageW - margin, currentY, { align: "right" });
+            
+            const lotesProdString = data.lotes.join(' ');
+            if(lotesProdString) {
+                doc.setFontSize(16);
+                doc.text(`Lotes: ${lotesProdString}`, pageW - margin, currentY, { align: "right" });
             }
             currentY += 10;
             doc.line(margin, currentY, pageW - margin, currentY);
 
-            // --- Cantidad ---
             currentY += 15;
             doc.setFontSize(16);
             doc.setFont("helvetica", "normal");
             doc.text("Cantidad", margin, currentY);
             currentY += 20;
-            doc.setFontSize(44); // Reducir tamaño de la cantidad
+            doc.setFontSize(44);
             doc.setFont("helvetica", "bold");
             doc.text(`${data.cantidad} ${data.uom}`, pageW / 2, currentY, { align: "center" });
             currentY += 10;
             doc.line(margin, currentY, pageW - margin, currentY);
-
-            // --- QR Code ---
+            
             currentY += 10;
-            const qrSize = 70;
+            const qrSize = 80;
             const qrX = (pageW - qrSize) / 2;
             const qrY = currentY;
             const qrImageData = await QRCode.toDataURL(data.qrString, { width: 300, margin: 1 });
             doc.addImage(qrImageData, 'PNG', qrX, qrY, qrSize, qrSize);
-            currentY += qrSize + 10;
+            currentY += qrSize + 15;
+            
+            doc.line(margin, currentY, pageW - margin, currentY);
+            currentY += 5;
 
-            // --- Footer (Fechas y Lotes) ---
-            doc.setFontSize(18);
+            doc.setFontSize(22);
             doc.setFont("helvetica", "bold");
-            doc.text("Lote Logístico", margin + 20, currentY, { align: "left" });
-            doc.text("Fabricación", pageW / 2, currentY, { align: "center" });
-            doc.text("Vencimiento", pageW - margin - 20, currentY, { align: "right" });
+            doc.text("Nº de Pallet", margin, currentY + 10);
+            doc.text("Fabricación", pageW - margin, currentY + 10, { align: "right" });
 
-            currentY += 10;
             doc.setFontSize(30);
-            doc.text(String(data.palletId), margin + 20, currentY, { align: "left" });
-            doc.setFontSize(16);
-            doc.text(new Date(data.fechaProd + 'T00:00:00').toLocaleDateString('es-ES'), pageW / 2, currentY + 2, { align: "center" });
-            doc.text(new Date(data.fechaVenc + 'T00:00:00').toLocaleDateString('es-ES'), pageW - margin - 20, currentY + 2, { align: "right" });
-        }
-
-        const handleGeneratePreview = async () => {
-            if (!selectedArticulo || !cantidad) {
-                alert("Por favor, complete Artículo y Cantidad.");
-                return;
-            }
-            const data = getLabelData(loteLogistico);
-            const doc = new jsPDF('p', 'mm', 'a4');
-            await drawLabelOnDoc(doc, data);
-            const pdfDataUrl = doc.output('datauristring');
-            setPreviewPdfUrl(pdfDataUrl);
+            doc.text(String(data.palletId), margin, currentY + 22);
+            doc.setFontSize(22);
+            doc.text(new Date(data.fechaProd + 'T00:00:00').toLocaleDateString('es-ES'), pageW - margin, currentY + 22, { align: "right" });
         };
 
-        const getLabelData = (currentLote) => {
-            const formatQrDate = (dateString) => {
+        const getLabelData = () => {
+             const formatQrDate = (dateString) => {
                 if (!dateString) return '';
                 const date = new Date(dateString + 'T00:00:00');
                 const day = String(date.getDate()).padStart(2, '0');
@@ -274,13 +307,17 @@ V<!DOCTYPE html>
                 const year = date.getFullYear();
                 return `${day}/${month}/${year}`;
             };
+            
             const cantidadParaQR = cantidad.replace(',', '.');
+            const lotesProduccionFiltrados = lotesProduccion.filter(lote => lote.trim() !== '');
+            const lotesParaQR = lotesProduccionFiltrados.length > 0 ? `<${lotesProduccionFiltrados.join('#')}>` : '';
+
             const qrString = [
                 selectedArticulo.sku || '',
                 selectedArticulo.descripcion || '',
-                String(currentLote) || '',
+                String(numeroDePallet) || '',
+                lotesParaQR,
                 formatQrDate(fechaProd),
-                formatQrDate(fechaVenc),
                 cantidadParaQR || '',
                 uom || ''
             ].join(';');
@@ -288,43 +325,53 @@ V<!DOCTYPE html>
             return {
                 sku: selectedArticulo.sku,
                 descripcion: selectedArticulo.descripcion,
-                lote: loteProduccion,
+                lotes: lotesProduccionFiltrados,
                 cantidad: cantidad,
                 uom,
                 fechaProd,
-                fechaVenc,
-                palletId: currentLote,
+                palletId: numeroDePallet,
                 qrString: qrString
             };
         }
 
+        const handleGeneratePreview = async () => {
+            const lotesValidos = lotesProduccion.some(lote => lote.trim() !== '');
+            if (!selectedArticulo || !cantidad || !lotesValidos) {
+                alert("Por favor, complete Artículo, Cantidad y al menos un Lote de Producción.");
+                return;
+            }
+            const data = getLabelData();
+            const doc = new jsPDF('p', 'mm', 'a4');
+            await drawLabelOnDoc(doc, data);
+            const pdfDataUrl = doc.output('datauristring');
+            setPreviewPdfUrl(pdfDataUrl);
+        };
+        
         const handleGenerateAndPrintPDF = async () => {
-            const numEtiquetas = parseInt(cantidadEtiquetas, 10);
-            const loteInicial = parseInt(loteLogistico, 10);
+            const numCopias = parseInt(cantidadCopias, 10);
+            const palletNum = parseInt(numeroDePallet, 10);
 
-            if (isNaN(numEtiquetas) || numEtiquetas < 1 || isNaN(loteInicial) || !previewPdfUrl) {
-                alert("Primero genere una vista previa y verifique la cantidad de etiquetas y el lote logístico.");
+            if (isNaN(numCopias) || numCopias < 1 || isNaN(palletNum) || !previewPdfUrl) {
+                alert("Primero genere una vista previa y verifique la cantidad de copias y el número de pallet.");
                 return;
             }
 
-            const ultimoLoteAGuardar = loteInicial + numEtiquetas - 1;
-            const isConfirmed = window.confirm(`Se generará un PDF con ${numEtiquetas} etiquetas, desde el lote ${loteInicial} hasta el ${ultimoLoteAGuardar}.\n\nAl confirmar, se guardará el número ${ultimoLoteAGuardar} en GitHub.`);
+            const data = getLabelData();
+            const isConfirmed = window.confirm(`Se generará un PDF con ${numCopias} copias para el Pallet Nº ${palletNum}.\n\nAl confirmar, se guardará el número de pallet y se registrará la información en el histórico.`);
 
             if (isConfirmed) {
                 const doc = new jsPDF('p', 'mm', 'a4');
-                for (let i = 0; i < numEtiquetas; i++) {
-                    if (i > 0) {
-                        doc.addPage();
-                    }
-                    const currentLote = loteInicial + i;
-                    const data = getLabelData(currentLote);
+                for (let i = 0; i < numCopias; i++) {
+                    if (i > 0) doc.addPage();
                     await drawLabelOnDoc(doc, data);
                 }
 
                 doc.autoPrint();
-                doc.save(`etiquetas_lotes_${loteInicial}-${ultimoLoteAGuardar}.pdf`);
+                doc.save(`etiqueta_pallet_${palletNum}.pdf`);
 
-                updateGitHubFile(ultimoLoteAGuardar);
+                // Guardar en GitHub
+                await updateLoteFile(palletNum);
+                await appendToHistoryFile(data.qrString);
             }
         };
 
@@ -352,24 +399,31 @@ V<!DOCTYPE html>
                                     )}
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">Lote de Producción (Opcional)</label>
-                                    <input type="text" value={loteProduccion} onChange={e => setLoteProduccion(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
+                                    <label className="block text-sm font-medium text-gray-700">Lotes de Producción</label>
+                                    {lotesProduccion.map((lote, index) => (
+                                        <input 
+                                            key={index}
+                                            type="text" 
+                                            value={lote} 
+                                            onChange={e => handleLoteProdChange(index, e.target.value)} 
+                                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" 
+                                        />
+                                    ))}
+                                    {lotesProduccion.length < 4 && (
+                                        <button onClick={addLoteProdField} className="mt-2 text-sm font-semibold text-blue-600 hover:text-blue-800">+ Añadir otro lote</button>
+                                    )}
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">Lote Logístico (Automático)</label>
-                                    <input type="number" value={loteLogistico} readOnly={!isLoteLogisticoEditable} onChange={e => setLoteLogistico(e.target.value)} className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border ${!isLoteLogisticoEditable ? 'bg-gray-100' : ''}`} />
+                                    <label className="block text-sm font-medium text-gray-700">Número de Pallet (Automático)</label>
+                                    <input type="number" value={numeroDePallet} readOnly={!isPalletNumEditable} onChange={e => setNumeroDePallet(e.target.value)} className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border ${!isPalletNumEditable ? 'bg-gray-100' : ''}`} />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">Cantidad de Etiquetas a Imprimir</label>
-                                    <input type="number" min="1" value={cantidadEtiquetas} onChange={e => setCantidadEtiquetas(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
+                                    <label className="block text-sm font-medium text-gray-700">Cantidad de Copias</label>
+                                    <input type="number" min="1" value={cantidadCopias} onChange={e => setCantidadCopias(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
                                 </div>
-                                < div>
+                                <div>
                                     <label className="block text-sm font-medium text-gray-700">Fecha de Producción</label>
                                     <input type="date" value={fechaProd} onChange={e => setFechaProd(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700">Fecha de Vencimiento</label>
-                                    <input type="date" value={fechaVenc} readOnly className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border bg-gray-100" />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">Cantidad (por etiqueta)</label>
@@ -388,7 +442,7 @@ V<!DOCTYPE html>
                             </div>
                             <div>
                                 <h3 className="text-lg font-medium text-gray-900 mb-2">Vista Previa de Etiqueta</h3>
-                                <div id="preview-container" className="border-2 border-dashed border-gray-400 w-full" style={{height: '60vh'}}>
+                                <div id="preview-container" className="border-2 border-dashed border-gray-400 w-full" style={{height: '65vh'}}>
                                     {previewPdfUrl ? (
                                         <iframe id="preview-iframe" src={previewPdfUrl} title="Vista Previa de Etiqueta"></iframe>
                                     ) : (
@@ -399,7 +453,7 @@ V<!DOCTYPE html>
                                 </div>
                                 {previewPdfUrl && (
                                     <button onClick={handleGenerateAndPrintPDF} className="w-full mt-4 bg-green-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-green-700 text-xl">
-                                        Imprimir y Guardar Lotes
+                                        Imprimir y Guardar Nº Pallet
                                     </button>
                                 )}
                             </div>
@@ -414,31 +468,23 @@ V<!DOCTYPE html>
         try {
             const response = await fetch('cls.txt');
             if (!response.ok) {
-                throw new Error('No se pudo cargar el archivo de clave (cls.txt).');
+                console.warn('Advertencia: No se pudo cargar el archivo de clave (cls.txt). La función de guardado en GitHub estará deshabilitada.');
+                return null;
             }
             let rawToken = await response.text();
             rawToken = rawToken.replace(/aaaa/g, '').replace(/bbbb/g, '').replace(/cccc/g, '');
             return rawToken.trim();
         } catch (error) {
-            console.error("Error crítico al obtener el token:", error);
-            alert("Error crítico: No se pudo obtener la clave de API. La aplicación no puede continuar.");
+            console.error("Error al obtener el token:", error);
             return null;
         }
     }
 
     (async () => {
         const token = await getApiToken();
-        if (token) {
-            const rootElement = document.getElementById('root');
-            const root = createRoot(rootElement);
-            root.render(<App apiToken={token} />);
-        } else {
-            const loaderStatus = document.getElementById('loader-status');
-            if(loaderStatus) {
-                loaderStatus.textContent = "Error fatal: No se pudo iniciar la aplicación.";
-                loaderStatus.style.color = 'red';
-            }
-        }
+        const rootElement = document.getElementById('root');
+        const root = createRoot(rootElement);
+        root.render(<App apiToken={token} />);
     })();
 
 </script>
