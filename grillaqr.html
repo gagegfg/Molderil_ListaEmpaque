@@ -75,8 +75,8 @@
             const [modalState, setModalState] = useState({ isOpen: false, type: null, title: '', message: '', onConfirm: null });
             const [showHelpModal, setShowHelpModal] = useState(false);
             const [activeActionMenu, setActiveActionMenu] = useState(null);
-            const [isMenuDropUp, setIsMenuDropUp] = useState(false); // Estado para la posición del menú
-            const actionMenuRef = useRef(null); // Ref para el menú desplegable
+            const [isMenuDropUp, setIsMenuDropUp] = useState(false); 
+            const actionMenuRef = useRef(null); 
             
             const getInitialDate = (daysOffset = 0) => {
                 const date = new Date();
@@ -92,8 +92,8 @@
                 despachado: '',
                 cliente: ''
             });
-            const [fechaDesde, setFechaDesde] = useLocalStorage('grillaqr_fechaDesde', getInitialDate(-365));
-            const [fechaHasta, setFechaHasta] = useLocalStorage('grillaqr_fechaHasta', getInitialDate());
+            const [fechaDesde, setFechaDesde] = useLocalStorage('grillaqr_fechaDesde', '');
+            const [fechaHasta, setFechaHasta] = useLocalStorage('grillaqr_fechaHasta', '');
             
             const [isExportOpen, setIsExportOpen] = useState(false);
             const exportMenuRef = useRef(null);
@@ -175,7 +175,7 @@
                 }
                 const correctPassword = await getApiToken('pswsku.txt');
                 if (password.trim() === correctPassword) {
-                    setAuthTimestamp(Date.now()); // Guardar timestamp de autenticación exitosa
+                    setAuthTimestamp(Date.now());
                     setModalState({ isOpen: false });
                     actionCallback();
                 } else {
@@ -244,6 +244,7 @@
 
             useEffect(() => {
                 let data = [...allData];
+                // Filtros de columna
                 Object.keys(columnFilters).forEach(key => {
                     const filterValue = columnFilters[key].toLowerCase();
                     if (filterValue) {
@@ -252,24 +253,37 @@
                                 const despachadoText = (item.despachado && item.despachado.toUpperCase() === 'TRUE') ? 'sí' : 'no';
                                 return despachadoText.includes(filterValue);
                             }
-                            return item[key] && item[key].toString().toLowerCase().includes(filterValue)
+                            return item[key] && item[key].toString().toLowerCase().includes(filterValue);
                         });
                     }
                 });
-                const desde = fechaDesde ? new Date(fechaDesde + 'T00:00:00') : null;
-                const hasta = fechaHasta ? new Date(fechaHasta + 'T23:59:59') : null;
-                if (desde || hasta) {
+                
+                // CORREGIDO: Lógica de filtro por fecha
+                if (fechaDesde || fechaHasta) {
+                    const desde = fechaDesde ? new Date(fechaDesde) : null;
+                    const hasta = fechaHasta ? new Date(fechaHasta) : null;
+
+                    // Ajusta las fechas para evitar problemas de zona horaria.
+                    // El input 'YYYY-MM-DD' se interpreta como UTC, lo movemos a la zona local.
+                    if(desde) desde.setMinutes(desde.getMinutes() + desde.getTimezoneOffset());
+                    if(hasta) hasta.setMinutes(hasta.getMinutes() + hasta.getTimezoneOffset());
+
                     data = data.filter(item => {
                         if (!item.fechaProduccion) return false;
-                        const fechaItemParts = item.fechaProduccion.split('/');
-                        if (fechaItemParts.length !== 3) return false;
-                        const fechaItem = new Date(`${fechaItemParts[2]}-${fechaItemParts[1]}-${fechaItemParts[0]}`);
-                        if (desde && hasta) return fechaItem >= desde && fechaItem <= hasta;
-                        if (desde) return fechaItem >= desde;
-                        if (hasta) return fechaItem <= hasta;
-                        return true;
+                        
+                        const [day, month, year] = item.fechaProduccion.split('/');
+                        if (!day || !month || !year) return false;
+                        
+                        // Crea la fecha del item en la zona horaria local. Meses son 0-indexados.
+                        const itemDate = new Date(year, month - 1, day);
+
+                        const itemEsDespuesDeDesde = desde ? itemDate >= desde : true;
+                        const itemEsAntesDeHasta = hasta ? itemDate <= hasta : true;
+
+                        return itemEsDespuesDeDesde && itemEsAntesDeHasta;
                     });
                 }
+
                 setFilteredData(data);
             }, [columnFilters, fechaDesde, fechaHasta, allData]);
             
@@ -278,7 +292,6 @@
                     if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) {
                         setIsExportOpen(false);
                     }
-                    // Cierra el menú de acciones si se hace clic fuera de él
                     if (actionMenuRef.current && !actionMenuRef.current.parentElement.contains(event.target)) {
                         setActiveActionMenu(null);
                     }
@@ -287,14 +300,11 @@
                 return () => document.removeEventListener("mousedown", handleClickOutside);
             }, []);
 
-            // Efecto para calcular la posición del menú
             useEffect(() => {
                 if (activeActionMenu !== null && actionMenuRef.current) {
                     const menu = actionMenuRef.current;
                     const { bottom } = menu.getBoundingClientRect();
                     const viewportHeight = window.innerHeight;
-
-                    // Si la parte inferior del menú se sale de la pantalla, activa el modo "drop-up"
                     if (bottom > viewportHeight) {
                         setIsMenuDropUp(true);
                     }
@@ -304,8 +314,8 @@
             // --- MANEJADORES DE ACCIONES ---
 
             const handleActionMenuToggle = (itemId) => {
-                setActiveActionMenu(activeActionMenu === itemId ? null : itemId);
-                setIsMenuDropUp(false); // Resetea la posición cada vez que se abre un menú
+                setActiveActionMenu(prev => prev === itemId ? null : itemId);
+                setIsMenuDropUp(false); 
             };
 
             const handleColumnFilterChange = (columnId, value) => setColumnFilters(prev => ({ ...prev, [columnId]: value }));
@@ -658,8 +668,8 @@
                                                 <td className="px-4 py-2 text-sm text-gray-600 align-middle">
                                                     {item.lotesProduccion && item.lotesProduccion.includes('#') ? (
                                                         <div className="flex flex-wrap gap-1">
-                                                            {item.lotesProduccion.split('#').map((lote, index) => (
-                                                                <span key={`${lote}-${index}`} className="px-2.5 py-0.5 text-xs font-semibold bg-gray-100 text-gray-800 rounded-full">
+                                                            {item.lotesProduccion.split('#').map((lote, i) => (
+                                                                <span key={`${lote}-${i}`} className="px-2.5 py-0.5 text-xs font-semibold bg-gray-100 text-gray-800 rounded-full">
                                                                     {lote}
                                                                 </span>
                                                             ))}
