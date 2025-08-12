@@ -1,4 +1,4 @@
-!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -67,11 +67,13 @@
                 return date.toISOString().split('T')[0];
             };
 
-            const [columnFilters, setColumnFilters] = useLocalStorage('grillaqr_columnFilters', {
+            const [columnFilters, setColumnFilters] = useLocalStorage('grillaqr_columnFilters_v2', {
                 sku: '',
                 descripcion: '',
                 numeroDePallet: '',
-                lotesProduccion: ''
+                lotesProduccion: '',
+                despachado: '',
+                cliente: ''
             });
             const [fechaDesde, setFechaDesde] = useLocalStorage('grillaqr_fechaDesde', getInitialDate(-365));
             const [fechaHasta, setFechaHasta] = useLocalStorage('grillaqr_fechaHasta', getInitialDate());
@@ -87,8 +89,8 @@
                     const text = await response.text();
                     const rows = text.split('\n').filter(Boolean);
                     const parsedData = rows.map((row, index) => {
-                        const [sku, descripcion, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida] = row.split(';');
-                        return { id: index, sku, descripcion, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida };
+                        const [sku, descripcion, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida, despachado, cliente] = row.split(';');
+                        return { id: index, sku, descripcion, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida, despachado, cliente };
                     });
                     setAllData(parsedData);
                 } catch (error) {
@@ -138,9 +140,13 @@
                 Object.keys(columnFilters).forEach(key => {
                     const filterValue = columnFilters[key].toLowerCase();
                     if (filterValue) {
-                        data = data.filter(item =>
-                            item[key] && item[key].toString().toLowerCase().includes(filterValue)
-                        );
+                        data = data.filter(item => {
+                            if (key === 'despachado') {
+                                const despachadoText = (item.despachado && item.despachado.toUpperCase() === 'TRUE') ? 'sí' : 'no';
+                                return despachadoText.includes(filterValue);
+                            }
+                            return item[key] && item[key].toString().toLowerCase().includes(filterValue)
+                        });
                     }
                 });
 
@@ -180,7 +186,7 @@
             };
 
             const clearFilters = () => {
-                setColumnFilters({ sku: '', descripcion: '', numeroDePallet: '', lotesProduccion: '' });
+                setColumnFilters({ sku: '', descripcion: '', numeroDePallet: '', lotesProduccion: '', despachado: '', cliente: '' });
                 setFechaDesde('');
                 setFechaHasta('');
             };
@@ -190,13 +196,14 @@
                 doc.setFontSize(18);
                 doc.text("Histórico de Lotes Generados", 14, 16);
                 
-                const tableColumn = ["SKU", "Descripción", "Nº Pallet", "Lotes Prod.", "F. Prod.", "Cantidad", "U.M."];
+                const tableColumn = ["SKU", "Descripción", "Nº Pallet", "Lotes Prod.", "Despachado", "Cliente", "F. Prod.", "Cantidad", "U.M."];
                 const tableRows = [];
 
                 filteredData.forEach(item => {
+                    const despachadoText = (item.despachado && item.despachado.toUpperCase() === 'TRUE') ? 'Sí' : 'No';
                     const rowData = [
                         item.sku, item.descripcion, item.numeroDePallet, item.lotesProduccion,
-                        item.fechaProduccion, item.cantidad, item.unidadMedida
+                        despachadoText, item.cliente || '', item.fechaProduccion, item.cantidad, item.unidadMedida
                     ];
                     tableRows.push(rowData);
                 });
@@ -214,11 +221,18 @@
             };
 
             const exportToExcel = () => {
-                const worksheet = XLSX.utils.json_to_sheet(filteredData.map(item => ({
-                    'SKU': item.sku, 'Descripción': item.descripcion, 'Nº Pallet': item.numeroDePallet,
-                    'Lotes Producción': item.lotesProduccion, 'Fecha Producción': item.fechaProduccion,
-                    'Cantidad': item.cantidad, 'Unidad Medida': item.unidadMedida
-                })));
+                const excelData = filteredData.map(item => ({
+                    'SKU': item.sku, 
+                    'Descripción': item.descripcion, 
+                    'Nº Pallet': item.numeroDePallet,
+                    'Lotes Producción': item.lotesProduccion, 
+                    'Despachado': (item.despachado && item.despachado.toUpperCase() === 'TRUE') ? 'Sí' : 'No',
+                    'Cliente': item.cliente || '',
+                    'Fecha Producción': item.fechaProduccion,
+                    'Cantidad': item.cantidad, 
+                    'Unidad Medida': item.unidadMedida
+                }));
+                const worksheet = XLSX.utils.json_to_sheet(excelData);
                 const workbook = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(workbook, worksheet, "Histórico");
                 XLSX.writeFile(workbook, "historico_lotes.xlsx");
@@ -307,6 +321,8 @@
                                         <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Descripción</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Nº Pallet</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Lotes Prod.</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Despachado</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Cliente</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">F. Prod.</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Cantidad</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">U.M.</th>
@@ -316,6 +332,8 @@
                                         <th className="p-1"><input type="text" placeholder="Filtrar..." value={columnFilters.descripcion} onChange={e => handleColumnFilterChange('descripcion', e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
                                         <th className="p-1"><input type="text" placeholder="Filtrar..." value={columnFilters.numeroDePallet} onChange={e => handleColumnFilterChange('numeroDePallet', e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
                                         <th className="p-1"><input type="text" placeholder="Filtrar..." value={columnFilters.lotesProduccion} onChange={e => handleColumnFilterChange('lotesProduccion', e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
+                                        <th className="p-1"><input type="text" placeholder="Sí / No" value={columnFilters.despachado} onChange={e => handleColumnFilterChange('despachado', e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
+                                        <th className="p-1"><input type="text" placeholder="Filtrar..." value={columnFilters.cliente} onChange={e => handleColumnFilterChange('cliente', e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
                                         <th className="p-1"></th>
                                         <th className="p-1"></th>
                                         <th className="p-1"></th>
@@ -323,21 +341,30 @@
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {isLoading ? (
-                                        <tr><td colSpan="7" className="p-8 text-center text-gray-500">Cargando datos...</td></tr>
+                                        <tr><td colSpan="9" className="p-8 text-center text-gray-500">Cargando datos...</td></tr>
                                     ) : (
-                                        filteredData.length > 0 ? filteredData.map((item, index) => (
+                                        filteredData.length > 0 ? filteredData.map((item, index) => {
+                                            const isDespachado = item.despachado && item.despachado.toUpperCase() === 'TRUE';
+                                            return (
                                             <tr key={item.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                                                 <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{item.sku}</td>
                                                 <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">{item.descripcion}</td>
                                                 <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">{item.numeroDePallet}</td>
                                                 <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">{item.lotesProduccion}</td>
+                                                <td className="px-4 py-4 whitespace-nowrap text-sm font-semibold">
+                                                    <span className={isDespachado ? 'text-green-600' : 'text-red-600'}>
+                                                        {isDespachado ? 'Sí' : 'No'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">{item.cliente || ''}</td>
                                                 <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">{item.fechaProduccion}</td>
                                                 <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">{item.cantidad}</td>
                                                 <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">{item.unidadMedida}</td>
                                             </tr>
-                                        )) : (
+                                            )
+                                        }) : (
                                             <tr>
-                                                <td colSpan="7" className="px-4 py-8 text-center text-sm text-gray-500">No se encontraron registros con los filtros aplicados.</td>
+                                                <td colSpan="9" className="px-4 py-8 text-center text-sm text-gray-500">No se encontraron registros con los filtros aplicados.</td>
                                             </tr>
                                         )
                                     )}
