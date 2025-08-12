@@ -10,6 +10,7 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 </head>
 <body class="bg-gray-100 font-sans">
@@ -27,17 +28,54 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useRef } = React;
         const { createRoot } = ReactDOM;
         const { jsPDF } = window.jspdf;
 
+        // Hook personalizado para manejar el estado con localStorage
+        const useLocalStorage = (key, initialValue) => {
+            const [storedValue, setStoredValue] = useState(() => {
+                try {
+                    const item = window.localStorage.getItem(key);
+                    return item ? JSON.parse(item) : initialValue;
+                } catch (error) {
+                    console.log(error);
+                    return initialValue;
+                }
+            });
+
+            const setValue = (value) => {
+                try {
+                    const valueToStore = value instanceof Function ? value(storedValue) : value;
+                    setStoredValue(valueToStore);
+                    window.localStorage.setItem(key, JSON.stringify(valueToStore));
+                } catch (error) {
+                    console.log(error);
+                }
+            };
+            return [storedValue, setValue];
+        };
+        
         const App = () => {
             const [allData, setAllData] = useState([]);
             const [filteredData, setFilteredData] = useState([]);
             const [isLoading, setIsLoading] = useState(true);
-            const [searchTerm, setSearchTerm] = useState('');
-            const [fechaDesde, setFechaDesde] = useState('');
-            const [fechaHasta, setFechaHasta] = useState('');
+            
+            // Lógica para fechas por defecto
+            const getInitialDate = (daysOffset = 0) => {
+                const date = new Date();
+                date.setDate(date.getDate() + daysOffset);
+                return date.toISOString().split('T')[0];
+            };
+
+            // Estados de los filtros usando el hook de localStorage
+            const [searchTerm, setSearchTerm] = useLocalStorage('grillaqr_searchTerm', '');
+            const [loteTerm, setLoteTerm] = useLocalStorage('grillaqr_loteTerm', '');
+            const [fechaDesde, setFechaDesde] = useLocalStorage('grillaqr_fechaDesde', getInitialDate(-365));
+            const [fechaHasta, setFechaHasta] = useLocalStorage('grillaqr_fechaHasta', getInitialDate());
+            
+            const [isExportOpen, setIsExportOpen] = useState(false);
+            const exportMenuRef = useRef(null);
 
             const fetchData = async () => {
                 setIsLoading(true);
@@ -102,6 +140,13 @@
                     );
                 }
 
+                if (loteTerm) {
+                    const lowercasedLote = loteTerm.toLowerCase();
+                    data = data.filter(item => 
+                        item.lotesProduccion && item.lotesProduccion.toLowerCase().includes(lowercasedLote)
+                    );
+                }
+
                 const desde = fechaDesde ? new Date(fechaDesde + 'T00:00:00') : null;
                 const hasta = fechaHasta ? new Date(fechaHasta + 'T23:59:59') : null;
 
@@ -120,10 +165,21 @@
                 }
 
                 setFilteredData(data);
-            }, [searchTerm, fechaDesde, fechaHasta, allData]);
+            }, [searchTerm, loteTerm, fechaDesde, fechaHasta, allData]);
+            
+            useEffect(() => {
+                const handleClickOutside = (event) => {
+                    if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) {
+                        setIsExportOpen(false);
+                    }
+                };
+                document.addEventListener("mousedown", handleClickOutside);
+                return () => document.removeEventListener("mousedown", handleClickOutside);
+            }, []);
 
             const clearFilters = () => {
                 setSearchTerm('');
+                setLoteTerm('');
                 setFechaDesde('');
                 setFechaHasta('');
             };
@@ -131,7 +187,7 @@
             const exportToPDF = () => {
                 const doc = new jsPDF({ orientation: 'landscape' });
                 const pageTitle = "Histórico de Lotes Generados";
-                const filtersApplied = `Filtros: Artículo/SKU: "${searchTerm || 'Todos'}" | Desde: ${fechaDesde || 'N/A'} | Hasta: ${fechaHasta || 'N/A'}`;
+                const filtersApplied = `Filtros: Artículo: "${searchTerm || 'Todos'}" | Lote: "${loteTerm || 'Todos'}" | Desde: ${fechaDesde || 'N/A'} | Hasta: ${fechaHasta || 'N/A'}`;
                 const generationDate = `Generado el: ${new Date().toLocaleDateString('es-ES')} ${new Date().toLocaleTimeString('es-ES')}`;
 
                 doc.setFontSize(18);
@@ -165,6 +221,23 @@
                 });
                 
                 doc.save("historico_lotes.pdf");
+                setIsExportOpen(false);
+            };
+
+            const exportToExcel = () => {
+                const worksheet = XLSX.utils.json_to_sheet(filteredData.map(item => ({
+                    'SKU': item.sku,
+                    'Descripción': item.descripcion,
+                    'Nº Pallet': item.numeroDePallet,
+                    'Lotes Producción': item.lotesProduccion,
+                    'Fecha Producción': item.fechaProduccion,
+                    'Cantidad': item.cantidad,
+                    'Unidad Medida': item.unidadMedida
+                })));
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, "Histórico");
+                XLSX.writeFile(workbook, "historico_lotes.xlsx");
+                setIsExportOpen(false);
             };
 
             return (
@@ -179,7 +252,7 @@
                         </div>
                         
                         <div className="mb-6 p-4 border rounded-lg bg-gray-50 space-y-4">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                 <div className="relative">
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Buscar por Artículo</label>
                                     <i className="fa fa-search absolute left-3 top-9 text-gray-400"></i>
@@ -188,6 +261,17 @@
                                         placeholder="SKU o descripción..."
                                         value={searchTerm}
                                         onChange={e => setSearchTerm(e.target.value)}
+                                        className="w-full rounded-md border-gray-300 shadow-sm p-2 pl-10 border"
+                                    />
+                                </div>
+                                <div className="relative">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Buscar por Lote</label>
+                                    <i className="fa fa-tag absolute left-3 top-9 text-gray-400"></i>
+                                    <input 
+                                        type="text"
+                                        placeholder="Lote de producción..."
+                                        value={loteTerm}
+                                        onChange={e => setLoteTerm(e.target.value)}
                                         className="w-full rounded-md border-gray-300 shadow-sm p-2 pl-10 border"
                                     />
                                 </div>
@@ -211,7 +295,9 @@
                                 </div>
                             </div>
                             <div className="flex justify-end">
-                                <button onClick={clearFilters} className="text-sm text-gray-600 hover:text-gray-900 font-semibold">Limpiar Filtros</button>
+                                <button onClick={clearFilters} className="text-sm text-gray-600 hover:text-gray-900 font-semibold flex items-center">
+                                    <i className="fas fa-times-circle mr-1"></i>Limpiar Filtros
+                                </button>
                             </div>
                         </div>
 
@@ -228,14 +314,25 @@
                                     <i className={`fas fa-sync-alt ${isLoading ? 'animate-spin' : ''} mr-2`}></i>
                                     Refrescar
                                 </button>
-                                <button 
-                                    onClick={exportToPDF}
-                                    disabled={filteredData.length === 0}
-                                    className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-blue-700 disabled:opacity-50 flex items-center"
-                                >
-                                    <i className="fas fa-file-pdf mr-2"></i>
-                                    Exportar a PDF
-                                </button>
+                                <div className="relative" ref={exportMenuRef}>
+                                    <button 
+                                        onClick={() => setIsExportOpen(prev => !prev)}
+                                        disabled={filteredData.length === 0}
+                                        className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-blue-700 disabled:opacity-50 flex items-center"
+                                    >
+                                        <i className="fas fa-download mr-2"></i>
+                                        Exportar
+                                        <i className={`fas fa-chevron-down ml-2 transition-transform ${isExportOpen ? 'rotate-180' : ''}`}></i>
+                                    </button>
+                                    {isExportOpen && (
+                                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border z-20">
+                                            <ul className="text-gray-700">
+                                                <li><button onClick={exportToPDF} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-file-pdf w-6 mr-2 text-red-500"></i>Exportar a PDF</button></li>
+                                                <li><button onClick={exportToExcel} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-file-excel w-6 mr-2 text-green-500"></i>Exportar a Excel</button></li>
+                                            </ul>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
 
