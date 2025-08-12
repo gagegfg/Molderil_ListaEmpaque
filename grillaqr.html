@@ -342,6 +342,10 @@
                             alert("El nombre del cliente no puede estar vacío.");
                             return;
                          }
+                         if (!clientList.includes(newClient.toUpperCase())) {
+                            alert(`El cliente "${newClient}" no es válido. Por favor, seleccione un cliente de la lista.`);
+                            return;
+                         }
                          setModalState({
                             isOpen: true,
                             type: 'confirm',
@@ -507,7 +511,7 @@
                                     <li><strong>Revertir Despacho:</strong> Cambia el estado de un lote de "Sí" a "No" y elimina el nombre del cliente. Esta opción solo está disponible si el lote ya fue despachado.</li>
                                     <li><strong>Eliminar Fila:</strong> Borra permanentemente el registro del lote del archivo.</li>
                                 </ul>
-                                <p className="mt-2 text-sm font-bold text-red-600">Importante: Todas las acciones por fila (cambiar cliente, revertir y eliminar) requieren una contraseña de administrador para confirmar y guardar los cambios.</p>
+                                <p className="mt-2 text-sm font-bold text-red-600">Importante: Todas las acciones por fila (cambiar cliente, revertir y eliminar) requieren una contraseña de administrador para confirmar y guardar los cambios. La contraseña se recordará por 5 minutos.</p>
                             </div>
                         </div>
                         <div className="text-center mt-6">
