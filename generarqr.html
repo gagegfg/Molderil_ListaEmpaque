@@ -247,7 +247,7 @@
 
         const drawLabelOnDoc = async (doc, data) => {
             const pageW = 210;
-            const margin = 10; // Margen reducido
+            const margin = 5; // Margen reducido
             const contentW = pageW - (margin * 2);
 
             let currentY = margin; // Empezar más arriba
@@ -343,7 +343,7 @@
 
             const qrString = [
                 selectedArticulo.sku || '',
-                selectedArticulo.descripcionLarga || '', // Usar descripción larga para QR
+                selectedArticulo.descripcionLarga || '',
                 String(numeroDePallet) || '',
                 lotesParaQR,
                 formatQrDate(fechaProd),
@@ -353,7 +353,7 @@
 
             return {
                 sku: selectedArticulo.sku,
-                descripcion: selectedArticulo.descripcionCorta || selectedArticulo.descripcionLarga, // Usar corta para PDF, con fallback a larga
+                descripcion: selectedArticulo.descripcionCorta || selectedArticulo.descripcionLarga,
                 lotes: lotesProduccionFiltrados,
                 cantidad: cantidad,
                 uom,
@@ -398,9 +398,12 @@
                 doc.autoPrint();
                 doc.save(`etiqueta_pallet_${palletNum}.pdf`);
 
+                // Crear la línea para el CSV con el estado de despacho
+                const lineaCsv = `${data.qrString};FALSE`;
+
                 // Guardar en GitHub
                 await updateLoteFile(palletNum);
-                await appendToHistoryFile(data.qrString);
+                await appendToHistoryFile(lineaCsv);
             }
         };
 
@@ -519,4 +522,3 @@
 </script>
 </body>
 </html>
-
