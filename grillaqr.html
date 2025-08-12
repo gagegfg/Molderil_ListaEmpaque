@@ -630,7 +630,19 @@
                                                 <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">{item.sku}</td>
                                                 <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{item.descripcion}</td>
                                                 <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{item.numeroDePallet}</td>
-                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{item.lotesProduccion}</td>
+                                                <td className="px-4 py-2 text-sm text-gray-600 align-middle">
+                                                    {item.lotesProduccion && item.lotesProduccion.includes('#') ? (
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {item.lotesProduccion.split('#').map((lote, index) => (
+                                                                <span key={`${lote}-${index}`} className="px-2.5 py-0.5 text-xs font-semibold bg-gray-100 text-gray-800 rounded-full">
+                                                                    {lote}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    ) : (
+                                                        item.lotesProduccion
+                                                    )}
+                                                </td>
                                                 <td className="px-4 py-2 whitespace-nowrap text-sm font-semibold">
                                                     <span className={isDespachado ? 'text-green-600' : 'text-red-600'}>
                                                         {isDespachado ? 'Sí' : 'No'}
