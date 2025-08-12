@@ -28,6 +28,30 @@
         const { useState, useEffect, useMemo, useRef } = React;
         const { createRoot } = ReactDOM;
 
+        // Hook personalizado para manejar el estado con localStorage
+        const useLocalStorage = (key, initialValue) => {
+            const [storedValue, setStoredValue] = useState(() => {
+                try {
+                    const item = window.localStorage.getItem(key);
+                    return item ? JSON.parse(item) : initialValue;
+                } catch (error) {
+                    console.log(error);
+                    return initialValue;
+                }
+            });
+
+            const setValue = (value) => {
+                try {
+                    const valueToStore = value instanceof Function ? value(storedValue) : value;
+                    setStoredValue(valueToStore);
+                    window.localStorage.setItem(key, JSON.stringify(valueToStore));
+                } catch (error) {
+                    console.log(error);
+                }
+            };
+            return [storedValue, setValue];
+        };
+
         const App = () => {
             const [isAuthenticated, setIsAuthenticated] = useState(false);
             const [password, setPassword] = useState('');
@@ -38,16 +62,18 @@
             
             const [allData, setAllData] = useState([]);
             const [filteredData, setFilteredData] = useState([]);
-            const [tiposArticulo, setTiposArticulo] = useState([]);
             const [hasChanges, setHasChanges] = useState(false);
 
-            // Filtros
-            const [tipoFilter, setTipoFilter] = useState('');
-            const [searchTerm, setSearchTerm] = useState('');
+            // Filtros de columna
+            const [columnFilters, setColumnFilters] = useLocalStorage('editarsku_columnFilters', {
+                tipo: '',
+                sku: '',
+                descLarga: ''
+            });
 
             // Modal
             const [isModalOpen, setIsModalOpen] = useState(false);
-            const [editingArticle, setEditingArticle] = useState(null); // null for new, object for editing
+            const [editingArticle, setEditingArticle] = useState(null);
 
             const passwordInputRef = useRef(null);
 
@@ -115,9 +141,7 @@
                         return { id: sku || `temp-${index}`, tipo, sku, descLarga, descCorta };
                     });
                     setAllData(parsedData);
-                    const uniqueTipos = [...new Set(parsedData.map(item => item.tipo))].sort();
-                    setTiposArticulo(uniqueTipos);
-                    setHasChanges(false); // Resetea el estado de cambios al refrescar
+                    setHasChanges(false);
                 } catch (e) {
                     alert(`Error al cargar artículos: ${e.message}`);
                 } finally {
@@ -133,18 +157,16 @@
 
             useEffect(() => {
                 let data = [...allData];
-                if (tipoFilter) {
-                    data = data.filter(item => item.tipo === tipoFilter);
-                }
-                if (searchTerm) {
-                    const lowerTerm = searchTerm.toLowerCase();
-                    data = data.filter(item => 
-                        (item.sku && item.sku.toLowerCase().includes(lowerTerm)) || 
-                        (item.descLarga && item.descLarga.toLowerCase().includes(lowerTerm))
-                    );
-                }
+                Object.keys(columnFilters).forEach(key => {
+                    const filterValue = columnFilters[key].toLowerCase();
+                    if (filterValue) {
+                        data = data.filter(item =>
+                            item[key] && item[key].toString().toLowerCase().includes(filterValue)
+                        );
+                    }
+                });
                 setFilteredData(data);
-            }, [tipoFilter, searchTerm, allData]);
+            }, [columnFilters, allData]);
             
             // --- Manejo de cambios y guardado ---
             const handleDescriptionChange = (sku, newDescription) => {
@@ -192,7 +214,7 @@
                         headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             message: 'Actualización de maestro de artículos',
-                            content: btoa(unescape(encodeURIComponent(csvContent))), // Para manejar caracteres especiales
+                            content: btoa(unescape(encodeURIComponent(csvContent))),
                             sha: fileData.sha,
                         }),
                     });
@@ -212,6 +234,14 @@
                     }
                 }
                 fetchData();
+            };
+
+            const handleColumnFilterChange = (columnId, value) => {
+                setColumnFilters(prev => ({ ...prev, [columnId]: value }));
+            };
+
+            const clearFilters = () => {
+                setColumnFilters({ tipo: '', sku: '', descLarga: '' });
             };
 
             // --- Autenticación ---
@@ -286,38 +316,20 @@
                                 <a href="index.html" className="mt-4 sm:mt-0 bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">Volver al Menú</a>
                             </div>
                             
-                            <div className="mb-6 p-4 border rounded-lg bg-gray-50 grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Filtrar por Tipo</label>
-                                    <select value={tipoFilter} onChange={e => setTipoFilter(e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm p-2 border">
-                                        <option value="">Todos los tipos</option>
-                                        {tiposArticulo.map(tipo => <option key={tipo} value={tipo}>{tipo}</option>)}
-                                    </select>
-                                </div>
-                                <div className="relative">
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Buscar por SKU o Descripción</label>
-                                    <i className="fa fa-search absolute left-3 top-9 text-gray-400"></i>
-                                    <input 
-                                        type="text"
-                                        placeholder="Buscar..."
-                                        value={searchTerm}
-                                        onChange={e => setSearchTerm(e.target.value)}
-                                        className="w-full rounded-md border-gray-300 shadow-sm p-2 pl-10 border"
-                                    />
-                                </div>
-                            </div>
-
                             <div className="flex flex-col sm:flex-row justify-between items-center mb-4">
                                 <p className="text-gray-600 font-semibold">{filteredData.length} artículo(s) encontrado(s)</p>
-                                <div className="flex space-x-2 mt-4 sm:mt-0">
+                                <div className="flex items-center space-x-2 mt-4 sm:mt-0">
+                                    <button onClick={clearFilters} className="bg-white text-gray-700 border border-gray-300 font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-gray-50 flex items-center" title="Restablecer filtros de la tabla">
+                                        <i className="fas fa-times mr-2"></i>Restablecer
+                                    </button>
                                     <button onClick={handleRefresh} className="bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-gray-700 flex items-center">
                                         <i className={`fas fa-sync-alt ${isLoading ? 'animate-spin' : ''} mr-2`}></i>Refrescar
                                     </button>
                                     <button onClick={() => { setEditingArticle(null); setIsModalOpen(true); }} className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-green-700 flex items-center">
-                                        <i className="fas fa-plus mr-2"></i>Añadir Artículo
+                                        <i className="fas fa-plus mr-2"></i>Añadir
                                     </button>
                                     <button onClick={saveToGitHub} className={`font-semibold py-2 px-4 rounded-lg shadow-md flex items-center ${hasChanges ? 'bg-orange-500 hover:bg-orange-600 text-white' : 'bg-gray-600 text-white'}`}>
-                                        <i className="fab fa-github mr-2"></i>Guardar Cambios
+                                        <i className="fab fa-github mr-2"></i>Guardar
                                     </button>
                                 </div>
                             </div>
@@ -332,6 +344,13 @@
                                         <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Descripción Larga</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Descripción Corta (Editable)</th>
                                         <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider">Acción</th>
+                                    </tr>
+                                    <tr className="bg-gray-200">
+                                        <th className="p-1"><input type="text" placeholder="Filtrar..." value={columnFilters.tipo} onChange={e => handleColumnFilterChange('tipo', e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
+                                        <th className="p-1"><input type="text" placeholder="Filtrar..." value={columnFilters.sku} onChange={e => handleColumnFilterChange('sku', e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
+                                        <th className="p-1"><input type="text" placeholder="Filtrar..." value={columnFilters.descLarga} onChange={e => handleColumnFilterChange('descLarga', e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
+                                        <th className="p-1"></th>
+                                        <th className="p-1"></th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
