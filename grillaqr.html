@@ -273,6 +273,12 @@
             };
 
             const handleRevertDispatch = (rowId) => {
+                const itemToRevert = allData.find(item => item.id === rowId);
+                if (!itemToRevert || itemToRevert.despachado?.toUpperCase() !== 'TRUE') {
+                    alert("Esta acción solo se puede realizar en un lote que ya ha sido despachado (estado 'Sí').");
+                    return;
+                }
+
                 setModalState({
                     isOpen: true,
                     type: 'password',
@@ -299,16 +305,20 @@
                     title: 'Cambiar Cliente',
                     message: 'Ingrese el nuevo nombre del cliente:',
                     onConfirm: (newClient) => {
+                         if (!newClient) {
+                            alert("El nombre del cliente no puede estar vacío.");
+                            return;
+                         }
                          setModalState({
                             isOpen: true,
                             type: 'password',
                             title: 'Confirmar Cambio de Cliente',
-                            message: `Se cambiará el cliente a "${newClient}". Ingrese la contraseña para confirmar.`,
+                            message: `Se asignará el cliente "${newClient}" y el lote se marcará como despachado. Ingrese la contraseña para confirmar.`,
                             onConfirm: (password) => {
                                 verifyPasswordAndExecute(() => {
                                     const newData = allData.map(item => {
                                         if (item.id === rowId) {
-                                            return { ...item, cliente: newClient };
+                                            return { ...item, cliente: newClient, despachado: 'TRUE' };
                                         }
                                         return item;
                                     });
