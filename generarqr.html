@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MOLDERIL - Generar Etiqueta QR (v2)</title>
+    <title>MOLDERIL - Generar Etiqueta QR (v3)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -193,12 +193,6 @@
 
         // --- EFECTOS ---
         useEffect(() => {
-            // Carga de datos de usuario desde localStorage
-            const savedLegajo = localStorage.getItem('molderil_legajo');
-            const savedCliente = localStorage.getItem('molderil_cliente');
-            if (savedLegajo) setLegajo(savedLegajo);
-            if (savedCliente) setCliente(savedCliente);
-
             // Lógica de la pantalla de carga
             const staticLoader = document.getElementById('static-loader');
             const loaderStatus = document.getElementById('loader-status');
@@ -416,8 +410,6 @@
 
         const handleContinue = () => {
             if (legajo && cliente && clientList.includes(cliente.toUpperCase())) {
-                localStorage.setItem('molderil_legajo', legajo);
-                localStorage.setItem('molderil_cliente', cliente);
                 setIsDataEntered(true);
             } else {
                 showToast('Por favor, complete todos los campos correctamente.', 'error');
@@ -441,48 +433,48 @@
             currentY += 10;
 
             // --- DESCRIPCIÓN (MÁXIMA PRIORIDAD) ---
-            doc.setFontSize(72); // Tamaño aumentado significativamente
+            doc.setFontSize(84); // Aumentado a 84 para máxima visibilidad
             doc.setFont("helvetica", "bold");
             const descLines = doc.splitTextToSize(data.descripcion, contentW);
-            doc.text(descLines, pageW / 2, currentY + 22, { align: "center" });
-            currentY += (descLines.length * 25) + 10; // Ajuste de espacio
+            doc.text(descLines, pageW / 2, currentY + 28, { align: "center", lineHeightFactor: 1 });
+            currentY += (descLines.length * 28) + 10;
 
             doc.line(margin, currentY, pageW - margin, currentY);
             currentY += 2;
 
             // --- SKU Y LOTES ---
-            doc.setFontSize(18);
+            doc.setFontSize(20); // Aumentado para mejor legibilidad
             doc.setFont("helvetica", "bold");
-            doc.text(`SKU: ${data.sku}`, margin, currentY + 10);
+            doc.text(`SKU: ${data.sku}`, margin, currentY + 12);
             
             const lotesProdString = data.lotes.join(' / ');
             if(lotesProdString) {
-                doc.setFontSize(16);
+                doc.setFontSize(18); // Aumentado para mejor legibilidad
                 doc.setFont("helvetica", "normal");
-                doc.text(`Lotes: ${lotesProdString}`, pageW - margin, currentY + 10, { align: "right" });
+                doc.text(`Lotes: ${lotesProdString}`, pageW - margin, currentY + 12, { align: "right" });
             }
-            currentY += 15;
+            currentY += 18;
             doc.line(margin, currentY, pageW - margin, currentY);
             
-            // --- CANTIDAD ---
+            // --- CANTIDAD (Revisado y ajustado) ---
             currentY += 8;
-            doc.setFontSize(14);
-            doc.setFont("helvetica", "normal");
-            doc.text("Cantidad:", margin, currentY + 5);
-            
             const formattedCantidad = formatNumberES(data.cantidad);
             const uomText = data.uom === 'Unidad' ? 'Unidades' : 'Millares';
-
+            const cantidadString = `${formattedCantidad} ${uomText}`;
+            
             doc.setFont("helvetica", "bold");
-            doc.setFontSize(48);
-            doc.text(`${formattedCantidad} ${uomText}`, pageW - margin, currentY + 5, { align: "right" });
-            currentY += 15;
+            doc.setFontSize(44); // Reducido ligeramente para mejor proporción
+            
+            // Centrar la cantidad en el espacio disponible
+            const cantidadWidth = doc.getStringUnitWidth(cantidadString) * doc.getFontSize() / doc.internal.scaleFactor;
+            const cantidadX = (pageW - cantidadWidth) / 2;
+            doc.text(cantidadString, cantidadX, currentY + 12);
+            currentY += 20;
             
             // --- CÓDIGO QR ---
-            const qrSize = 90; // QR un poco más grande
+            const qrSize = 90; 
             const qrX = (pageW - qrSize) / 2;
             const qrY = currentY;
-            // Nivel de corrección 'M' para un QR más simple y fácil de escanear
             const qrImageData = await QRCode.toDataURL(data.qrString, { width: 400, margin: 2, errorCorrectionLevel: 'M' });
             doc.addImage(qrImageData, 'PNG', qrX, qrY, qrSize, qrSize);
             currentY += qrSize + 5;
