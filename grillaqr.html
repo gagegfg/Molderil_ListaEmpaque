@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MOLDERIL - Histórico de Lotes</title>
+    <title>MOLDERIL - Histórico de Lotes (Sincronizado)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -28,7 +28,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+        const { useState, useEffect, useRef, useCallback } = React;
         const { createRoot } = ReactDOM;
         const { jsPDF } = window.jspdf;
 
@@ -103,13 +103,28 @@
                 }
             };
 
-            const fetchData = async () => {
+            // --- FUNCIÓN DE CARGA DE DATOS MEJORADA ---
+            const fetchData = useCallback(async () => {
                 setIsLoading(true);
+                const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${CSV_PATH}`;
                 try {
-                    const response = await fetch(`https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/main/${CSV_PATH}?timestamp=` + new Date().getTime());
-                    if (!response.ok) throw new Error('No se pudo cargar el histórico.');
-                    const text = await response.text();
-                    const rows = text.split('\n').filter(Boolean);
+                    const headers = apiToken ? { 'Authorization': `token ${apiToken}` } : {};
+                    const response = await fetch(url, { headers, cache: 'no-store' });
+
+                    if (response.status === 404) {
+                        setAllData([]);
+                        console.log("El archivo detallelotes.csv no existe. Se inicia con tabla vacía.");
+                        return;
+                    }
+
+                    if (!response.ok) {
+                        throw new Error(`No se pudo cargar el histórico desde GitHub (Estado: ${response.status})`);
+                    }
+
+                    const fileData = await response.json();
+                    const csvContent = atob(fileData.content);
+                    
+                    const rows = csvContent.split('\n').filter(Boolean);
                     const parsedData = rows.map((row, index) => {
                         const [sku, descripcion, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida, despachado, cliente] = row.split(';');
                         return { id: index, sku, descripcion, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida, despachado, cliente };
@@ -117,12 +132,13 @@
                     setAllData(parsedData);
                 } catch (error) {
                     console.error("Error cargando detallelotes.csv:", error);
-                    alert("Error al cargar el histórico de lotes.");
+                    alert(`Error al cargar el histórico de lotes: ${error.message}`);
                 } finally {
                     setIsLoading(false);
                 }
-            };
+            }, [apiToken]); // Depende del token para poder usarlo en los headers
 
+            // --- FUNCIÓN DE GUARDADO MODIFICADA ---
             const saveToGitHub = async (dataToSave) => {
                 if (!apiToken) {
                     alert("Error: El token de API no está disponible.");
@@ -149,7 +165,9 @@
 
                     if (!updateResponse.ok) throw new Error(`Error ${updateResponse.status}: Falló la actualización.`);
                     alert("¡Histórico guardado correctamente en GitHub!");
-                    setAllData(dataToSave);
+                    
+                    // RECARGA DESDE LA FUENTE DE VERDAD
+                    await fetchData();
                     return true;
                 } catch (e) {
                     alert(`ERROR al guardar en GitHub: ${e.message}`);
@@ -200,7 +218,7 @@
                     loaderStatus.textContent = "Verificando acceso...";
                     loaderProgress.style.width = '25%';
                     const token = await getApiToken('cls.txt');
-                    setApiToken(token);
+                    setApiToken(token); // Guardar el token en el estado
 
                     loaderStatus.textContent = "Cargando lista de clientes...";
                     loaderProgress.style.width = '50%';
@@ -212,24 +230,39 @@
                     } catch (e) {
                         console.error("No se pudo cargar la lista de clientes.");
                     }
-
-                    loaderStatus.textContent = "Cargando histórico...";
-                    loaderProgress.style.width = '75%';
-                    await fetchData();
                     
-                    loaderStatus.textContent = "¡Listo!";
-                    loaderProgress.style.width = '100%';
-                    
-                    setTimeout(() => {
-                         if (staticLoader) {
-                            staticLoader.classList.add('opacity-0');
-                            setTimeout(() => staticLoader.remove(), 500);
-                        }
-                    }, 500);
+                    // El resto de la carga de datos se hará en el siguiente useEffect, una vez que el token esté disponible.
                 };
                 
                 initializeApp();
             }, []);
+
+            // Este efecto se dispara cuando el apiToken se establece por primera vez.
+            useEffect(() => {
+                if(apiToken) {
+                    const loaderStatus = document.getElementById('loader-status');
+                    const loaderProgress = document.getElementById('loader-progress');
+                    const staticLoader = document.getElementById('static-loader');
+
+                    const loadInitialData = async () => {
+                        if (loaderStatus) loaderStatus.textContent = "Cargando histórico...";
+                        if (loaderProgress) loaderProgress.style.width = '75%';
+                        
+                        await fetchData();
+                        
+                        if (loaderStatus) loaderStatus.textContent = "¡Listo!";
+                        if (loaderProgress) loaderProgress.style.width = '100%';
+                        
+                        setTimeout(() => {
+                             if (staticLoader) {
+                                staticLoader.classList.add('opacity-0');
+                                setTimeout(() => staticLoader.remove(), 500);
+                            }
+                        }, 500);
+                    };
+                    loadInitialData();
+                }
+            }, [apiToken, fetchData]);
 
             useEffect(() => {
                 let data = [...allData];
