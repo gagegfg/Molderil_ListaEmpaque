@@ -106,7 +106,8 @@
             // --- FUNCIÓN DE CARGA DE DATOS MEJORADA ---
             const fetchData = useCallback(async () => {
                 setIsLoading(true);
-                const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${CSV_PATH}`;
+                // MODIFICACIÓN: Se añade un parámetro de tiempo para evitar la caché del servidor/CDN.
+                const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${CSV_PATH}?t=${new Date().getTime()}`;
                 try {
                     const headers = apiToken ? { 'Authorization': `token ${apiToken}` } : {};
                     const response = await fetch(url, { headers, cache: 'no-store' });
