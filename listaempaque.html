@@ -414,40 +414,37 @@
       const handleScan = (value) => {
         if (!value) return;
 
-        // --- INICIO: LÓGICA DE PARSEO INTELIGENTE PARA PISTOLA ---
+        // --- INICIO: LÓGICA DE PARSEO INTELIGENTE PARA PISTOLA Y MANUAL ---
+        let rawParts;
         let finalParts;
-        const rawParts = value.split('ñ');
+
+        // Se prioriza el separador correcto (;) para la entrada manual
+        if (value.includes(';')) {
+            rawParts = value.split(';');
+        } else {
+            // Si no hay ';', se asume que viene de la pistola y se usa 'ñ'
+            rawParts = value.split('ñ');
+        }
 
         if (rawParts.length < 7) {
             setModalContent({ title: 'Error en QR', message: `El código QR parece incompleto. Se detectaron ${rawParts.length} campos en lugar de 7.` });
             setShowInfoModal(true);
             return;
         } else if (rawParts.length === 7) {
-            // Caso ideal: no había 'ñ' en los datos, solo se reemplazaron los ';'
             finalParts = rawParts;
         } else {
-            // Caso complejo: había 'ñ' en los datos y se deben reconstruir.
+            // Reconstrucción solo si el separador fue 'ñ' y había 'ñ' en los datos
             const unidadMedida = rawParts[rawParts.length - 1];
             const cantidad = rawParts[rawParts.length - 2];
             const fechaProduccion = rawParts[rawParts.length - 3];
             const lotesProduccion = rawParts[rawParts.length - 4];
             const numeroDePallet = rawParts[rawParts.length - 5];
             
-            // Todo lo que queda al principio es SKU y Descripción.
             const skuAndDescParts = rawParts.slice(0, rawParts.length - 5);
             const sku = skuAndDescParts[0];
-            // Se unen las partes restantes para formar la descripción, reinsertando la 'ñ'.
             const descripcion = skuAndDescParts.slice(1).join('ñ');
 
-            finalParts = [
-                sku,
-                descripcion,
-                numeroDePallet,
-                lotesProduccion,
-                fechaProduccion,
-                cantidad,
-                unidadMedida
-            ];
+            finalParts = [sku, descripcion, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida];
         }
         // --- FIN: LÓGICA DE PARSEO INTELIGENTE ---
 
