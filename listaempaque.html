@@ -150,7 +150,7 @@
       const [isCameraActive, setIsCameraActive] = useState(false);
       const [showInfoModal, setShowInfoModal] = useState(false);
       const [showHelpModal, setShowHelpModal] = useState(false);
-      const [modalContent, setModalContent] = useState({ title: '', message: '' });
+      const [modalContent, setModalContent] = useState({ title: '', message: '', errorData: null });
       const [isActionsOpen, setIsActionsOpen] = useState(false);
       const [feedbackMessage, setFeedbackMessage] = useState('');
       const [isShareApiSupported, setIsShareApiSupported] = useState(false);
@@ -414,26 +414,23 @@
       const handleScan = (value) => {
         if (!value) return;
 
-        // --- INICIO: LÓGICA DE PARSEO INTELIGENTE PARA PISTOLA Y MANUAL ---
         let rawParts;
         let finalParts;
 
-        // Se prioriza el separador correcto (;) para la entrada manual
         if (value.includes(';')) {
             rawParts = value.split(';');
         } else {
-            // Si no hay ';', se asume que viene de la pistola y se usa 'ñ'
             rawParts = value.split('ñ');
         }
 
         if (rawParts.length < 7) {
-            setModalContent({ title: 'Error en QR', message: `El código QR parece incompleto. Se detectaron ${rawParts.length} campos en lugar de 7.` });
+            setModalContent({ title: 'Error en QR', message: `El código QR parece incompleto. Se detectaron ${rawParts.length} campos en lugar de 7.`, errorData: value });
             setShowInfoModal(true);
+            setMockQrValue('');
             return;
         } else if (rawParts.length === 7) {
             finalParts = rawParts;
         } else {
-            // Reconstrucción solo si el separador fue 'ñ' y había 'ñ' en los datos
             const unidadMedida = rawParts[rawParts.length - 1];
             const cantidad = rawParts[rawParts.length - 2];
             const fechaProduccion = rawParts[rawParts.length - 3];
@@ -446,20 +443,21 @@
 
             finalParts = [sku, descripcion, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida];
         }
-        // --- FIN: LÓGICA DE PARSEO INTELIGENTE ---
 
         const validationError = validateQrData(finalParts);
         if (validationError) {
-            setModalContent({ title: 'Error en Datos de QR', message: validationError });
+            setModalContent({ title: 'Error en Datos de QR', message: validationError, errorData: value });
             setShowInfoModal(true);
+            setMockQrValue('');
             return;
         }
 
         const [sku, descripcion, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida] = finalParts;
         
         if (items.some(item => item.numeroDePallet === numeroDePallet)) {
-          setModalContent({ title: 'Pallet Duplicado', message: `Error: El Pallet Nº "${numeroDePallet}" ya fue cargado.` });
+          setModalContent({ title: 'Pallet Duplicado', message: `Error: El Pallet Nº "${numeroDePallet}" ya fue cargado.`, errorData: value });
           setShowInfoModal(true);
+          setMockQrValue('');
           return;
         }
 
@@ -487,7 +485,6 @@
 
       const handleControlCheck = (id) => setItems(prev => prev.map(item => item.id === id ? { ...item, controlado: !item.controlado } : item));
 
-      // --- INICIO: LÓGICA DE EDICIÓN Y GESTIÓN DE LOTES ---
       const handleStartEdit = (item) => {
         setEditingItemId(item.id);
         const originalQuantity = item.cantidad.replace(/\./g, '').replace(',', '.');
@@ -548,7 +545,6 @@
             showFeedback(`Lote ${loteToDelete} eliminado.`);
         }
       };
-      // --- FIN: LÓGICA DE EDICIÓN Y GESTIÓN DE LOTES ---
 
       const handleManualSubmit = (e) => {
         e.preventDefault();
@@ -724,6 +720,27 @@
         setTimeout(() => setFeedbackMessage(''), 2500);
       };
 
+      const copyToClipboard = (text, feedbackMsg = '¡Copiado!') => {
+        const promise = new Promise((res, rej) => {
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(text).then(res).catch(rej);
+            } else {
+                let textArea = document.createElement("textarea");
+                textArea.value = text;
+                textArea.style.position = "fixed";
+                textArea.style.left = "-999999px";
+                textArea.style.top = "-999999px";
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                document.execCommand('copy') ? res() : rej();
+                textArea.remove();
+            }
+        });
+
+        promise.then(() => showFeedback(feedbackMsg)).catch(() => showFeedback('Error al copiar'));
+      };
+
       const getPdfFilename = () => {
         const date = new Date();
         const dateString = `${date.getFullYear()}${(date.getMonth() + 1).toString().padStart(2, '0')}${date.getDate().toString().padStart(2, '0')}`;
@@ -843,41 +860,35 @@
             ...rest,
             lotesProduccion: rest.lotesProduccion.join(', ')
         })), null, 2);
-
-        const copyToClipboard = (text) => {
-          if (navigator.clipboard && window.isSecureContext) {
-            return navigator.clipboard.writeText(text);
-          } else {
-            let textArea = document.createElement("textarea");
-            textArea.value = text;
-            textArea.style.position = "fixed";
-            textArea.style.left = "-999999px";
-            textArea.style.top = "-999999px";
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
-            return new Promise((res, rej) => {
-              document.execCommand('copy') ? res() : rej();
-              textArea.remove();
-            });
-          }
-        };
-
-        copyToClipboard(jsonString)
-          .then(() => showFeedback('¡JSON copiado!'))
-          .catch(() => {
-            setModalContent({ title: 'Error', message: 'No se pudo copiar el contenido JSON.' });
-            setShowInfoModal(true);
-          });
+        copyToClipboard(jsonString, '¡JSON copiado!');
       };
 
       const handleReset = () => { setIsDataEntered(false); setOperarioLegajo(''); setClienteNombre(''); setItems([]); };
 
-      const InfoModal = ({ onClose, title, message }) => (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50">
+      const InfoModal = ({ onClose, title, message, errorData, onCopy }) => (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
           <div className="relative p-8 bg-white w-full max-w-lg rounded-xl shadow-lg m-4">
             <h3 className={`text-2xl font-bold ${title.toLowerCase().includes('error') ? 'text-red-600' : 'text-blue-600'} mb-4`}>{title}</h3>
-            <p className="text-xl text-gray-700 mb-4 whitespace-pre-wrap">{message}</p>
+            <p className="text-xl text-gray-700 mb-6 whitespace-pre-wrap">{message}</p>
+            
+            {errorData && (
+              <div className="mb-6 p-2 bg-gray-100 rounded border border-gray-300">
+                <p className="text-sm font-semibold text-gray-600 mb-1">Dato problemático:</p>
+                <div className="flex items-center justify-between">
+                  <pre className="text-xs text-red-700 bg-red-50 p-2 rounded w-full overflow-x-auto mr-2">
+                    <code>{errorData}</code>
+                  </pre>
+                  <button 
+                    onClick={() => onCopy(errorData)} 
+                    className="bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 px-3 rounded text-sm"
+                    title="Copiar al portapapeles"
+                  >
+                    <i className="fas fa-copy"></i>
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="text-center">
               <button onClick={onClose} className="bg-blue-600 text-white font-semibold py-3 px-6 rounded-md shadow-md hover:bg-blue-700">Entendido</button>
             </div>
@@ -895,7 +906,7 @@
 
         return (
           <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
-            {showInfoModal && <InfoModal onClose={() => setShowInfoModal(false)} title={modalContent.title} message={modalContent.message} />}
+            {showInfoModal && <InfoModal onClose={() => setShowInfoModal(false)} title={modalContent.title} message={modalContent.message} errorData={modalContent.errorData} onCopy={copyToClipboard} />}
             {showHelpModal && <HelpModal onClose={() => setShowHelpModal(false)} />}
             <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-md relative">
               <button onClick={() => setShowHelpModal(true)} title="Ayuda" className="absolute top-4 right-4 text-gray-400 hover:text-indigo-600 transition-colors">
@@ -967,7 +978,7 @@
 
       return (
         <div className="min-h-screen bg-gray-100 p-4 flex flex-col">
-          {showInfoModal && <InfoModal onClose={() => setShowInfoModal(false)} title={modalContent.title} message={modalContent.message} />}
+          {showInfoModal && <InfoModal onClose={() => setShowInfoModal(false)} title={modalContent.title} message={modalContent.message} errorData={modalContent.errorData} onCopy={copyToClipboard} />}
           {showHelpModal && <HelpModal onClose={() => setShowHelpModal(false)} />}
           {feedbackMessage && <div className="fixed top-5 right-5 bg-green-500 text-white py-2 px-4 rounded-lg shadow-lg z-50">{feedbackMessage}</div>}
           <div className="bg-white p-6 rounded-xl shadow-lg flex-grow">
