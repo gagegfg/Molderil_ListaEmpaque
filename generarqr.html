@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MOLDERIL - Generar Etiqueta QR (v5 con Observaciones)</title>
+    <title>MOLDERIL - Generar Etiqueta QR (v6 - Carga Directa)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -11,7 +11,7 @@
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
-        /* Estilos para el contenedor de la vista previa del PDF */
+        /* Estilos (sin cambios) */
         #preview-container {
             width: 100%;
             height: 100%;
@@ -19,14 +19,13 @@
             justify-content: center;
             align-items: center;
             overflow: hidden;
-            background-color: #e5e7eb; /* gris claro */
+            background-color: #e5e7eb;
         }
         #preview-iframe {
             width: 100%;
             height: 100%;
             border: none;
         }
-        /* Estilos para las notificaciones (Toast) */
         .toast {
             position: fixed;
             top: 20px;
@@ -44,11 +43,9 @@
             opacity: 1;
             transform: translateY(0);
         }
-        .toast-success { background-color: #16a34a; } /* verde */
-        .toast-error { background-color: #dc2626; } /* rojo */
-        .toast-info { background-color: #2563eb; } /* azul */
-
-        /* Estilo para el spinner de carga en botones */
+        .toast-success { background-color: #16a34a; }
+        .toast-error { background-color: #dc2626; }
+        .toast-info { background-color: #2563eb; }
         .spinner {
             display: inline-block;
             border: 3px solid rgba(255,255,255,0.3);
@@ -91,8 +88,10 @@
     const REPO_NOMBRE = 'Molderil_ListaEmpaque';
     const RUTA_LOTE_LOGISTICO = 'lotelogistica.txt';
     const RUTA_HISTORICO_CSV = 'detallelotes.csv';
-    // --- NUEVO ---: Ruta para el archivo de observaciones
     const RUTA_NOTAS_CSV = 'notasskulote.csv';
+    // --- NUEVO ---: Rutas explícitas para todos los archivos base
+    const RUTA_ARTICULOS_CSV = 'articulos.csv';
+    const RUTA_CLS_TXT = 'cls.txt';
     // =================================================================
 
     // --- Componente de Notificaciones (Toast) ---
@@ -143,8 +142,10 @@
         useEffect(() => {
             const fetchToken = async () => {
                 try {
-                    const response = await fetch('cls.txt');
-                    if (!response.ok) throw new Error('No se pudo cargar cls.txt');
+                    // --- MODIFICADO ---: Carga directa desde GitHub y sin caché
+                    const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_CLS_TXT}`;
+                    const response = await fetch(url, { cache: "no-store" });
+                    if (!response.ok) throw new Error(`No se pudo cargar ${RUTA_CLS_TXT}`);
                     let rawToken = await response.text();
                     rawToken = rawToken.replace(/aaaa/g, '').replace(/bbbb/g, '').replace(/cccc/g, '');
                     setApiToken(rawToken.trim());
@@ -164,8 +165,6 @@
 
     const App = ({ apiToken }) => {
         const showToast = useToasts();
-
-        // --- ESTADOS DE LA APLICACIÓN ---
         const [appIsLoading, setAppIsLoading] = useState(true);
         const [articulos, setArticulos] = useState([]);
         const [searchTerm, setSearchTerm] = useState('');
@@ -179,14 +178,10 @@
         const [uom, setUom] = useState('Unidad');
         const [previewPdfUrl, setPreviewPdfUrl] = useState(null);
         const [isSaving, setIsSaving] = useState(false);
-        // --- NUEVO ---: Estado para la observación
         const [observacion, setObservacion] = useState('');
-        
-        // --- REFERENCIAS ---
         const articuloInputRef = useRef(null);
         const loteInputRefs = useRef([]);
 
-        // --- EFECTOS ---
         useEffect(() => {
             const staticLoader = document.getElementById('static-loader');
             const loaderStatus = document.getElementById('loader-status');
@@ -211,7 +206,10 @@
 
             const fetchArticulos = async () => {
                 try {
-                    const response = await fetch('articulos.csv');
+                    // --- MODIFICADO ---: Carga directa desde GitHub y sin caché
+                    const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_ARTICULOS_CSV}`;
+                    const response = await fetch(url, { cache: "no-store" });
+                    if (!response.ok) throw new Error(`No se pudo cargar ${RUTA_ARTICULOS_CSV}`);
                     const text = await response.text();
                     const rows = text.split('\n').slice(1);
                     const parsedArticulos = rows.map(row => {
@@ -225,7 +223,7 @@
                     }).filter(art => art.sku && art.descripcionLarga);
                     setArticulos(parsedArticulos);
                 } catch (error) {
-                    console.error("Error loading articulos.csv:", error);
+                    console.error(`Error loading ${RUTA_ARTICULOS_CSV}:`, error);
                     showToast("Error al cargar la lista de artículos.", 'error');
                 }
             };
@@ -282,7 +280,7 @@
             }
         }, [lotesProduccion.length]);
 
-        // --- FUNCIONES DE GITHUB ---
+        // --- FUNCIONES DE GITHUB (sin cambios) ---
         const updateLoteFile = async (nuevoContenido) => {
             const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${RUTA_LOTE_LOGISTICO}`;
             try {
@@ -314,9 +312,7 @@
                 let fileData;
                 let contenidoActual = "";
                 let sha = null;
-
                 const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${apiToken}` } });
-                
                 if (fileResponse.ok) {
                     fileData = await fileResponse.json();
                     contenidoActual = atob(fileData.content);
@@ -324,9 +320,7 @@
                 } else if (fileResponse.status !== 404) {
                     throw new Error(`Error ${fileResponse.status}: No se pudo obtener info del archivo histórico.`);
                 }
-                
                 const nuevoContenido = contenidoActual ? `${contenidoActual.trim()}\n${lineaCsv}` : lineaCsv;
-                
                 const putResponse = await fetch(url, {
                     method: 'PUT',
                     headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
@@ -336,27 +330,23 @@
                         ...(sha && { sha }),
                     }),
                 });
-
                 if (!putResponse.ok) throw new Error(`Error ${putResponse.status} al guardar en el histórico.`);
                 console.log("Registro añadido al histórico correctamente.");
                 return true;
-            } catch (error)
+            } catch (error) {
                 console.error("Error en appendToHistoryFile:", error);
                 showToast(`ERROR: No se pudo guardar el registro en el histórico.\n${error.message}`, 'error');
                 return false;
             }
         };
 
-        // --- NUEVO ---: Función para añadir la observación al archivo notasskulote.csv
         const appendToNotesFile = async (lineaCsv) => {
             const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${RUTA_NOTAS_CSV}`;
             try {
                 let fileData;
                 let contenidoActual = "";
                 let sha = null;
-
                 const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${apiToken}` } });
-                
                 if (fileResponse.ok) {
                     fileData = await fileResponse.json();
                     contenidoActual = atob(fileData.content);
@@ -364,9 +354,7 @@
                 } else if (fileResponse.status !== 404) {
                     throw new Error(`Error ${fileResponse.status}: No se pudo obtener info del archivo de notas.`);
                 }
-                
                 const nuevoContenido = contenidoActual ? `${contenidoActual.trim()}\n${lineaCsv}` : lineaCsv;
-                
                 const putResponse = await fetch(url, {
                     method: 'PUT',
                     headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
@@ -376,7 +364,6 @@
                         ...(sha && { sha }),
                     }),
                 });
-
                 if (!putResponse.ok) throw new Error(`Error ${putResponse.status} al guardar en el archivo de notas.`);
                 console.log("Nota añadida al histórico correctamente.");
                 return true;
@@ -387,7 +374,7 @@
             }
         };
         
-        // --- MANEJADORES DE EVENTOS ---
+        // --- MANEJADORES DE EVENTOS Y LÓGICA DE LA APP (sin cambios) ---
         const handleLoteProdChange = (index, value) => {
             const regex = /^\d*$/;
             if (regex.test(value)) {
@@ -422,7 +409,6 @@
 
         const filteredArticulos = searchTerm ? articulos.filter(art => art.sku.toLowerCase().includes(searchTerm.toLowerCase()) || art.descripcionLarga.toLowerCase().includes(searchTerm.toLowerCase())) : [];
 
-        // --- GENERACIÓN DE PDF ---
         const drawLabelOnDoc = async (doc, data) => {
             const pageW = 210;
             const margin = 8;
@@ -435,60 +421,47 @@
             currentY += 15;
             doc.line(margin, currentY, pageW - margin, currentY);
             currentY += 10;
-
             doc.setFontSize(84);
             doc.setFont("helvetica", "bold");
             const descLines = doc.splitTextToSize(data.descripcion, contentW);
             doc.text(descLines, pageW / 2, currentY + 28, { align: "center", lineHeightFactor: 1 });
             currentY += (descLines.length * 28) + 10;
-
             doc.line(margin, currentY, pageW - margin, currentY);
             currentY += 2;
-
             doc.setFontSize(20);
             doc.setFont("helvetica", "bold");
             doc.text(`SKU: ${data.sku}`, margin, currentY + 12);
-            
             const lotesProdString = data.lotes.join(' / ');
-            // --- MODIFICADO ---: Añade un asterisco si hay una observación
             const lotesDisplayString = data.observacion ? `${lotesProdString} (*)` : lotesProdString;
-
-            if(lotesProdString) {
+            if (lotesProdString) {
                 doc.setFontSize(18);
                 doc.setFont("helvetica", "normal");
                 doc.text(`Lotes: ${lotesDisplayString}`, pageW - margin, currentY + 12, { align: "right" });
             }
             currentY += 18;
             doc.line(margin, currentY, pageW - margin, currentY);
-            
             currentY += 8;
             const formattedCantidad = formatNumberES(data.cantidad);
             const uomText = data.uom === 'Unidad' ? 'Unidades' : 'Millares';
             const cantidadString = `${formattedCantidad} ${uomText}`;
-            
             doc.setFont("helvetica", "bold");
             doc.setFontSize(44);
-            
             const cantidadWidth = doc.getStringUnitWidth(cantidadString) * doc.getFontSize() / doc.internal.scaleFactor;
             const cantidadX = (pageW - cantidadWidth) / 2;
             doc.text(cantidadString, cantidadX, currentY + 12);
             currentY += 20;
-            
-            const qrSize = 90; 
+            const qrSize = 90;
             const qrX = (pageW - qrSize) / 2;
             const qrY = currentY;
             const qrImageData = await QRCode.toDataURL(data.qrString, { width: 400, margin: 2, errorCorrectionLevel: 'M' });
             doc.addImage(qrImageData, 'PNG', qrX, qrY, qrSize, qrSize);
             currentY += qrSize + 5;
-            
             doc.line(margin, currentY, pageW - margin, currentY);
             currentY += 5;
-
             doc.setFontSize(22);
             doc.setFont("helvetica", "bold");
             doc.text("Nº de Pallet", margin, currentY + 10);
             doc.text("Fabricación", pageW - margin, currentY + 10, { align: "right" });
-
             doc.setFontSize(36);
             doc.text(String(data.palletId), margin, currentY + 22);
             doc.setFontSize(22);
@@ -496,7 +469,7 @@
         };
 
         const getLabelData = () => {
-             const formatQrDate = (dateString) => {
+            const formatQrDate = (dateString) => {
                 if (!dateString) return '';
                 const date = new Date(dateString + 'T00:00:00');
                 const day = String(date.getDate()).padStart(2, '0');
@@ -504,11 +477,9 @@
                 const year = date.getFullYear();
                 return `${day}/${month}/${year}`;
             };
-            
             const cantidadParaQR = cantidad.replace(',', '.');
             const lotesProduccionFiltrados = lotesProduccion.filter(lote => lote.trim() !== '');
             const lotesParaQR = lotesProduccionFiltrados.join('#');
-
             const qrString = [
                 selectedArticulo.sku || '',
                 selectedArticulo.descripcionLarga || '',
@@ -518,7 +489,6 @@
                 cantidadParaQR || '',
                 uom || '',
             ].join(';');
-
             return {
                 sku: selectedArticulo.sku,
                 descripcion: selectedArticulo.descripcionCorta || selectedArticulo.descripcionLarga,
@@ -528,7 +498,6 @@
                 fechaProd,
                 palletId: numeroDePallet,
                 qrString: qrString,
-                // --- NUEVO ---: Añade la observación a los datos
                 observacion: observacion.trim()
             };
         }
@@ -548,43 +517,33 @@
         
         const handleGenerateAndPrintPDF = async () => {
             if (isSaving) return;
-
             const numCopias = parseInt(cantidadCopias, 10);
             const palletNum = parseInt(numeroDePallet, 10);
-
             if (isNaN(numCopias) || numCopias < 1 || isNaN(palletNum) || !previewPdfUrl) {
                 showToast("Genere una vista previa y verifique los datos.", 'error');
                 return;
             }
-             if (!apiToken) {
+            if (!apiToken) {
                 showToast("ERROR: Clave de API no disponible. No se puede guardar.", 'error');
                 return;
             }
-
             const isConfirmed = window.confirm(`Se registrará el Pallet Nº ${palletNum}.\n\nAl confirmar, este número quedará asignado y se guardará el registro. ¿Desea continuar?`);
-
             if (isConfirmed) {
                 setIsSaving(true);
                 const data = getLabelData();
                 const lineaCsv = `${data.qrString};FALSE;`;
-
                 const historySaved = await appendToHistoryFile(lineaCsv);
-
                 if (historySaved) {
-                    // --- MODIFICADO ---: Lógica para guardar la observación si existe
-                    let notesSaved = true; // Es true por defecto.
+                    let notesSaved = true;
                     if (data.observacion) {
-                        // Limpia la observación para que no rompa el formato CSV
                         const sanitizedObservacion = data.observacion.replace(/;/g, ',').replace(/\n/g, ' ');
                         const lineaNotas = `${data.sku};${data.palletId};${sanitizedObservacion}`;
                         notesSaved = await appendToNotesFile(lineaNotas);
                     }
-
                     if (notesSaved) {
                         const palletNumSaved = await updateLoteFile(palletNum);
                         if (palletNumSaved) {
                             showToast(`Pallet Nº ${palletNum} guardado correctamente.`, 'success');
-                            
                             const doc = new jsPDF('p', 'mm', 'a4');
                             for (let i = 0; i < numCopias; i++) {
                                 if (i > 0) doc.addPage();
@@ -592,16 +551,13 @@
                             }
                             doc.autoPrint();
                             doc.save(`etiqueta_pallet_${palletNum}.pdf`);
-
-                            // Limpia todos los campos del formulario
                             setNumeroDePallet(palletNum + 1);
                             setSelectedArticulo(null);
                             setSearchTerm('');
                             setLotesProduccion(['']);
                             setCantidad('');
-                            setObservacion(''); // --- NUEVO ---: Limpia el campo de observación
+                            setObservacion('');
                             setPreviewPdfUrl(null);
-
                         } else {
                             showToast('ERROR CRÍTICO: El registro se guardó pero no se pudo actualizar el número de pallet. Contacte a soporte.', 'error');
                         }
@@ -615,9 +571,8 @@
             }
         };
         
-        // --- RENDERIZADO ---
         if (appIsLoading) {
-            return null; // El loader estático se muestra mientras esto es null
+            return null;
         }
 
         return (
@@ -684,7 +639,6 @@
                                         <option>Millar</option>
                                     </select>
                                 </div>
-                                 {/* --- NUEVO ---: Campo para las observaciones */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">Observaciones (Opcional)</label>
                                     <textarea
