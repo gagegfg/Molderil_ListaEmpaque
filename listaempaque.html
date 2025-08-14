@@ -413,16 +413,53 @@
 
       const handleScan = (value) => {
         if (!value) return;
-        const parts = value.split(';');
 
-        const validationError = validateQrData(parts);
+        // --- INICIO: LÓGICA DE PARSEO INTELIGENTE PARA PISTOLA ---
+        let finalParts;
+        const rawParts = value.split('ñ');
+
+        if (rawParts.length < 7) {
+            setModalContent({ title: 'Error en QR', message: `El código QR parece incompleto. Se detectaron ${rawParts.length} campos en lugar de 7.` });
+            setShowInfoModal(true);
+            return;
+        } else if (rawParts.length === 7) {
+            // Caso ideal: no había 'ñ' en los datos, solo se reemplazaron los ';'
+            finalParts = rawParts;
+        } else {
+            // Caso complejo: había 'ñ' en los datos y se deben reconstruir.
+            const unidadMedida = rawParts[rawParts.length - 1];
+            const cantidad = rawParts[rawParts.length - 2];
+            const fechaProduccion = rawParts[rawParts.length - 3];
+            const lotesProduccion = rawParts[rawParts.length - 4];
+            const numeroDePallet = rawParts[rawParts.length - 5];
+            
+            // Todo lo que queda al principio es SKU y Descripción.
+            const skuAndDescParts = rawParts.slice(0, rawParts.length - 5);
+            const sku = skuAndDescParts[0];
+            // Se unen las partes restantes para formar la descripción, reinsertando la 'ñ'.
+            const descripcion = skuAndDescParts.slice(1).join('ñ');
+
+            finalParts = [
+                sku,
+                descripcion,
+                numeroDePallet,
+                lotesProduccion,
+                fechaProduccion,
+                cantidad,
+                unidadMedida
+            ];
+        }
+        // --- FIN: LÓGICA DE PARSEO INTELIGENTE ---
+
+        const validationError = validateQrData(finalParts);
         if (validationError) {
             setModalContent({ title: 'Error en Datos de QR', message: validationError });
             setShowInfoModal(true);
             return;
         }
 
-        const [sku, descripcion, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida] = parts;
+        const [sku, descripcion, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida] = finalParts;
+        
         if (items.some(item => item.numeroDePallet === numeroDePallet)) {
           setModalContent({ title: 'Pallet Duplicado', message: `Error: El Pallet Nº "${numeroDePallet}" ya fue cargado.` });
           setShowInfoModal(true);
@@ -436,11 +473,11 @@
             sku,
             descripcion,
             numeroDePallet,
-            lotesProduccion: lotesProduccion.split('#').filter(Boolean), // Guardar como array
+            lotesProduccion: lotesProduccion.split('#').filter(Boolean),
             fechaProduccion: formatDate(parseDate(fechaProduccion)),
             cantidad: formatSpanishNumber(numericQuantity),
             originalCantidad: numericQuantity,
-            cantidadEditada: false, // Flag para habilitar borrado de lotes
+            cantidadEditada: false,
             unidadMedida,
             controlado: false
         };
@@ -491,7 +528,7 @@
         setItems(prevItems =>
           prevItems.map(item =>
             item.id === editingItemId
-              ? { ...item, cantidad: formatSpanishNumber(newQuantityValue), cantidadEditada: true } // Marcar como editada
+              ? { ...item, cantidad: formatSpanishNumber(newQuantityValue), cantidadEditada: true }
               : item
           )
         );
@@ -516,7 +553,12 @@
       };
       // --- FIN: LÓGICA DE EDICIÓN Y GESTIÓN DE LOTES ---
 
-      const handleKeyDown = (e) => { if (e.key === 'Enter') handleScan(mockQrValue); };
+      const handleManualSubmit = (e) => {
+        e.preventDefault();
+        if (mockQrValue) {
+          handleScan(mockQrValue);
+        }
+      };
 
       const handleContinue = () => {
         if (operarioLegajo && clienteNombre && clientList.includes(clienteNombre)) {
@@ -978,12 +1020,23 @@
                       <i className="fas fa-camera mr-3"></i> Escanear con Cámara
                   </button>
                   <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
-                    <div className="flex-grow">
-                      <input type="text" ref={manualInputRef} value={mockQrValue} onChange={(e) => setMockQrValue(e.target.value)} onKeyDown={handleKeyDown} className="w-full rounded-md p-2 border text-xl" placeholder="Ingresar QR manual o con pistola"/>
-                    </div>
-                    <button onClick={() => handleScan(mockQrValue)} disabled={!mockQrValue} className="bg-green-600 text-white font-semibold py-2 px-4 rounded-md shadow-md hover:bg-green-700 disabled:opacity-50 text-lg">
-                      Agregar
-                    </button>
+                    <form onSubmit={handleManualSubmit} className="flex-grow flex space-x-2">
+                      <input 
+                        type="text" 
+                        ref={manualInputRef} 
+                        value={mockQrValue} 
+                        onChange={(e) => setMockQrValue(e.target.value)} 
+                        className="w-full rounded-md p-2 border text-xl" 
+                        placeholder="Ingresar QR manual o con pistola"
+                      />
+                      <button 
+                        type="submit" 
+                        disabled={!mockQrValue} 
+                        className="bg-green-600 text-white font-semibold py-2 px-4 rounded-md shadow-md hover:bg-green-700 disabled:opacity-50 text-lg"
+                      >
+                        Agregar
+                      </button>
+                    </form>
                     <button onClick={() => fileInputRef.current.click()} className="bg-orange-500 text-white font-semibold py-2 px-4 rounded-md shadow-md hover:bg-orange-600 text-lg flex items-center justify-center">
                       <i className="fas fa-file-image mr-2"></i> Adjuntar QR
                     </button>
@@ -1015,7 +1068,6 @@
                             <td className="px-2 py-4 whitespace-nowrap text-sm">{item.sku}</td>
                             <td className="px-2 py-4 whitespace-nowrap text-sm">{item.descripcion}</td>
                             <td className="px-2 py-4 whitespace-nowrap text-sm">{item.numeroDePallet}</td>
-                            {/* === INICIO: CELDA DE LOTES EDITABLE === */}
                             <td className="px-2 py-4 whitespace-nowrap text-sm">
                                 <div className="flex flex-wrap gap-1">
                                     {item.lotesProduccion.map(lote => (
@@ -1034,7 +1086,6 @@
                                     ))}
                                 </div>
                             </td>
-                            {/* === FIN: CELDA DE LOTES EDITABLE === */}
                             <td className="px-2 py-4 whitespace-nowrap text-sm">{item.fechaProduccion}</td>
                             <td className="px-2 py-4 whitespace-nowrap text-sm">
                               {editingItemId === item.id ? (
