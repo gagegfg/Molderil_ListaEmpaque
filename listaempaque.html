@@ -106,6 +106,7 @@
               <h4 className="font-semibold text-lg text-indigo-600">3. La Lista de Artículos</h4>
               <p>Cada artículo que escaneas se añade a la tabla. Dentro de la tabla puedes:</p>
                <ul className="list-disc list-inside ml-4 mt-1">
+                <li><strong>Editar la Cantidad:</strong> Si necesitas hacer "picking" (usar una cantidad parcial), haz clic en la cantidad en la tabla para editarla.</li>
                 <li><strong>Marcar como Controlado:</strong> Usa la casilla de verificación para llevar un control visual de los pallets que ya has revisado.</li>
                 <li><strong>Eliminar (🗑️):</strong> Si agregaste un artículo por error, usa el ícono de la papelera para quitarlo de la lista.</li>
                 <li><strong>Ver el Total:</strong> Debajo de la tabla siempre verás el conteo total de bultos escaneados.</li>
@@ -152,6 +153,8 @@
       const [isActionsOpen, setIsActionsOpen] = useState(false);
       const [feedbackMessage, setFeedbackMessage] = useState('');
       const [isShareApiSupported, setIsShareApiSupported] = useState(false);
+      const [editingItemId, setEditingItemId] = useState(null); // <-- NUEVO: ID del item que se está editando
+      const [editingQuantity, setEditingQuantity] = useState(''); // <-- NUEVO: Valor temporal de la cantidad
 
       const [clientList, setClientList] = useState([]);
       const [showSuggestions, setShowSuggestions] = useState(false);
@@ -457,6 +460,36 @@
 
       const handleControlCheck = (id) => setItems(prev => prev.map(item => item.id === id ? { ...item, controlado: !item.controlado } : item));
 
+      // --- INICIO: NUEVAS FUNCIONES PARA EDICIÓN DE CANTIDAD ---
+      const handleStartEdit = (item) => {
+        setEditingItemId(item.id);
+        // Usamos el valor original sin formato para la edición, manejando el formato español
+        const originalQuantity = item.cantidad.replace(/\./g, '').replace(',', '.');
+        setEditingQuantity(originalQuantity);
+      };
+
+      const handleSaveEdit = () => {
+        if (editingItemId === null) return;
+
+        // Validar que no esté vacío y sea un número válido (acepta coma o punto como decimal)
+        const newQuantityValue = parseFloat(editingQuantity.replace(',', '.'));
+        if (isNaN(newQuantityValue) || newQuantityValue < 0) {
+          setEditingItemId(null); // Cancelar si el valor no es válido
+          return;
+        }
+
+        setItems(prevItems =>
+          prevItems.map(item =>
+            item.id === editingItemId
+              ? { ...item, cantidad: formatSpanishNumber(newQuantityValue) }
+              : item
+          )
+        );
+        setEditingItemId(null);
+        setEditingQuantity('');
+      };
+      // --- FIN: NUEVAS FUNCIONES PARA EDICIÓN DE CANTIDAD ---
+
       const handleKeyDown = (e) => { if (e.key === 'Enter') handleScan(mockQrValue); };
 
       const handleContinue = () => {
@@ -633,7 +666,6 @@
         return `Lista_Empaque_${dateString}-${timeString}_${operarioLegajo}.pdf`;
       }
       
-      // --- NUEVA FUNCIÓN CENTRALIZADA PARA ACCIONES DE DESPACHO ---
       const handleDispatchAndExecuteAction = async (finalAction) => {
         if (items.length === 0) {
             setModalContent({ title: 'Lista Vacía', message: 'No hay artículos en la lista para despachar.' });
@@ -651,7 +683,7 @@
             const success = await registrarDespachoEnGitHub(items, clienteNombre);
             if (success) {
                 showFeedback('¡Despacho registrado! Generando PDF...');
-                await finalAction(); // Ejecuta la acción original (descargar, imprimir, etc.)
+                await finalAction();
             } else {
                 showFeedback('Fallo el registro del despacho. La operación fue cancelada.');
             }
@@ -661,7 +693,6 @@
         setIsActionsOpen(false);
       };
 
-      // --- HANDLERS DE ACCIONES REFACTORIZADOS ---
       const handleDownloadPdf = () => {
         handleDispatchAndExecuteAction(async () => {
             const pdf = await createPdfDocument();
@@ -787,7 +818,7 @@
       );
 
       if (!isAppReady) {
-        return null; // Muestra el loader estático que está en el HTML inicial
+        return null;
       }
 
       if (!isDataEntered) {
@@ -951,13 +982,35 @@
                         <tr><td colSpan="9" className="px-2 py-4 text-center text-sm text-gray-500 italic">Aún no hay registros.</td></tr>
                       ) : (
                         items.map((item) => (
-                          <tr key={item.id} className="hover:bg-gray-50">
+                          <tr key={item.id} className="hover:bg-gray-50 group">
                             <td className="px-2 py-4 whitespace-nowrap text-sm">{item.sku}</td>
                             <td className="px-2 py-4 whitespace-nowrap text-sm">{item.descripcion}</td>
                             <td className="px-2 py-4 whitespace-nowrap text-sm">{item.numeroDePallet}</td>
                             <td className="px-2 py-4 whitespace-nowrap text-sm">{item.lotesProduccion}</td>
                             <td className="px-2 py-4 whitespace-nowrap text-sm">{item.fechaProduccion}</td>
-                            <td className="px-2 py-4 whitespace-nowrap text-sm">{item.cantidad}</td>
+                            {/* === INICIO: CELDA DE CANTIDAD EDITABLE === */}
+                            <td className="px-2 py-4 whitespace-nowrap text-sm">
+                              {editingItemId === item.id ? (
+                                <input
+                                  type="text"
+                                  value={editingQuantity}
+                                  onChange={(e) => setEditingQuantity(e.target.value)}
+                                  onBlur={handleSaveEdit}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') { e.preventDefault(); handleSaveEdit(); }
+                                    if (e.key === 'Escape') { e.preventDefault(); setEditingItemId(null); }
+                                  }}
+                                  className="w-20 rounded-md border-gray-400 shadow-sm p-1 border text-base"
+                                  autoFocus
+                                />
+                              ) : (
+                                <div onClick={() => handleStartEdit(item)} className="cursor-pointer p-1 rounded flex justify-between items-center">
+                                  <span>{item.cantidad}</span>
+                                  <i className="fas fa-pencil-alt ml-2 text-gray-300 group-hover:text-gray-600 transition-colors"></i>
+                                </div>
+                              )}
+                            </td>
+                            {/* === FIN: CELDA DE CANTIDAD EDITABLE === */}
                             <td className="px-2 py-4 whitespace-nowrap text-sm">{item.unidadMedida}</td>
                             <td className="px-2 py-4 text-center"><input type="checkbox" checked={item.controlado} onChange={() => handleControlCheck(item.id)} className="h-4 w-4"/></td>
                             <td className="px-2 py-4 text-center"><button onClick={() => handleDelete(item.id)} className="text-red-600 hover:text-red-900"><i className="fas fa-trash"></i></button></td>
@@ -972,7 +1025,6 @@
                   </table>
                 </div>
 
-                {/* === SECCIÓN DE BOTONES MODIFICADA === */}
                 <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4">
                   <div className="relative w-full sm:w-auto flex-grow" ref={actionsMenuRef}>
                     <div className="flex rounded-md shadow-sm">
