@@ -158,7 +158,7 @@
       const [editingQuantity, setEditingQuantity] = useState('');
 
       const [clientList, setClientList] = useState([]);
-      const [skuList, setSkuList] = useState([]); // <-- NUEVO: Estado para la lista de SKUs
+      const [skuList, setSkuList] = useState([]);
       const [showSuggestions, setShowSuggestions] = useState(false);
 
       const legajoInputRef = useRef(null);
@@ -216,7 +216,6 @@
                 }
               }
             },
-            // --- NUEVA TAREA DE CARGA PARA SKUs ---
             { status: "Cargando lista de artículos...", duration: 500, progress: 85, action: async () => {
                 try {
                   const response = await fetch('articulos.csv');
@@ -224,7 +223,11 @@
                        throw new Error(`No se pudo cargar articulos.csv (Estado: ${response.status})`);
                    }
                   const text = await response.text();
-                  const skus = text.split('\n').map(line => line.split(';')[0].trim()).filter(Boolean);
+                  // --- CORRECCIÓN: Leer la segunda columna (índice 1) para el SKU ---
+                  const skus = text.split('\n').map(line => {
+                      const columns = line.split(';');
+                      return columns.length > 1 ? columns[1].trim() : null;
+                  }).filter(Boolean);
                   setSkuList(skus);
                 } catch (error) {
                   console.error("Fallo al cargar la lista de SKUs:", error);
@@ -472,7 +475,6 @@
 
         const [sku, descripcion, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida] = finalParts;
         
-        // --- NUEVA VALIDACIÓN DE SKU ---
         if (!skuList.includes(sku)) {
             setModalContent({
                 title: 'Error de Artículo',
