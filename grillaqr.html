@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<html lang="es">
+<html <html lang="es">
+    lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -110,6 +111,21 @@
             const [isExportOpen, setIsExportOpen] = useState(false);
             const exportMenuRef = useRef(null);
             
+            // --- INICIO: LÓGICA PARA PULSACIÓN LARGA ---
+            const longPressTimer = useRef(null);
+            const touchDuration = 500; // 500ms para considerar una pulsación larga
+
+            const handlePressStart = (callback) => {
+                longPressTimer.current = setTimeout(() => {
+                    callback();
+                }, touchDuration);
+            };
+
+            const handlePressEnd = () => {
+                clearTimeout(longPressTimer.current);
+            };
+            // --- FIN: LÓGICA PARA PULSACIÓN LARGA ---
+
             const getApiToken = async (file) => {
                 try {
                     const response = await fetch(file + '?t=' + new Date().getTime());
@@ -780,7 +796,16 @@
                                             const handleRowDoubleClick = () => { if (item.hasNote) { setObservationModal({ isOpen: true, text: item.noteText }); } };
                                             const rowClassName = item.hasNote ? 'bg-yellow-50 hover:bg-yellow-100 cursor-pointer' : 'hover:bg-gray-50';
                                             return (
-                                            <tr key={item.id} className={rowClassName} onDoubleClick={handleRowDoubleClick}>
+                                            <tr 
+                                                key={item.id} 
+                                                className={rowClassName} 
+                                                onDoubleClick={handleRowDoubleClick}
+                                                onTouchStart={() => handlePressStart(handleRowDoubleClick)}
+                                                onTouchEnd={handlePressEnd}
+                                                onMouseDown={() => handlePressStart(handleRowDoubleClick)}
+                                                onMouseUp={handlePressEnd}
+                                                onMouseLeave={handlePressEnd}
+                                            >
                                                 <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">{item.sku}</td>
                                                 <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{item.descripcion}</td>
                                                 <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600 font-semibold">
