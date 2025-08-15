@@ -51,7 +51,6 @@
         const GITHUB_REPO = 'Molderil_ListaEmpaque';
         const CSV_PATH_LOTES = 'detallelotes.csv';
         const CSV_PATH_NOTAS = 'notasskulote.csv';
-        // --- NUEVO: RUTA PARA PALLETS ALMACENADOS ---
         const CSV_PATH_ALMACENADO = 'nropalletalmacenado.csv'; 
         const AUTH_TIMEOUT = 5 * 60 * 1000; // 5 minutos en milisegundos
 
@@ -90,7 +89,6 @@
             const [clientList, setClientList] = useState([]);
             const [authTimestamp, setAuthTimestamp] = useState(null);
 
-            // --- NUEVO: ESTADOS PARA EL FLUJO DE ALMACENAMIENTO ---
             const [isAlmacenamientoMode, setIsAlmacenamientoMode] = useState(false);
             const [transferSelection, setTransferSelection] = useState({});
 
@@ -108,7 +106,7 @@
                 descripcion: '',
                 numeroDePallet: '',
                 lotesProduccion: '',
-                transferido: '', // NUEVO: Filtro para la columna
+                transferido: '',
                 despachado: '',
                 cliente: ''
             });
@@ -143,10 +141,10 @@
                 }
             };
 
-            const fetchCsvFromGithub = useCallback(async (path, isOptional = false) => {
+            const fetchCsvFromGithub = useCallback(async (path, token, isOptional = false) => {
                 const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}?t=${new Date().getTime()}`;
                 try {
-                    const headers = apiToken ? { 'Authorization': `token ${apiToken}` } : {};
+                    const headers = token ? { 'Authorization': `token ${token}` } : {};
                     const response = await fetch(url, { headers, cache: 'no-store' });
                     if (response.status === 404) {
                         if (isOptional) {
@@ -163,15 +161,14 @@
                     alert(`Error al cargar datos desde GitHub: ${error.message}`);
                     return [];
                 }
-            }, [apiToken]);
-
-            const loadData = useCallback(async () => {
+            }, []);
+            
+            const loadData = useCallback(async (token) => {
                 setIsLoading(true);
-                // --- MODIFICADO: Se añade la carga del nuevo CSV ---
                 const [lotesRows, notasRows, almacenadoRows] = await Promise.all([
-                    fetchCsvFromGithub(CSV_PATH_LOTES),
-                    fetchCsvFromGithub(CSV_PATH_NOTAS, true),
-                    fetchCsvFromGithub(CSV_PATH_ALMACENADO, true)
+                    fetchCsvFromGithub(CSV_PATH_LOTES, token),
+                    fetchCsvFromGithub(CSV_PATH_NOTAS, token, true),
+                    fetchCsvFromGithub(CSV_PATH_ALMACENADO, token, true)
                 ]);
 
                 const newAlmacenadoKeys = new Set(almacenadoRows);
@@ -191,7 +188,6 @@
                     const palletKey = `${sku};${numeroDePallet}`;
                     const hasNote = notesMap.has(palletKey);
                     const noteText = hasNote ? notesMap.get(palletKey) : '';
-                    // --- NUEVO: Se añade el estado 'transferido' a cada fila ---
                     const transferido = newAlmacenadoKeys.has(palletKey);
                     return { id: index, sku, descripcion, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida, despachado, cliente, hasNote, noteText, transferido };
                 });
@@ -253,7 +249,7 @@
                 setIsSaving(false);
                 if (lotesSuccess && notesSuccess) {
                     alert("¡Histórico y notas guardados correctamente en GitHub!");
-                    await loadData();
+                    await loadData(apiToken);
                 } else {
                     alert("Ocurrió un error al guardar uno o más archivos.");
                 }
@@ -289,67 +285,76 @@
                 }
             };
             
+            // --- MODIFICADO: Lógica de carga unificada en un solo useEffect ---
             useEffect(() => {
-                const initializeApp = async () => {
-                    document.getElementById('loader-status').textContent = "Verificando acceso...";
-                    document.getElementById('loader-progress').style.width = '20%';
-                    const token = await getApiToken('cls.txt');
-                    setApiToken(token); 
+                const staticLoader = document.getElementById('static-loader');
+                const loaderStatus = document.getElementById('loader-status');
+                const loaderProgress = document.getElementById('loader-progress');
 
-                    document.getElementById('loader-status').textContent = "Cargando lista de clientes...";
-                    document.getElementById('loader-progress').style.width = '40%';
+                const runInitialLoad = async () => {
                     try {
-                        const clientResponse = await fetch('clientes.txt?t=' + new Date().getTime());
-                        const clientText = await clientResponse.text();
+                        // Fase 1: Obtener Token
+                        loaderStatus.textContent = "Verificando acceso...";
+                        loaderProgress.style.width = '20%';
+                        const token = await getApiToken('cls.txt');
+                        if (!token) {
+                            throw new Error("Token de acceso no válido o no encontrado.");
+                        }
+                        setApiToken(token);
+
+                        // Fase 2: Cargar archivos de configuración
+                        loaderStatus.textContent = "Cargando configuraciones...";
+                        loaderProgress.style.width = '40%';
+                        const clientPromise = fetch('clientes.txt?t=' + new Date().getTime()).then(res => res.text());
+                        const articulosPromise = fetch('articulos.csv?t=' + new Date().getTime()).then(res => res.text());
+                        
+                        const [clientText, articulosText] = await Promise.all([clientPromise, articulosPromise]);
+                        
                         setClientList(clientText.split('\n').map(c => c.trim().toUpperCase()).filter(Boolean));
-                    } catch (e) { console.error("No se pudo cargar la lista de clientes."); }
-                    
-                    document.getElementById('loader-status').textContent = "Cargando descripciones de artículos...";
-                    document.getElementById('loader-progress').style.width = '60%';
-                    try {
-                        const articulosResponse = await fetch('articulos.csv?t=' + new Date().getTime());
-                        const articulosText = await articulosResponse.text();
                         const newArticulosMap = new Map();
                         articulosText.split('\n').slice(1).forEach(row => {
                             const [tipo, sku, descLarga, descCorta] = row.split(';');
                             if (sku && descCorta) newArticulosMap.set(sku.trim(), descCorta.trim());
                         });
                         setArticulosMap(newArticulosMap);
-                    } catch (e) { console.error("No se pudo cargar la lista de artículos."); }
-                };
-                initializeApp();
-            }, []);
 
-            useEffect(() => {
-                if(apiToken) {
-                    const loadInitialData = async () => {
-                        document.getElementById('loader-status').textContent = "Cargando histórico y notas...";
-                        document.getElementById('loader-progress').style.width = '80%';
-                        await loadData();
-                        if (!fechaDesde && !fechaHasta) {
+                        // Fase 3: Cargar datos principales usando el token obtenido
+                        loaderStatus.textContent = "Cargando histórico y notas...";
+                        loaderProgress.style.width = '80%';
+                        await loadData(token);
+
+                        // Fase 4: Finalizar
+                        if (!localStorage.getItem('grillaqr_fechaDesde') && !localStorage.getItem('grillaqr_fechaHasta')) {
                             const today = new Date();
                             const firstDayOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
                             setFechaHasta(today.toISOString().split('T')[0]);
                             setFechaDesde(firstDayOfLastMonth.toISOString().split('T')[0]);
                         }
-                        document.getElementById('loader-status').textContent = "¡Listo!";
-                        document.getElementById('loader-progress').style.width = '100%';
+                        
+                        loaderStatus.textContent = "¡Listo!";
+                        loaderProgress.style.width = '100%';
+                        
                         setTimeout(() => {
-                             const staticLoader = document.getElementById('static-loader');
-                             if (staticLoader) {
+                            if (staticLoader) {
                                 staticLoader.classList.add('opacity-0');
                                 setTimeout(() => staticLoader.remove(), 500);
                             }
                         }, 500);
-                    };
-                    loadInitialData();
-                }
-            }, [apiToken, loadData]);
+
+                    } catch (error) {
+                        console.error("Error durante la carga inicial:", error);
+                        loaderStatus.textContent = `Error: ${error.message}`;
+                        loaderProgress.style.width = '100%';
+                        loaderProgress.style.backgroundColor = '#ef4444'; // Color rojo para error
+                    }
+                };
+                
+                runInitialLoad();
+            }, [loadData]); // Solo depende de loadData que es un useCallback estable.
 
             useEffect(() => {
                 let data = [...allData];
 
-                // --- NUEVO: Lógica de filtrado para el modo almacenamiento ---
                 if (isAlmacenamientoMode) {
                     data = data.filter(item => !item.transferido);
                 }
@@ -362,7 +367,6 @@
                                 const despachadoText = (item.despachado && item.despachado.toUpperCase() === 'TRUE') ? 'sí' : 'no';
                                 return despachadoText.includes(filterValue);
                             }
-                            // --- NUEVO: Filtrado para columna TRANSFERIDO ---
                             if (key === 'transferido') {
                                 const transferidoText = item.transferido ? 'sí' : 'no';
                                 return transferidoText.includes(filterValue);
@@ -403,7 +407,6 @@
             }, []);
 
             const handleColumnFilterChange = (columnId, value) => {
-                // --- NUEVO: Resetea el modo almacenamiento si se usa otro filtro ---
                 if (isAlmacenamientoMode) resetAlmacenamientoMode();
                 setColumnFilters(prev => ({ ...prev, [columnId]: value }));
             };
@@ -437,7 +440,6 @@
                 });
             };
             
-            // ... (Funciones handleAddClient, handleChangeClientName, handleDeleteClient, etc. sin cambios) ...
             const handleAddClient = (rowId) => {
                  setModalState({
                     isOpen: true,
@@ -569,14 +571,10 @@
             const drawLabelOnDoc = async (doc, data) => { /* ... (sin cambios) ... */ };
             const handleReprint = async (item) => { /* ... (sin cambios) ... */ };
             
-            // --- INICIO: NUEVAS FUNCIONES PARA EL FLUJO DE ALMACENAMIENTO ---
-
             const handlePendientesClick = () => {
-                // Limpia filtros existentes para evitar conflictos
                 setColumnFilters({ sku: '', descripcion: '', numeroDePallet: '', lotesProduccion: '', transferido: '', despachado: '', cliente: '' });
                 setFechaDesde('');
                 setFechaHasta('');
-                // Activa el modo de almacenamiento
                 setIsAlmacenamientoMode(true);
             };
 
@@ -600,7 +598,6 @@
                 doc.setFontSize(12);
                 doc.text(`Fecha de Confirmación: ${fecha}`, 105, 22, { align: 'center' });
 
-                // Tabla de Detalle
                 const detailColumns = ["SKU", "Descripción", "Nº Pallet", "Lotes", "Cantidad", "U.M."];
                 const detailRows = selectedItems.map(item => [
                     item.sku,
@@ -617,7 +614,6 @@
                     didDrawPage: (data) => { doc.setFontSize(14); doc.text("Detalle de Pallets Transferidos", 14, data.settings.startY - 10); }
                 });
 
-                // Tabla de Resumen
                 const summary = selectedItems.reduce((acc, item) => {
                     const cant = parseFloat(item.cantidad.replace(',', '.')) || 0;
                     if (!acc[item.sku]) {
@@ -668,21 +664,18 @@
                         executeActionWithAuth(async () => {
                             setIsSaving(true);
                             try {
-                                // 1. Generar PDF
                                 generateAlmacenamientoPDF(selectedItems);
 
-                                // 2. Actualizar CSV
                                 const newKeysToAppend = selectedItems.map(item => `${item.sku};${item.numeroDePallet}`);
-                                const existingContentRows = await fetchCsvFromGithub(CSV_PATH_ALMACENADO, true);
+                                const existingContentRows = await fetchCsvFromGithub(CSV_PATH_ALMACENADO, apiToken, true);
                                 const newContent = [...existingContentRows, ...newKeysToAppend].join('\n');
                                 
                                 const success = await saveCsvToGithub(CSV_PATH_ALMACENADO, newContent);
 
                                 if (success) {
                                     alert("¡Almacenamiento confirmado y registrado con éxito!");
-                                    // 3. Finalizar y Refrescar
                                     resetAlmacenamientoMode();
-                                    await loadData();
+                                    await loadData(apiToken);
                                 } else {
                                     alert("Error al guardar el registro de almacenamiento. La operación fue abortada.");
                                 }
@@ -695,8 +688,6 @@
                     }
                 });
             };
-
-            // --- FIN: NUEVAS FUNCIONES ---
 
             const ActionModal = ({ isOpen, type, title, message, onConfirm, onClose, suggestions }) => { /* ... (sin cambios) ... */ };
             const ObservationModal = ({ isOpen, text, onClose }) => { /* ... (sin cambios) ... */ };
@@ -746,14 +737,13 @@
                         <div className="flex flex-col sm:flex-row justify-between items-center mb-4">
                             <div className="flex items-center space-x-2">
                                 <p className="text-gray-600 font-semibold">{filteredData.length} registro(s) encontrado(s)</p>
-                                {/* --- NUEVO: Botones de Almacenamiento --- */}
                                 <button onClick={handlePendientesClick} className="bg-yellow-500 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-yellow-600 flex items-center"><i className="fas fa-box-open mr-2"></i>Pendientes por Almacenar</button>
                                 {isAlmacenamientoMode && (
                                     <button onClick={handleConfirmarAlmacenamiento} className="bg-teal-500 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-teal-600 flex items-center animate-pulse"><i className="fas fa-check-circle mr-2"></i>Confirmar Almacenamiento</button>
                                 )}
                             </div>
                             <div className="flex space-x-2 mt-4 sm:mt-0">
-                                <button onClick={async () => { resetAlmacenamientoMode(); await loadData(); }} disabled={isLoading || isSaving} className="bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-gray-700 disabled:opacity-50 flex items-center"><i className={`fas fa-sync-alt ${isLoading ? 'animate-spin' : ''} mr-2`}></i>Refrescar</button>
+                                <button onClick={async () => { resetAlmacenamientoMode(); await loadData(apiToken); }} disabled={isLoading || isSaving} className="bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-gray-700 disabled:opacity-50 flex items-center"><i className={`fas fa-sync-alt ${isLoading ? 'animate-spin' : ''} mr-2`}></i>Refrescar</button>
                                 <div className="relative" ref={exportMenuRef}>
                                     <button onClick={() => setIsExportOpen(prev => !prev)} disabled={filteredData.length === 0} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-blue-700 disabled:opacity-50 flex items-center"><i className="fas fa-download mr-2"></i>Exportar<i className={`fas fa-chevron-down ml-2 transition-transform ${isExportOpen ? 'rotate-180' : ''}`}></i></button>
                                     {isExportOpen && (
@@ -772,13 +762,11 @@
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-800 text-white sticky top-0 z-10">
                                     <tr>
-                                        {/* --- MODIFICADO: Añadida columna TRANSFERIDO --- */}
                                         {["TRANSFERIDO", "SKU", "Descripción", "Nº Pallet", "Lotes Prod.", "Despachado", "Cliente", "F. Prod.", "Cantidad", "U.M.", "Acciones"].map(header => (
                                             <th key={header} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">{header}</th>
                                         ))}
                                     </tr>
                                     <tr className="bg-gray-200">
-                                        {/* --- MODIFICADO: Añadido filtro para TRANSFERIDO --- */}
                                         <th className="p-1"><input type="text" placeholder="Sí / No" value={columnFilters.transferido} onChange={e => handleColumnFilterChange('transferido', e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
                                         <th className="p-1"><input type="text" placeholder="Filtrar..." value={columnFilters.sku} onChange={e => handleColumnFilterChange('sku', e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
                                         <th className="p-1"><input type="text" placeholder="Filtrar..." value={columnFilters.descripcion} onChange={e => handleColumnFilterChange('descripcion', e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
@@ -801,7 +789,6 @@
                                             const palletKey = `${item.sku};${item.numeroDePallet}`;
                                             return (
                                             <tr key={item.id} className={rowClassName}>
-                                                {/* --- NUEVO: Celda para el checkbox TRANSFERIDO --- */}
                                                 <td className="px-4 py-2 text-center">
                                                     <input 
                                                         type="checkbox"
