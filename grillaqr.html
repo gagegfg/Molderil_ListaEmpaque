@@ -66,6 +66,7 @@
         const App = () => {
             const [allData, setAllData] = useState([]);
             const [notesData, setNotesData] = useState([]);
+            const [articulosMap, setArticulosMap] = useState(new Map()); // NUEVO: Mapa de artículos para descripciones cortas
             const [filteredData, setFilteredData] = useState([]);
             const [isLoading, setIsLoading] = useState(true);
             const [isSaving, setIsSaving] = useState(false);
@@ -75,7 +76,7 @@
 
             const [modalState, setModalState] = useState({ isOpen: false, type: null, title: '', message: '', onConfirm: null });
             const [observationModal, setObservationModal] = useState({ isOpen: false, text: '' });
-            const [reprintModal, setReprintModal] = useState({ isOpen: false, pdfUrl: null, palletId: null }); // NUEVO: Estado para modal de reimpresión
+            const [reprintModal, setReprintModal] = useState({ isOpen: false, pdfUrl: null, palletId: null });
             const [showHelpModal, setShowHelpModal] = useState(false);
             const [activeActionMenu, setActiveActionMenu] = useState(null);
             const [activeClientMenu, setActiveClientMenu] = useState({rowId: null, client: null});
@@ -251,17 +252,35 @@
 
                 const initializeApp = async () => {
                     loaderStatus.textContent = "Verificando acceso...";
-                    loaderProgress.style.width = '25%';
+                    loaderProgress.style.width = '20%';
                     const token = await getApiToken('cls.txt');
                     setApiToken(token); 
 
                     loaderStatus.textContent = "Cargando lista de clientes...";
-                    loaderProgress.style.width = '50%';
+                    loaderProgress.style.width = '40%';
                     try {
                         const clientResponse = await fetch('clientes.txt?t=' + new Date().getTime());
                         const clientText = await clientResponse.text();
                         setClientList(clientText.split('\n').map(c => c.trim().toUpperCase()).filter(Boolean));
                     } catch (e) { console.error("No se pudo cargar la lista de clientes."); }
+                    
+                    // NUEVO: Cargar artículos para tener la descripción corta
+                    loaderStatus.textContent = "Cargando descripciones de artículos...";
+                    loaderProgress.style.width = '60%';
+                    try {
+                        const articulosResponse = await fetch('articulos.csv?t=' + new Date().getTime());
+                        const articulosText = await articulosResponse.text();
+                        const newArticulosMap = new Map();
+                        articulosText.split('\n').slice(1).forEach(row => {
+                            const [tipo, sku, descLarga, descCorta] = row.split(';');
+                            if (sku && descCorta) {
+                                newArticulosMap.set(sku.trim(), descCorta.trim());
+                            }
+                        });
+                        setArticulosMap(newArticulosMap);
+                    } catch (e) {
+                        console.error("No se pudo cargar la lista de artículos.");
+                    }
                 };
                 
                 initializeApp();
@@ -275,7 +294,7 @@
 
                     const loadInitialData = async () => {
                         if (loaderStatus) loaderStatus.textContent = "Cargando histórico y notas...";
-                        if (loaderProgress) loaderProgress.style.width = '75%';
+                        if (loaderProgress) loaderProgress.style.width = '80%';
                         
                         await loadData();
                         
@@ -505,7 +524,7 @@
                 setIsExportOpen(false);
             };
             
-            // --- LÓGICA DE REIMPRESIÓN ---
+            // --- LÓGICA DE REIMPRESIÓN (CORREGIDA) ---
             const drawLabelOnDoc = async (doc, data) => {
                 const pageW = 210; const margin = 8; const contentW = pageW - (margin * 2); let currentY = margin;
                 doc.setFontSize(24); doc.setFont("helvetica", "bold"); doc.text("MOLDERIL S.A.", pageW / 2, currentY + 8, { align: "center" });
@@ -516,7 +535,13 @@
                 currentY += (descLines.length * 28) + 10;
                 doc.line(margin, currentY, pageW - margin, currentY); currentY += 2;
                 doc.setFontSize(20); doc.setFont("helvetica", "bold"); doc.text(`SKU: ${data.sku}`, margin, currentY + 12);
-                const lotesProdString = data.lotes.join(' / ');
+                
+                // CORREGIDO: Añadir asterisco a los lotes si hay nota
+                let lotesProdString = data.lotes.join(' / ');
+                if (data.hasNote) {
+                    lotesProdString += ' (*)';
+                }
+
                 if(lotesProdString) { doc.setFontSize(18); doc.setFont("helvetica", "normal"); doc.text(`Lotes: ${lotesProdString}`, pageW - margin, currentY + 12, { align: "right" }); }
                 currentY += 18; doc.line(margin, currentY, pageW - margin, currentY); currentY += 8;
                 const formatNumberES = (numStr) => { if (!numStr) return ''; const [integerPart, decimalPart] = numStr.split(','); const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, "."); return decimalPart !== undefined ? `${formattedInteger},${decimalPart}` : formattedInteger; };
@@ -541,17 +566,22 @@
 
             const handleReprint = async (item) => {
                 const cantidadParaQR = item.cantidad.replace(',', '.');
+                // La descripción en el QR sigue siendo la larga (la que está en el CSV)
                 const qrString = [ item.sku, item.descripcion, item.numeroDePallet, item.lotesProduccion, item.fechaProduccion, cantidadParaQR, item.unidadMedida ].join(';');
                 
+                // CORREGIDO: Usar descripción corta del mapa de artículos, con fallback a la del item
+                const descripcionCorta = articulosMap.get(item.sku) || item.descripcion;
+
                 const data = {
                     sku: item.sku,
-                    descripcion: item.descripcion,
+                    descripcion: descripcionCorta,
                     lotes: item.lotesProduccion.split('#').filter(Boolean),
                     cantidad: item.cantidad,
                     uom: item.unidadMedida,
                     fechaProd: item.fechaProduccion,
                     palletId: item.numeroDePallet,
-                    qrString: qrString
+                    qrString: qrString,
+                    hasNote: item.hasNote // Pasar el indicador de nota
                 };
 
                 const doc = new jsPDF('p', 'mm', 'a4');
