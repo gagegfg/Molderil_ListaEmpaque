@@ -8,6 +8,7 @@
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -36,7 +37,7 @@
         const GITHUB_USER = 'gagegfg';
         const GITHUB_REPO = 'Molderil_ListaEmpaque';
         const CSV_PATH_LOTES = 'detallelotes.csv';
-        const CSV_PATH_NOTAS = 'notasskulote.csv'; // NUEVO: Ruta para las notas
+        const CSV_PATH_NOTAS = 'notasskulote.csv';
         const AUTH_TIMEOUT = 5 * 60 * 1000; // 5 minutos en milisegundos
 
         const useLocalStorage = (key, initialValue) => {
@@ -64,7 +65,7 @@
         
         const App = () => {
             const [allData, setAllData] = useState([]);
-            const [notesData, setNotesData] = useState([]); // NUEVO: Estado para las notas
+            const [notesData, setNotesData] = useState([]);
             const [filteredData, setFilteredData] = useState([]);
             const [isLoading, setIsLoading] = useState(true);
             const [isSaving, setIsSaving] = useState(false);
@@ -73,7 +74,8 @@
             const [authTimestamp, setAuthTimestamp] = useState(null);
 
             const [modalState, setModalState] = useState({ isOpen: false, type: null, title: '', message: '', onConfirm: null });
-            const [observationModal, setObservationModal] = useState({ isOpen: false, text: '' }); // NUEVO: Estado para modal de observación
+            const [observationModal, setObservationModal] = useState({ isOpen: false, text: '' });
+            const [reprintModal, setReprintModal] = useState({ isOpen: false, pdfUrl: null, palletId: null }); // NUEVO: Estado para modal de reimpresión
             const [showHelpModal, setShowHelpModal] = useState(false);
             const [activeActionMenu, setActiveActionMenu] = useState(null);
             const [activeClientMenu, setActiveClientMenu] = useState({rowId: null, client: null});
@@ -106,30 +108,25 @@
                 }
             };
 
-            // --- FUNCIÓN GENÉRICA PARA CARGAR ARCHIVOS CSV DESDE GITHUB ---
             const fetchCsvFromGithub = useCallback(async (path) => {
                 const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}?t=${new Date().getTime()}`;
                 try {
                     const headers = apiToken ? { 'Authorization': `token ${apiToken}` } : {};
                     const response = await fetch(url, { headers, cache: 'no-store' });
-
                     if (response.status === 404) {
                         console.log(`El archivo ${path} no existe. Se devolverá un array vacío.`);
-                        return []; // Devuelve vacío si no existe
+                        return [];
                     }
                     if (!response.ok) throw new Error(`No se pudo cargar ${path} (Estado: ${response.status})`);
-
                     const fileData = await response.json();
                     return atob(fileData.content).split('\n').filter(Boolean);
                 } catch (error) {
                     console.error(`Error cargando ${path}:`, error);
                     alert(`Error al cargar datos desde GitHub: ${error.message}`);
-                    return []; // Devuelve vacío en caso de error
+                    return [];
                 }
             }, [apiToken]);
 
-
-            // --- FUNCIÓN DE CARGA DE DATOS PRINCIPAL ---
             const loadData = useCallback(async () => {
                 setIsLoading(true);
                 const [lotesRows, notasRows] = await Promise.all([
@@ -137,7 +134,6 @@
                     fetchCsvFromGithub(CSV_PATH_NOTAS)
                 ]);
 
-                // Procesar notas y crear un mapa para búsqueda rápida
                 const notesMap = new Map();
                 const parsedNotes = notasRows.map(row => {
                     const [sku, numeroDePallet, observacion] = row.split(';');
@@ -147,7 +143,6 @@
                 });
                 setNotesData(parsedNotes);
 
-                // Procesar lotes y añadir información de las notas
                 const parsedLotes = lotesRows.map((row, index) => {
                     const [sku, descripcion, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida, despachado, cliente] = row.split(';');
                     const noteKey = `${sku};${numeroDePallet}`;
@@ -160,7 +155,6 @@
                 setIsLoading(false);
             }, [fetchCsvFromGithub]);
             
-            // --- FUNCIÓN GENÉRICA PARA GUARDAR ARCHIVOS CSV EN GITHUB ---
             const saveCsvToGithub = async (path, dataToSave, formatRow) => {
                 if (!apiToken) {
                     alert("Error: El token de API no está disponible.");
@@ -171,7 +165,6 @@
                 const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}`;
 
                 try {
-                    // Obtener SHA del archivo actual
                     const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${apiToken}` } });
                     let currentSha = null;
                     if (fileResponse.ok) {
@@ -181,14 +174,13 @@
                         throw new Error(`Error ${fileResponse.status}: No se pudo obtener info del archivo ${path}.`);
                     }
 
-                    // Crear o actualizar el archivo
                     const updateResponse = await fetch(url, {
                         method: 'PUT',
                         headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             message: `Actualización de ${path} desde grilla web`,
                             content: btoa(unescape(encodeURIComponent(csvContent))),
-                            sha: currentSha, // Si es null, se crea un nuevo archivo
+                            sha: currentSha,
                         }),
                     });
 
@@ -200,7 +192,6 @@
                 }
             };
 
-            // --- FUNCIÓN DE GUARDADO PRINCIPAL (MODIFICADA PARA GUARDAR AMBOS ARCHIVOS) ---
             const saveData = async (updatedLotes, updatedNotes) => {
                 setIsSaving(true);
                 
@@ -217,7 +208,7 @@
                 setIsSaving(false);
                 if (lotesSuccess && notesSuccess) {
                     alert("¡Histórico y notas guardados correctamente en GitHub!");
-                    await loadData(); // Recargar todo
+                    await loadData();
                 } else {
                     alert("Ocurrió un error al guardar uno o más archivos.");
                 }
@@ -253,7 +244,6 @@
                 }
             };
             
-            // --- EFECTO DE INICIALIZACIÓN DE LA APP ---
             useEffect(() => {
                 const staticLoader = document.getElementById('static-loader');
                 const loaderStatus = document.getElementById('loader-status');
@@ -277,7 +267,6 @@
                 initializeApp();
             }, []);
 
-            // --- EFECTO PARA CARGAR DATOS Y ESTABLECER FECHAS INICIALES ---
             useEffect(() => {
                 if(apiToken) {
                     const loaderStatus = document.getElementById('loader-status');
@@ -290,15 +279,11 @@
                         
                         await loadData();
                         
-                        // NUEVO: Establecer fechas por defecto si no existen en localStorage
                         if (!fechaDesde && !fechaHasta) {
                             const today = new Date();
                             const firstDayOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-                            
-                            // Formato YYYY-MM-DD para el input type="date"
                             const todayISO = today.toISOString().split('T')[0];
                             const lastMonthISO = firstDayOfLastMonth.toISOString().split('T')[0];
-                            
                             setFechaHasta(todayISO);
                             setFechaDesde(lastMonthISO);
                         }
@@ -317,7 +302,6 @@
                 }
             }, [apiToken, loadData]);
 
-            // --- EFECTO PARA FILTRAR DATOS ---
             useEffect(() => {
                 let data = [...allData];
                 Object.keys(columnFilters).forEach(key => {
@@ -328,7 +312,6 @@
                                 const despachadoText = (item.despachado && item.despachado.toUpperCase() === 'TRUE') ? 'sí' : 'no';
                                 return despachadoText.includes(filterValue);
                             }
-                            // MODIFICADO: para buscar también en el pallet con asterisco
                              if (key === 'numeroDePallet' && item.hasNote) {
                                 const palletWithAsterisk = `${item.numeroDePallet} (*)`
                                 return palletWithAsterisk.toLowerCase().includes(filterValue) || (item[key] && item[key].toString().toLowerCase().includes(filterValue));
@@ -341,10 +324,8 @@
                 if (fechaDesde || fechaHasta) {
                     const desde = fechaDesde ? new Date(fechaDesde) : null;
                     const hasta = fechaHasta ? new Date(fechaHasta) : null;
-
                     if(desde) desde.setMinutes(desde.getMinutes() + desde.getTimezoneOffset());
                     if(hasta) hasta.setMinutes(hasta.getMinutes() + hasta.getTimezoneOffset());
-
                     data = data.filter(item => {
                         if (!item.fechaProduccion) return false;
                         const [day, month, year] = item.fechaProduccion.split('/');
@@ -355,11 +336,9 @@
                         return itemEsDespuesDeDesde && itemEsAntesDeHasta;
                     });
                 }
-
                 setFilteredData(data);
             }, [columnFilters, fechaDesde, fechaHasta, allData]);
             
-            // --- EFECTO PARA CERRAR MENÚS AL HACER CLIC FUERA ---
             useEffect(() => {
                 const handleClickOutside = (event) => {
                     if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) setIsExportOpen(false);
@@ -377,7 +356,6 @@
                 setFechaHasta('');
             };
 
-            // --- FUNCIÓN DE ELIMINACIÓN (MODIFICADA) ---
             const handleDeleteRow = (rowId) => {
                 setModalState({ 
                     isOpen: true, 
@@ -389,21 +367,18 @@
                         executeActionWithAuth(() => {
                             const itemToDelete = allData.find(item => item.id === rowId);
                             const newLotesData = allData.filter(item => item.id !== rowId);
-                            
                             let newNotesData = [...notesData];
                             if (itemToDelete && itemToDelete.hasNote) {
                                 newNotesData = notesData.filter(note => 
                                     !(note.sku === itemToDelete.sku && note.numeroDePallet === itemToDelete.numeroDePallet)
                                 );
                             }
-                            
                             saveData(newLotesData, newNotesData);
                         });
                     }
                 });
             };
             
-            // --- GESTIÓN DE CLIENTES (SIN CAMBIOS) ---
             const handleAddClient = (rowId) => {
                  setModalState({
                     isOpen: true,
@@ -429,7 +404,7 @@
                                 }
                                 return item;
                             });
-                            saveData(newData, notesData); // Guardar solo lotes
+                            saveData(newData, notesData);
                         });
                     }
                 });
@@ -491,15 +466,12 @@
                 });
             };
 
-            // --- FUNCIONES DE EXPORTACIÓN (SIN CAMBIOS) ---
             const exportToPDF = () => {
                 const doc = new jsPDF({ orientation: 'landscape' });
                 doc.setFontSize(18);
                 doc.text("Histórico de Lotes Generados", 14, 16);
-                
                 const tableColumn = ["SKU", "Descripción", "Nº Pallet", "Lotes Prod.", "Despachado", "Cliente", "F. Prod.", "Cantidad", "U.M."];
                 const tableRows = [];
-
                 filteredData.forEach(item => {
                     const despachadoText = (item.despachado && item.despachado.toUpperCase() === 'TRUE') ? 'Sí' : 'No';
                     const palletText = item.hasNote ? `${item.numeroDePallet} (*)` : item.numeroDePallet;
@@ -509,7 +481,6 @@
                     ];
                     tableRows.push(rowData);
                 });
-
                 doc.autoTable({ head: [tableColumn], body: tableRows, startY: 22, theme: 'grid', headStyles: { fillColor: [22, 160, 133] } });
                 doc.save("historico_lotes.pdf");
                 setIsExportOpen(false);
@@ -534,6 +505,61 @@
                 setIsExportOpen(false);
             };
             
+            // --- LÓGICA DE REIMPRESIÓN ---
+            const drawLabelOnDoc = async (doc, data) => {
+                const pageW = 210; const margin = 8; const contentW = pageW - (margin * 2); let currentY = margin;
+                doc.setFontSize(24); doc.setFont("helvetica", "bold"); doc.text("MOLDERIL S.A.", pageW / 2, currentY + 8, { align: "center" });
+                currentY += 15; doc.line(margin, currentY, pageW - margin, currentY); currentY += 10;
+                doc.setFontSize(84); doc.setFont("helvetica", "bold");
+                const descLines = doc.splitTextToSize(data.descripcion, contentW);
+                doc.text(descLines, pageW / 2, currentY + 28, { align: "center", lineHeightFactor: 1 });
+                currentY += (descLines.length * 28) + 10;
+                doc.line(margin, currentY, pageW - margin, currentY); currentY += 2;
+                doc.setFontSize(20); doc.setFont("helvetica", "bold"); doc.text(`SKU: ${data.sku}`, margin, currentY + 12);
+                const lotesProdString = data.lotes.join(' / ');
+                if(lotesProdString) { doc.setFontSize(18); doc.setFont("helvetica", "normal"); doc.text(`Lotes: ${lotesProdString}`, pageW - margin, currentY + 12, { align: "right" }); }
+                currentY += 18; doc.line(margin, currentY, pageW - margin, currentY); currentY += 8;
+                const formatNumberES = (numStr) => { if (!numStr) return ''; const [integerPart, decimalPart] = numStr.split(','); const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, "."); return decimalPart !== undefined ? `${formattedInteger},${decimalPart}` : formattedInteger; };
+                const formattedCantidad = formatNumberES(data.cantidad);
+                const uomText = data.uom === 'Unidad' ? 'Unidades' : 'Millares';
+                const cantidadString = `${formattedCantidad} ${uomText}`;
+                doc.setFont("helvetica", "bold"); doc.setFontSize(44);
+                const cantidadWidth = doc.getStringUnitWidth(cantidadString) * doc.getFontSize() / doc.internal.scaleFactor;
+                const cantidadX = (pageW - cantidadWidth) / 2;
+                doc.text(cantidadString, cantidadX, currentY + 12); currentY += 20;
+                const qrSize = 90; const qrX = (pageW - qrSize) / 2; const qrY = currentY;
+                const qrImageData = await QRCode.toDataURL(data.qrString, { width: 400, margin: 2, errorCorrectionLevel: 'M' });
+                doc.addImage(qrImageData, 'PNG', qrX, qrY, qrSize, qrSize); currentY += qrSize + 5;
+                doc.line(margin, currentY, pageW - margin, currentY); currentY += 5;
+                doc.setFontSize(22); doc.setFont("helvetica", "bold"); doc.text("Nº de Pallet", margin, currentY + 10); doc.text("Fabricación", pageW - margin, currentY + 10, { align: "right" });
+                doc.setFontSize(36); doc.text(String(data.palletId), margin, currentY + 22);
+                doc.setFontSize(22);
+                const [day, month, year] = data.fechaProd.split('/');
+                const date = new Date(year, month - 1, day);
+                doc.text(date.toLocaleDateString('es-ES'), pageW - margin, currentY + 22, { align: "right" });
+            };
+
+            const handleReprint = async (item) => {
+                const cantidadParaQR = item.cantidad.replace(',', '.');
+                const qrString = [ item.sku, item.descripcion, item.numeroDePallet, item.lotesProduccion, item.fechaProduccion, cantidadParaQR, item.unidadMedida ].join(';');
+                
+                const data = {
+                    sku: item.sku,
+                    descripcion: item.descripcion,
+                    lotes: item.lotesProduccion.split('#').filter(Boolean),
+                    cantidad: item.cantidad,
+                    uom: item.unidadMedida,
+                    fechaProd: item.fechaProduccion,
+                    palletId: item.numeroDePallet,
+                    qrString: qrString
+                };
+
+                const doc = new jsPDF('p', 'mm', 'a4');
+                await drawLabelOnDoc(doc, data);
+                const pdfDataUrl = doc.output('datauristring');
+                setReprintModal({ isOpen: true, pdfUrl: pdfDataUrl, palletId: item.numeroDePallet });
+            };
+
             // --- COMPONENTES DE MODALES ---
             const ActionModal = ({ isOpen, type, title, message, onConfirm, onClose, suggestions }) => {
                 if (!isOpen) return null;
@@ -541,22 +567,14 @@
                 const [showSuggestions, setShowSuggestions] = useState(false);
                 const inputRef = useRef(null);
                 const modalContentRef = useRef(null);
-
+                useEffect(() => { if (isOpen) setTimeout(() => inputRef.current?.focus(), 100); }, [isOpen]);
                 useEffect(() => {
-                    if (isOpen) setTimeout(() => inputRef.current?.focus(), 100);
-                }, [isOpen]);
-
-                useEffect(() => {
-                    const handleClickOutside = (e) => {
-                        if (modalContentRef.current && !modalContentRef.current.contains(e.target)) setShowSuggestions(false);
-                    };
+                    const handleClickOutside = (e) => { if (modalContentRef.current && !modalContentRef.current.contains(e.target)) setShowSuggestions(false); };
                     document.addEventListener('mousedown', handleClickOutside);
                     return () => document.removeEventListener('mousedown', handleClickOutside);
                 }, []);
-
                 const handleConfirm = () => onConfirm(inputValue);
                 const filteredSuggestions = suggestions ? suggestions.filter(s => s.toLowerCase().includes(inputValue.toLowerCase())) : [];
-
                 return (
                     <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
                         <div ref={modalContentRef} className="bg-white p-6 rounded-xl shadow-lg w-full max-w-sm">
@@ -564,17 +582,10 @@
                             <p className="text-sm text-gray-600 mb-4">{message}</p>
                             {type !== 'confirm' && (
                                 <div className="relative">
-                                    <input
-                                        ref={inputRef} type={type === 'password' ? 'password' : 'text'} value={inputValue}
-                                        onChange={e => { setInputValue(e.target.value); if (type === 'textInputWithSuggestions') setShowSuggestions(true); }}
-                                        onKeyDown={e => e.key === 'Enter' && handleConfirm()}
-                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" autoComplete="off"
-                                    />
+                                    <input ref={inputRef} type={type === 'password' ? 'password' : 'text'} value={inputValue} onChange={e => { setInputValue(e.target.value); if (type === 'textInputWithSuggestions') setShowSuggestions(true); }} onKeyDown={e => e.key === 'Enter' && handleConfirm()} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" autoComplete="off" />
                                     {type === 'textInputWithSuggestions' && showSuggestions && filteredSuggestions.length > 0 && (
                                         <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">
-                                            {filteredSuggestions.map(client => (
-                                                <li key={client} className="p-2 hover:bg-indigo-100 cursor-pointer" onClick={() => { setInputValue(client); setShowSuggestions(false); }}>{client}</li>
-                                            ))}
+                                            {filteredSuggestions.map(client => ( <li key={client} className="p-2 hover:bg-indigo-100 cursor-pointer" onClick={() => { setInputValue(client); setShowSuggestions(false); }}>{client}</li> ))}
                                         </ul>
                                     )}
                                 </div>
@@ -588,7 +599,6 @@
                 );
             };
 
-            // NUEVO: Modal para mostrar observaciones
             const ObservationModal = ({ isOpen, text, onClose }) => {
                 if (!isOpen) return null;
                 return (
@@ -596,8 +606,31 @@
                         <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-md">
                             <h3 className="text-lg font-bold text-gray-800 mb-4">Observación del Lote</h3>
                             <p className="text-base text-gray-700 mb-6 whitespace-pre-wrap">{text}</p>
-                            <div className="flex justify-end">
-                                <button onClick={onClose} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Cerrar</button>
+                            <div className="flex justify-end"><button onClick={onClose} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Cerrar</button></div>
+                        </div>
+                    </div>
+                );
+            };
+
+            const ReprintModal = ({ isOpen, pdfUrl, palletId, onClose }) => {
+                if (!isOpen) return null;
+                const iframeRef = useRef(null);
+                const handlePrint = () => {
+                    const iframe = iframeRef.current;
+                    if (iframe) {
+                        iframe.contentWindow.print();
+                    }
+                };
+                return (
+                    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-2xl h-5/6 flex flex-col">
+                            <h3 className="text-lg font-bold text-gray-800 mb-4">Reimprimir Etiqueta - Pallet Nº {palletId}</h3>
+                            <div className="flex-grow border rounded-lg overflow-hidden">
+                                <iframe ref={iframeRef} src={pdfUrl} className="w-full h-full" title={`Etiqueta Pallet ${palletId}`}></iframe>
+                            </div>
+                            <div className="flex justify-end space-x-3 mt-6">
+                                <button onClick={onClose} className="bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300">Cancelar</button>
+                                <button onClick={handlePrint} className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 flex items-center"><i className="fas fa-print mr-2"></i>Imprimir</button>
                             </div>
                         </div>
                     </div>
@@ -615,6 +648,7 @@
                     )}
                     <ActionModal isOpen={modalState.isOpen} type={modalState.type} title={modalState.title} message={modalState.message} onClose={() => setModalState({ isOpen: false })} onConfirm={modalState.onConfirm} suggestions={clientList}/>
                     <ObservationModal isOpen={observationModal.isOpen} text={observationModal.text} onClose={() => setObservationModal({ isOpen: false, text: '' })} />
+                    <ReprintModal isOpen={reprintModal.isOpen} pdfUrl={reprintModal.pdfUrl} palletId={reprintModal.palletId} onClose={() => setReprintModal({ isOpen: false, pdfUrl: null, palletId: null })} />
                     {showHelpModal && <HelpModal onClose={() => setShowHelpModal(false)} />}
                     
                     <div className="bg-white p-6 rounded-2xl shadow-xl">
@@ -624,10 +658,7 @@
                                 <button onClick={() => setShowHelpModal(true)} title="Ayuda" className="text-gray-400 hover:text-indigo-600 transition-colors"><i className="fas fa-question-circle text-2xl"></i></button>
                             </div>
                             <div className="flex items-center space-x-3 mt-4 sm:mt-0">
-                                {/* NUEVO: Botón para generar QR */}
-                                <a href="generarqr.html" className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 transition-colors shadow-sm flex items-center">
-                                    <i className="fas fa-plus mr-2"></i>Generar Nuevo
-                                </a>
+                                <a href="generarqr.html" className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 transition-colors shadow-sm flex items-center"><i className="fas fa-plus mr-2"></i>Generar Nuevo</a>
                                 <a href="index.html" className="bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">Volver al Menú</a>
                             </div>
                         </div>
@@ -643,9 +674,7 @@
                                     <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm p-2 border"/>
                                 </div>
                                 <div className="flex items-end">
-                                    <button onClick={clearFilters} className="w-full bg-white text-gray-700 border border-gray-300 font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-gray-50 flex items-center justify-center">
-                                        <i className="fas fa-times-circle mr-2"></i>Limpiar Filtros
-                                    </button>
+                                    <button onClick={clearFilters} className="w-full bg-white text-gray-700 border border-gray-300 font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-gray-50 flex items-center justify-center"><i className="fas fa-times-circle mr-2"></i>Limpiar Filtros</button>
                                 </div>
                             </div>
                         </div>
@@ -653,13 +682,9 @@
                         <div className="flex flex-col sm:flex-row justify-between items-center mb-4">
                             <p className="text-gray-600 font-semibold">{filteredData.length} registro(s) encontrado(s)</p>
                             <div className="flex space-x-2 mt-4 sm:mt-0">
-                                <button onClick={loadData} disabled={isLoading || isSaving} className="bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-gray-700 disabled:opacity-50 flex items-center">
-                                    <i className={`fas fa-sync-alt ${isLoading ? 'animate-spin' : ''} mr-2`}></i>Refrescar
-                                </button>
+                                <button onClick={loadData} disabled={isLoading || isSaving} className="bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-gray-700 disabled:opacity-50 flex items-center"><i className={`fas fa-sync-alt ${isLoading ? 'animate-spin' : ''} mr-2`}></i>Refrescar</button>
                                 <div className="relative" ref={exportMenuRef}>
-                                    <button onClick={() => setIsExportOpen(prev => !prev)} disabled={filteredData.length === 0} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-blue-700 disabled:opacity-50 flex items-center">
-                                        <i className="fas fa-download mr-2"></i>Exportar<i className={`fas fa-chevron-down ml-2 transition-transform ${isExportOpen ? 'rotate-180' : ''}`}></i>
-                                    </button>
+                                    <button onClick={() => setIsExportOpen(prev => !prev)} disabled={filteredData.length === 0} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-blue-700 disabled:opacity-50 flex items-center"><i className="fas fa-download mr-2"></i>Exportar<i className={`fas fa-chevron-down ml-2 transition-transform ${isExportOpen ? 'rotate-180' : ''}`}></i></button>
                                     {isExportOpen && (
                                         <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border z-20">
                                             <ul className="text-gray-700">
@@ -674,7 +699,6 @@
 
                         <div className="overflow-x-auto rounded-lg shadow-md border" style={{ maxHeight: '60vh' }}>
                             <table className="min-w-full divide-y divide-gray-200">
-                                {/* CABECERA FIJA (STICKY) */}
                                 <thead className="bg-gray-800 text-white sticky top-0 z-10">
                                     <tr>
                                         {["SKU", "Descripción", "Nº Pallet", "Lotes Prod.", "Despachado", "Cliente", "F. Prod.", "Cantidad", "U.M.", "Acciones"].map(header => (
@@ -698,16 +722,8 @@
                                         filteredData.length > 0 ? filteredData.map((item) => {
                                             const isDespachado = item.despachado && item.despachado.toUpperCase() === 'TRUE';
                                             const clients = item.cliente ? item.cliente.split('#').filter(Boolean) : [];
-                                            // NUEVO: Lógica para doble clic y estilo condicional
-                                            const handleRowDoubleClick = () => {
-                                                if (item.hasNote) {
-                                                    setObservationModal({ isOpen: true, text: item.noteText });
-                                                }
-                                            };
-                                            const rowClassName = item.hasNote 
-                                                ? 'bg-yellow-50 hover:bg-yellow-100 cursor-pointer' 
-                                                : 'hover:bg-gray-50';
-
+                                            const handleRowDoubleClick = () => { if (item.hasNote) { setObservationModal({ isOpen: true, text: item.noteText }); } };
+                                            const rowClassName = item.hasNote ? 'bg-yellow-50 hover:bg-yellow-100 cursor-pointer' : 'hover:bg-gray-50';
                                             return (
                                             <tr key={item.id} className={rowClassName} onDoubleClick={handleRowDoubleClick}>
                                                 <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">{item.sku}</td>
@@ -750,6 +766,7 @@
                                                         {activeActionMenu === item.id && (
                                                             <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border z-30">
                                                                 <ul className="text-gray-700 text-left">
+                                                                    <li><button onClick={() => { handleReprint(item); setActiveActionMenu(null); }} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-print w-6 mr-2 text-blue-500"></i>Reimprimir Etiqueta</button></li>
                                                                     <li><button onClick={() => { handleAddClient(item.id); setActiveActionMenu(null); }} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-user-plus w-6 mr-2 text-green-500"></i>Añadir Cliente</button></li>
                                                                     <li><hr className="my-1"/></li>
                                                                     <li><button onClick={() => { handleDeleteRow(item.id); setActiveActionMenu(null); }} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-trash-alt w-6 mr-2 text-red-500"></i>Eliminar Fila</button></li>
