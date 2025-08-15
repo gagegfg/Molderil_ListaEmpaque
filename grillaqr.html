@@ -1,6 +1,5 @@
 <!DOCTYPE html>
-<html <html lang="es">
-    lang="es">
+<html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -52,7 +51,8 @@
         const GITHUB_REPO = 'Molderil_ListaEmpaque';
         const CSV_PATH_LOTES = 'detallelotes.csv';
         const CSV_PATH_NOTAS = 'notasskulote.csv';
-        const AUTH_TIMEOUT = 5 * 60 * 1000; // 5 minutos en milisegundos
+        const CSV_PATH_ALMACENADOS = 'nropalletalmacenado.csv'; // NUEVO ARCHIVO
+        const AUTH_TIMEOUT = 5 * 60 * 1000;
 
         const useLocalStorage = (key, initialValue) => {
             const [storedValue, setStoredValue] = useState(() => {
@@ -80,6 +80,7 @@
         const App = () => {
             const [allData, setAllData] = useState([]);
             const [notesData, setNotesData] = useState([]);
+            const [almacenadosData, setAlmacenadosData] = useState(new Set());
             const [articulosMap, setArticulosMap] = useState(new Map());
             const [filteredData, setFilteredData] = useState([]);
             const [isLoading, setIsLoading] = useState(true);
@@ -97,11 +98,12 @@
             const actionMenuRef = useRef(null);
             const clientMenuRef = useRef(null);
             
-            const [columnFilters, setColumnFilters] = useLocalStorage('grillaqr_columnFilters_v3', {
+            const [columnFilters, setColumnFilters] = useLocalStorage('grillaqr_columnFilters_v4', { // Versionado para evitar conflictos de cache
                 sku: '',
                 descripcion: '',
                 numeroDePallet: '',
                 lotesProduccion: '',
+                enDeposito: '', // NUEVO FILTRO
                 despachado: '',
                 cliente: ''
             });
@@ -111,9 +113,8 @@
             const [isExportOpen, setIsExportOpen] = useState(false);
             const exportMenuRef = useRef(null);
             
-            // --- INICIO: LÓGICA PARA PULSACIÓN LARGA ---
             const longPressTimer = useRef(null);
-            const touchDuration = 500; // 500ms para considerar una pulsación larga
+            const touchDuration = 500;
 
             const handlePressStart = (callback) => {
                 longPressTimer.current = setTimeout(() => {
@@ -124,7 +125,6 @@
             const handlePressEnd = () => {
                 clearTimeout(longPressTimer.current);
             };
-            // --- FIN: LÓGICA PARA PULSACIÓN LARGA ---
 
             const getApiToken = async (file) => {
                 try {
@@ -159,10 +159,14 @@
 
             const loadData = useCallback(async () => {
                 setIsLoading(true);
-                const [lotesRows, notasRows] = await Promise.all([
+                const [lotesRows, notasRows, almacenadosRows] = await Promise.all([
                     fetchCsvFromGithub(CSV_PATH_LOTES),
-                    fetchCsvFromGithub(CSV_PATH_NOTAS)
+                    fetchCsvFromGithub(CSV_PATH_NOTAS),
+                    fetchCsvFromGithub(CSV_PATH_ALMACENADOS)
                 ]);
+
+                const almacenadosSet = new Set(almacenadosRows);
+                setAlmacenadosData(almacenadosSet);
 
                 const notesMap = new Map();
                 const parsedNotes = notasRows.map(row => {
@@ -176,67 +180,80 @@
                 const parsedLotes = lotesRows.map((row, index) => {
                     const [sku, descripcion, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida, despachado, cliente] = row.split(';');
                     const noteKey = `${sku};${numeroDePallet}`;
+                    const almacenadoKey = `${sku};${numeroDePallet}`;
                     const hasNote = notesMap.has(noteKey);
                     const noteText = hasNote ? notesMap.get(noteKey) : '';
-                    return { id: index, sku, descripcion, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida, despachado, cliente, hasNote, noteText };
+                    const enDeposito = almacenadosSet.has(almacenadoKey) ? "Logística Dep. 02" : "Producción Dep. 05";
+                    return { id: index, sku, descripcion, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida, despachado, cliente, hasNote, noteText, enDeposito };
                 });
                 
                 setAllData(parsedLotes);
                 setIsLoading(false);
             }, [fetchCsvFromGithub]);
             
-            const saveCsvToGithub = async (path, dataToSave, formatRow) => {
+            const saveCsvToGithub = async (path, content, message, isAppend = false) => {
                 if (!apiToken) {
                     alert("Error: El token de API no está disponible.");
-                    return false;
+                    return { success: false, message: "Token no disponible." };
                 }
-                
-                const csvContent = dataToSave.map(formatRow).join('\n');
-                const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}`;
 
+                const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}`;
+                
                 try {
                     const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${apiToken}` } });
                     let currentSha = null;
+                    let currentContent = '';
+
                     if (fileResponse.ok) {
                         const fileData = await fileResponse.json();
                         currentSha = fileData.sha;
+                        if (isAppend) {
+                            currentContent = atob(fileData.content);
+                        }
                     } else if (fileResponse.status !== 404) {
                         throw new Error(`Error ${fileResponse.status}: No se pudo obtener info del archivo ${path}.`);
                     }
 
+                    const finalContent = isAppend ? `${currentContent.trim()}\n${content.trim()}`.trim() : content;
+                    
                     const updateResponse = await fetch(url, {
                         method: 'PUT',
                         headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            message: `Actualización de ${path} desde grilla web`,
-                            content: btoa(unescape(encodeURIComponent(csvContent))),
+                            message: message,
+                            content: btoa(unescape(encodeURIComponent(finalContent))),
                             sha: currentSha,
                         }),
                     });
 
-                    if (!updateResponse.ok) throw new Error(`Error ${updateResponse.status}: Falló la actualización de ${path}.`);
-                    return true;
+                    if (!updateResponse.ok) {
+                        const errorData = await updateResponse.json();
+                        throw new Error(`Error ${updateResponse.status}: ${errorData.message}`);
+                    }
+                    return { success: true };
                 } catch (e) {
                     alert(`ERROR al guardar ${path} en GitHub: ${e.message}`);
-                    return false;
+                    return { success: false, message: e.message };
                 }
             };
 
             const saveData = async (updatedLotes, updatedNotes) => {
                 setIsSaving(true);
                 
-                const lotesPromise = saveCsvToGithub(CSV_PATH_LOTES, updatedLotes, item => 
+                const lotesContent = updatedLotes.map(item => 
                     [item.sku, item.descripcion, item.numeroDePallet, item.lotesProduccion, item.fechaProduccion, item.cantidad, item.unidadMedida, item.despachado || 'FALSE', item.cliente || ''].join(';')
-                );
+                ).join('\n');
+                const lotesPromise = saveCsvToGithub(CSV_PATH_LOTES, lotesContent, `Actualización de ${CSV_PATH_LOTES}`);
 
-                const notesPromise = saveCsvToGithub(CSV_PATH_NOTAS, updatedNotes, item => 
+                const notesContent = updatedNotes.map(item => 
                     [item.sku, item.numeroDePallet, item.observacion].join(';')
-                );
+                ).join('\n');
+                const notesPromise = saveCsvToGithub(CSV_PATH_NOTAS, notesContent, `Actualización de ${CSV_PATH_NOTAS}`);
 
-                const [lotesSuccess, notesSuccess] = await Promise.all([lotesPromise, notesPromise]);
+                const [lotesResult, notesResult] = await Promise.all([lotesPromise, notesPromise]);
 
                 setIsSaving(false);
-                if (lotesSuccess && notesSuccess) {
+                if (lotesResult.success && notesResult.success) {
                     alert("¡Histórico y notas guardados correctamente en GitHub!");
                     await loadData();
                 } else {
@@ -275,26 +292,24 @@
             };
             
             useEffect(() => {
-                const staticLoader = document.getElementById('static-loader');
-                const loaderStatus = document.getElementById('loader-status');
-                const loaderProgress = document.getElementById('loader-progress');
-
                 const initializeApp = async () => {
-                    loaderStatus.textContent = "Verificando acceso...";
-                    loaderProgress.style.width = '20%';
+                    const loaderStatus = document.getElementById('loader-status');
+                    const loaderProgress = document.getElementById('loader-progress');
+                    if(loaderStatus) loaderStatus.textContent = "Verificando acceso...";
+                    if(loaderProgress) loaderProgress.style.width = '20%';
                     const token = await getApiToken('cls.txt');
                     setApiToken(token); 
 
-                    loaderStatus.textContent = "Cargando lista de clientes...";
-                    loaderProgress.style.width = '40%';
+                    if(loaderStatus) loaderStatus.textContent = "Cargando lista de clientes...";
+                    if(loaderProgress) loaderProgress.style.width = '40%';
                     try {
                         const clientResponse = await fetch('clientes.txt?t=' + new Date().getTime());
                         const clientText = await clientResponse.text();
                         setClientList(clientText.split('\n').map(c => c.trim().toUpperCase()).filter(Boolean));
                     } catch (e) { console.error("No se pudo cargar la lista de clientes."); }
                     
-                    loaderStatus.textContent = "Cargando descripciones de artículos...";
-                    loaderProgress.style.width = '60%';
+                    if(loaderStatus) loaderStatus.textContent = "Cargando descripciones de artículos...";
+                    if(loaderProgress) loaderProgress.style.width = '60%';
                     try {
                         const articulosResponse = await fetch('articulos.csv?t=' + new Date().getTime());
                         const articulosText = await articulosResponse.text();
@@ -310,17 +325,16 @@
                         console.error("No se pudo cargar la lista de artículos.");
                     }
                 };
-                
                 initializeApp();
             }, []);
 
             useEffect(() => {
                 if(apiToken) {
-                    const loaderStatus = document.getElementById('loader-status');
-                    const loaderProgress = document.getElementById('loader-progress');
-                    const staticLoader = document.getElementById('static-loader');
-
                     const loadInitialData = async () => {
+                        const loaderStatus = document.getElementById('loader-status');
+                        const loaderProgress = document.getElementById('loader-progress');
+                        const staticLoader = document.getElementById('static-loader');
+
                         if (loaderStatus) loaderStatus.textContent = "Cargando histórico y notas...";
                         if (loaderProgress) loaderProgress.style.width = '80%';
                         
@@ -359,7 +373,7 @@
                                 const despachadoText = (item.despachado && item.despachado.toUpperCase() === 'TRUE') ? 'sí' : 'no';
                                 return despachadoText.includes(filterValue);
                             }
-                             if (key === 'numeroDePallet' && item.hasNote) {
+                            if (key === 'numeroDePallet' && item.hasNote) {
                                 const palletWithAsterisk = `${item.numeroDePallet} (*)`
                                 return palletWithAsterisk.toLowerCase().includes(filterValue) || (item[key] && item[key].toString().toLowerCase().includes(filterValue));
                             }
@@ -398,9 +412,55 @@
 
             const handleColumnFilterChange = (columnId, value) => setColumnFilters(prev => ({ ...prev, [columnId]: value }));
             const clearFilters = () => {
-                setColumnFilters({ sku: '', descripcion: '', numeroDePallet: '', lotesProduccion: '', despachado: '', cliente: '' });
+                setColumnFilters({ sku: '', descripcion: '', numeroDePallet: '', lotesProduccion: '', enDeposito: '', despachado: '', cliente: '' });
                 setFechaDesde('');
                 setFechaHasta('');
+            };
+
+            const handleProcessPendientes = () => {
+                const pendientes = allData.filter(item => item.enDeposito === "Producción Dep. 05");
+                if (pendientes.length === 0) {
+                    alert("No hay pallets pendientes por almacenar.");
+                    return;
+                }
+
+                setModalState({
+                    isOpen: true,
+                    type: 'confirm',
+                    title: 'Procesar Pallets Pendientes',
+                    message: `Se encontraron ${pendientes.length} pallets pendientes. ¿Desea generar el reporte de almacenamiento y actualizar su estado a "Logística Dep. 02"?`,
+                    onConfirm: async () => {
+                        setModalState({ isOpen: false });
+                        setIsSaving(true);
+
+                        // 1. Generar PDF
+                        const doc = new jsPDF({ orientation: 'landscape' });
+                        doc.setFontSize(18);
+                        doc.text("Reporte de Pallets para Almacenar", 14, 16);
+                        doc.setFontSize(10);
+                        doc.text(`Fecha de generación: ${new Date().toLocaleString('es-AR')}`, 14, 22);
+                        
+                        const tableColumn = ["SKU", "Descripción", "Nº Pallet", "Lotes Prod.", "F. Prod."];
+                        const tableRows = pendientes.map(item => [item.sku, item.descripcion, item.numeroDePallet, item.lotesProduccion, item.fechaProduccion]);
+                        
+                        doc.autoTable({ head: [tableColumn], body: tableRows, startY: 28, theme: 'grid' });
+                        doc.save("pallets_pendientes_almacenar.pdf");
+
+                        // 2. Actualizar archivo nropalletalmacenado.csv
+                        const nuevosAlmacenados = pendientes.map(item => `${item.sku};${item.numeroDePallet}`).join('\n');
+                        const result = await saveCsvToGithub(CSV_PATH_ALMACENADOS, nuevosAlmacenados, "Registra pallets almacenados", true);
+
+                        setIsSaving(false);
+
+                        // 3. Recargar grilla
+                        if (result.success) {
+                            alert("¡Operación completada! Los pallets han sido marcados como almacenados y el reporte se ha descargado.");
+                            await loadData();
+                        } else {
+                            alert("Ocurrió un error al actualizar el estado de los pallets. Por favor, intente de nuevo.");
+                        }
+                    }
+                });
             };
 
             const handleDeleteRow = (rowId) => {
@@ -517,13 +577,13 @@
                 const doc = new jsPDF({ orientation: 'landscape' });
                 doc.setFontSize(18);
                 doc.text("Histórico de Lotes Generados", 14, 16);
-                const tableColumn = ["SKU", "Descripción", "Nº Pallet", "Lotes Prod.", "Despachado", "Cliente", "F. Prod.", "Cantidad", "U.M."];
+                const tableColumn = ["SKU", "Descripción", "Nº Pallet", "Lotes Prod.", "En Depósito", "Despachado", "Cliente", "F. Prod.", "Cantidad", "U.M."];
                 const tableRows = [];
                 filteredData.forEach(item => {
                     const despachadoText = (item.despachado && item.despachado.toUpperCase() === 'TRUE') ? 'Sí' : 'No';
                     const palletText = item.hasNote ? `${item.numeroDePallet} (*)` : item.numeroDePallet;
                     const rowData = [
-                        item.sku, item.descripcion, palletText, item.lotesProduccion,
+                        item.sku, item.descripcion, palletText, item.lotesProduccion, item.enDeposito,
                         despachadoText, item.cliente ? item.cliente.replace(/#/g, ', ') : '', item.fechaProduccion, item.cantidad, item.unidadMedida
                     ];
                     tableRows.push(rowData);
@@ -539,6 +599,7 @@
                     'Descripción': item.descripcion, 
                     'Nº Pallet': item.hasNote ? `${item.numeroDePallet} (*)` : item.numeroDePallet,
                     'Lotes Producción': item.lotesProduccion, 
+                    'En Depósito': item.enDeposito,
                     'Despachado': (item.despachado && item.despachado.toUpperCase() === 'TRUE') ? 'Sí' : 'No',
                     'Cliente': item.cliente ? item.cliente.replace(/#/g, ', ') : '',
                     'Fecha Producción': item.fechaProduccion,
@@ -607,12 +668,10 @@
                     hasNote: item.hasNote
                 };
 
-                // PDF para la vista previa en el iframe
                 const previewDoc = new jsPDF('p', 'mm', 'a4');
                 await drawLabelOnDoc(previewDoc, data);
                 const pdfDataUrl = previewDoc.output('datauristring');
 
-                // PDF para la impresión (se abre en una nueva pestaña)
                 const printDoc = new jsPDF('p', 'mm', 'a4');
                 await drawLabelOnDoc(printDoc, data);
                 printDoc.autoPrint();
@@ -626,7 +685,6 @@
                 });
             };
 
-            // --- COMPONENTES DE MODALES ---
             const ActionModal = ({ isOpen, type, title, message, onConfirm, onClose, suggestions }) => {
                 if (!isOpen) return null;
                 const [inputValue, setInputValue] = useState('');
@@ -708,7 +766,7 @@
                 <div className="min-h-screen p-4 sm:p-6 bg-black bg-opacity-50">
                     {isSaving && (
                         <div className="fixed inset-0 bg-white bg-opacity-80 flex items-center justify-center z-50">
-                            <div className="flex items-center space-x-3 text-xl font-semibold text-gray-700"><i className="fas fa-sync-alt animate-spin"></i><span>Guardando en GitHub...</span></div>
+                            <div className="flex items-center space-x-3 text-xl font-semibold text-gray-700"><i className="fas fa-sync-alt animate-spin"></i><span>Guardando y procesando...</span></div>
                         </div>
                     )}
                     <ActionModal isOpen={modalState.isOpen} type={modalState.type} title={modalState.title} message={modalState.message} onClose={() => setModalState({ isOpen: false })} onConfirm={modalState.onConfirm} suggestions={clientList}/>
@@ -729,6 +787,7 @@
                                 <button onClick={() => setShowHelpModal(true)} title="Ayuda" className="text-gray-400 hover:text-indigo-600 transition-colors"><i className="fas fa-question-circle text-2xl"></i></button>
                             </div>
                             <div className="flex items-center space-x-3 mt-4 sm:mt-0">
+                                <button onClick={handleProcessPendientes} className="bg-orange-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-orange-600 transition-colors shadow-sm flex items-center"><i className="fas fa-truck-loading mr-2"></i>Pendientes por Almacenar</button>
                                 <a href="generarqr.html" className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 transition-colors shadow-sm flex items-center"><i className="fas fa-plus mr-2"></i>Generar Nuevo</a>
                                 <a href="index.html" className="bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">Volver al Menú</a>
                             </div>
@@ -772,7 +831,7 @@
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-800 text-white sticky top-0 z-10">
                                     <tr>
-                                        {["SKU", "Descripción", "Nº Pallet", "Lotes Prod.", "Despachado", "Cliente", "F. Prod.", "Cantidad", "U.M.", "Acciones"].map(header => (
+                                        {["SKU", "Descripción", "Nº Pallet", "Lotes Prod.", "En Depósito", "Despachado", "Cliente", "F. Prod.", "Cantidad", "U.M.", "Acciones"].map(header => (
                                             <th key={header} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">{header}</th>
                                         ))}
                                     </tr>
@@ -781,6 +840,7 @@
                                         <th className="p-1"><input type="text" placeholder="Filtrar..." value={columnFilters.descripcion} onChange={e => handleColumnFilterChange('descripcion', e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
                                         <th className="p-1"><input type="text" placeholder="Filtrar..." value={columnFilters.numeroDePallet} onChange={e => handleColumnFilterChange('numeroDePallet', e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
                                         <th className="p-1"><input type="text" placeholder="Filtrar..." value={columnFilters.lotesProduccion} onChange={e => handleColumnFilterChange('lotesProduccion', e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
+                                        <th className="p-1"><input type="text" placeholder="Filtrar..." value={columnFilters.enDeposito} onChange={e => handleColumnFilterChange('enDeposito', e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
                                         <th className="p-1"><input type="text" placeholder="Sí / No" value={columnFilters.despachado} onChange={e => handleColumnFilterChange('despachado', e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
                                         <th className="p-1"><input type="text" placeholder="Filtrar..." value={columnFilters.cliente} onChange={e => handleColumnFilterChange('cliente', e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
                                         <th colSpan="4" className="p-1"></th>
@@ -788,13 +848,14 @@
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {isLoading ? (
-                                        <tr><td colSpan="10" className="p-8 text-center text-gray-500">Cargando datos...</td></tr>
+                                        <tr><td colSpan="11" className="p-8 text-center text-gray-500">Cargando datos...</td></tr>
                                     ) : (
                                         filteredData.length > 0 ? filteredData.map((item) => {
                                             const isDespachado = item.despachado && item.despachado.toUpperCase() === 'TRUE';
                                             const clients = item.cliente ? item.cliente.split('#').filter(Boolean) : [];
                                             const handleRowDoubleClick = () => { if (item.hasNote) { setObservationModal({ isOpen: true, text: item.noteText }); } };
                                             const rowClassName = item.hasNote ? 'bg-yellow-50 hover:bg-yellow-100 cursor-pointer' : 'hover:bg-gray-50';
+                                            const enDepositoClass = item.enDeposito === "Logística Dep. 02" ? 'text-blue-600' : 'text-orange-600';
                                             return (
                                             <tr 
                                                 key={item.id} 
@@ -819,6 +880,7 @@
                                                         </div>
                                                     ) : ( item.lotesProduccion )}
                                                 </td>
+                                                <td className={`px-4 py-2 whitespace-nowrap text-xs font-semibold ${enDepositoClass}`}>{item.enDeposito}</td>
                                                 <td className="px-4 py-2 whitespace-nowrap text-sm font-semibold"><span className={isDespachado ? 'text-green-600' : 'text-red-600'}>{isDespachado ? 'Sí' : 'No'}</span></td>
                                                 <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">
                                                     <div className="flex flex-wrap gap-1">
@@ -858,7 +920,7 @@
                                             </tr>
                                             )
                                         }) : (
-                                            <tr><td colSpan="10" className="px-4 py-8 text-center text-sm text-gray-500">No se encontraron registros con los filtros aplicados.</td></tr>
+                                            <tr><td colSpan="11" className="px-4 py-8 text-center text-sm text-gray-500">No se encontraron registros con los filtros aplicados.</td></tr>
                                         )
                                     )}
                                 </tbody>
