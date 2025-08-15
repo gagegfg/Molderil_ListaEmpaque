@@ -285,7 +285,6 @@
                 }
             };
             
-            // --- MODIFICADO: Lógica de carga unificada en un solo useEffect ---
             useEffect(() => {
                 const staticLoader = document.getElementById('static-loader');
                 const loaderStatus = document.getElementById('loader-status');
@@ -293,7 +292,6 @@
 
                 const runInitialLoad = async () => {
                     try {
-                        // Fase 1: Obtener Token
                         loaderStatus.textContent = "Verificando acceso...";
                         loaderProgress.style.width = '20%';
                         const token = await getApiToken('cls.txt');
@@ -302,7 +300,6 @@
                         }
                         setApiToken(token);
 
-                        // Fase 2: Cargar archivos de configuración
                         loaderStatus.textContent = "Cargando configuraciones...";
                         loaderProgress.style.width = '40%';
                         const clientPromise = fetch('clientes.txt?t=' + new Date().getTime()).then(res => res.text());
@@ -318,12 +315,10 @@
                         });
                         setArticulosMap(newArticulosMap);
 
-                        // Fase 3: Cargar datos principales usando el token obtenido
                         loaderStatus.textContent = "Cargando histórico y notas...";
                         loaderProgress.style.width = '80%';
                         await loadData(token);
 
-                        // Fase 4: Finalizar
                         if (!localStorage.getItem('grillaqr_fechaDesde') && !localStorage.getItem('grillaqr_fechaHasta')) {
                             const today = new Date();
                             const firstDayOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
@@ -345,12 +340,12 @@
                         console.error("Error durante la carga inicial:", error);
                         loaderStatus.textContent = `Error: ${error.message}`;
                         loaderProgress.style.width = '100%';
-                        loaderProgress.style.backgroundColor = '#ef4444'; // Color rojo para error
+                        loaderProgress.style.backgroundColor = '#ef4444';
                     }
                 };
                 
                 runInitialLoad();
-            }, [loadData]); // Solo depende de loadData que es un useCallback estable.
+            }, [loadData]);
 
             useEffect(() => {
                 let data = [...allData];
@@ -737,9 +732,14 @@
                         <div className="flex flex-col sm:flex-row justify-between items-center mb-4">
                             <div className="flex items-center space-x-2">
                                 <p className="text-gray-600 font-semibold">{filteredData.length} registro(s) encontrado(s)</p>
-                                <button onClick={handlePendientesClick} className="bg-yellow-500 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-yellow-600 flex items-center"><i className="fas fa-box-open mr-2"></i>Pendientes por Almacenar</button>
-                                {isAlmacenamientoMode && (
-                                    <button onClick={handleConfirmarAlmacenamiento} className="bg-teal-500 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-teal-600 flex items-center animate-pulse"><i className="fas fa-check-circle mr-2"></i>Confirmar Almacenamiento</button>
+                                {/* --- MODIFICADO: Lógica de botones de almacenamiento --- */}
+                                {!isAlmacenamientoMode ? (
+                                    <button onClick={handlePendientesClick} className="bg-yellow-500 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-yellow-600 flex items-center"><i className="fas fa-box-open mr-2"></i>Pendientes por Almacenar</button>
+                                ) : (
+                                    <>
+                                        <button onClick={handleConfirmarAlmacenamiento} className="bg-teal-500 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-teal-600 flex items-center animate-pulse"><i className="fas fa-check-circle mr-2"></i>Confirmar Almacenamiento</button>
+                                        <button onClick={resetAlmacenamientoMode} className="bg-red-500 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-red-600 flex items-center"><i className="fas fa-times mr-2"></i>Cancelar</button>
+                                    </>
                                 )}
                             </div>
                             <div className="flex space-x-2 mt-4 sm:mt-0">
@@ -762,7 +762,9 @@
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-800 text-white sticky top-0 z-10">
                                     <tr>
-                                        {["TRANSFERIDO", "SKU", "Descripción", "Nº Pallet", "Lotes Prod.", "Despachado", "Cliente", "F. Prod.", "Cantidad", "U.M.", "Acciones"].map(header => (
+                                        {/* --- MODIFICADO: Ancho de columna reducido --- */}
+                                        <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider w-24">TRANSFERIDO</th>
+                                        {["SKU", "Descripción", "Nº Pallet", "Lotes Prod.", "Despachado", "Cliente", "F. Prod.", "Cantidad", "U.M.", "Acciones"].map(header => (
                                             <th key={header} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">{header}</th>
                                         ))}
                                     </tr>
