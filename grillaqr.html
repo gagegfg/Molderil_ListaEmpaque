@@ -116,9 +116,8 @@
             const [isExportOpen, setIsExportOpen] = useState(false);
             const exportMenuRef = useRef(null);
             
-            // --- INICIO: LÓGICA PARA PULSACIÓN LARGA ---
             const longPressTimer = useRef(null);
-            const touchDuration = 500; // 500ms para considerar una pulsación larga
+            const touchDuration = 500; 
 
             const handlePressStart = (callback) => {
                 longPressTimer.current = setTimeout(() => {
@@ -129,7 +128,6 @@
             const handlePressEnd = () => {
                 clearTimeout(longPressTimer.current);
             };
-            // --- FIN: LÓGICA PARA PULSACIÓN LARGA ---
 
             const getApiToken = async (file) => {
                 try {
@@ -207,8 +205,11 @@
                 let finalContent = data;
 
                 try {
-                    const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${apiToken}` } });
-                    
+                    const fileResponse = await fetch(`${url}?t=${new Date().getTime()}`, {
+                        headers: { 'Authorization': `token ${apiToken}` },
+                        cache: 'no-store'
+                    });
+
                     if (fileResponse.ok) {
                         const fileData = await fileResponse.json();
                         currentSha = fileData.sha;
@@ -217,23 +218,29 @@
                             finalContent = existingContent ? `${existingContent}\n${data}` : data;
                         }
                     } else if (fileResponse.status !== 404) {
-                        throw new Error(`Error ${fileResponse.status}: No se pudo obtener info del archivo ${path}.`);
+                        const errorData = await fileResponse.json();
+                        throw new Error(`Error ${fileResponse.status} al obtener SHA: ${errorData.message || 'No se pudo obtener info del archivo.'}`);
                     }
 
                     const updateResponse = await fetch(url, {
                         method: 'PUT',
                         headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            message: `Actualización de ${path} desde grilla web`,
+                            message: `Actualización de ${path} desde la web`,
                             content: btoa(unescape(encodeURIComponent(finalContent))),
                             sha: currentSha,
                         }),
                     });
 
-                    if (!updateResponse.ok) throw new Error(`Error ${updateResponse.status}: Falló la actualización de ${path}.`);
+                    if (!updateResponse.ok) {
+                        const errorData = await updateResponse.json();
+                        throw new Error(`Error ${updateResponse.status}: ${errorData.message || 'Falló la actualización del archivo.'}`);
+                    }
+
                     return { success: true };
                 } catch (e) {
-                    alert(`ERROR al guardar ${path} en GitHub: ${e.message}`);
+                    alert(`ERROR al guardar en GitHub (${path}):\n${e.message}`);
+                    console.error(e);
                     return { success: false };
                 }
             };
@@ -366,7 +373,7 @@
                     };
                     loadInitialData();
                 }
-            }, [apiToken, articulosMap, loadData]);
+            }, [apiToken, articulosMap]);
 
             useEffect(() => {
                 let data = [...allData];
@@ -524,7 +531,6 @@
                 });
             };
             
-            // --- INICIO FUNCIONES DE TRANSFERENCIA ---
             const handleEnterTransferMode = () => {
                 setIsTransferMode(true);
                 setTransferSelection({});
@@ -586,17 +592,12 @@
                 doc.setFontSize(12);
                 doc.text(`Fecha y Hora: ${formattedDateTime}`, 105, 22, { align: 'center' });
 
-                // Tabla de Detalle
                 doc.setFontSize(16);
                 doc.text("Detalle de Lotes Transferidos", 14, 35);
                 const detailColumns = ["SKU", "Descripción", "Nº Pallet", "Lote Prod.", "Cantidad", "U.M."];
                 const detailRows = transferredItems.map(item => [
-                    item.sku,
-                    item.descripcion,
-                    item.numeroDePallet,
-                    item.lotesProduccion.replace(/#/g, ', '),
-                    item.cantidad,
-                    item.unidadMedida
+                    item.sku, item.descripcion, item.numeroDePallet,
+                    item.lotesProduccion.replace(/#/g, ', '), item.cantidad, item.unidadMedida
                 ]);
                 doc.autoTable({
                     head: [detailColumns], body: detailRows, startY: 40,
@@ -604,7 +605,6 @@
                     alternateRowStyles: { fillColor: [245, 245, 245] }
                 });
 
-                // Tabla Resumen
                 const summary = transferredItems.reduce((acc, item) => {
                     const key = `${item.sku};${item.unidadMedida}`;
                     const qty = parseFloat(item.cantidad.replace('.', '').replace(',', '.'));
@@ -631,7 +631,6 @@
 
                 doc.save(`transferencia_${now.toISOString().split('T')[0]}.pdf`);
             };
-            // --- FIN FUNCIONES DE TRANSFERENCIA ---
 
             const exportToPDF = () => {
                 const doc = new jsPDF({ orientation: 'landscape' });
@@ -718,7 +717,6 @@
                 setReprintModal({ isOpen: true, pdfUrl: previewDoc.output('datauristring'), printablePdfUrl: printDoc.output('bloburl'), palletId: item.numeroDePallet });
             };
 
-            // --- COMPONENTES DE MODALES ---
             const ActionModal = ({ isOpen, type, title, message, onConfirm, onClose, suggestions }) => {
                 if (!isOpen) return null;
                 const [inputValue, setInputValue] = useState('');
