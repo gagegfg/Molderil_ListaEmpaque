@@ -195,70 +195,75 @@
                 setIsLoading(false);
             }, [fetchCsvFromGithub]);
             
+            // --- MODIFICADO: saveCsvToGithub ahora lanza errores detallados ---
             const saveCsvToGithub = async (path, content) => {
                 if (!apiToken) {
-                    setModalState({ isOpen: true, type: 'info', title: 'Error', message: 'El token de API no está disponible.', onConfirm: () => setModalState({isOpen: false}) });
-                    return false;
+                    throw new Error('El token de API no está disponible.');
                 }
                 
                 const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}`;
-                try {
-                    const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${apiToken}`, 'cache': 'no-store' } });
-                    let currentSha = null;
-                    if (fileResponse.ok) {
-                        const fileData = await fileResponse.json();
-                        currentSha = fileData.sha;
-                    } else if (fileResponse.status !== 404) {
-                        throw new Error(`Error ${fileResponse.status}: No se pudo obtener info del archivo ${path}.`);
-                    }
+                
+                const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${apiToken}`, 'cache': 'no-store' } });
+                let currentSha = null;
+                if (fileResponse.ok) {
+                    const fileData = await fileResponse.json();
+                    currentSha = fileData.sha;
+                } else if (fileResponse.status !== 404) {
+                    throw new Error(`Error ${fileResponse.status} al obtener info del archivo ${path}.`);
+                }
 
-                    const updateResponse = await fetch(url, {
-                        method: 'PUT',
-                        headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            message: `Actualización de ${path} desde grilla web`,
-                            content: btoa(unescape(encodeURIComponent(content))),
-                            sha: currentSha,
-                        }),
-                    });
+                const updateResponse = await fetch(url, {
+                    method: 'PUT',
+                    headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: `Actualización de ${path} desde grilla web`,
+                        content: btoa(unescape(encodeURIComponent(content))),
+                        sha: currentSha,
+                    }),
+                });
 
-                    if (!updateResponse.ok) throw new Error(`Error ${updateResponse.status}: Falló la actualización de ${path}.`);
-                    return true;
-                } catch (e) {
-                    setModalState({ isOpen: true, type: 'info', title: 'Error al Guardar', message: `ERROR al guardar ${path} en GitHub: ${e.message}`, onConfirm: () => setModalState({isOpen: false}) });
-                    return false;
+                if (!updateResponse.ok) {
+                    const errorData = await updateResponse.json();
+                    throw new Error(`Error ${updateResponse.status}: ${errorData.message || 'Falló la actualización del archivo.'}`);
                 }
             };
 
             const saveData = async (updatedLotes, updatedNotes) => {
                 setIsSaving(true);
-                
-                const lotesContent = updatedLotes.map(item => 
-                    [item.sku, item.descripcion, item.numeroDePallet, item.lotesProduccion, item.fechaProduccion, item.cantidad, item.unidadMedida, item.despachado || 'FALSE', item.cliente || ''].join(';')
-                ).join('\n');
-                const lotesPromise = saveCsvToGithub(CSV_PATH_LOTES, lotesContent);
+                try {
+                    const lotesContent = updatedLotes.map(item => 
+                        [item.sku, item.descripcion, item.numeroDePallet, item.lotesProduccion, item.fechaProduccion, item.cantidad, item.unidadMedida, item.despachado || 'FALSE', item.cliente || ''].join(';')
+                    ).join('\n');
+                    const notesContent = updatedNotes.map(item => 
+                        [item.sku, item.numeroDePallet, item.observacion].join(';')
+                    ).join('\n');
 
-                const notesContent = updatedNotes.map(item => 
-                    [item.sku, item.numeroDePallet, item.observacion].join(';')
-                ).join('\n');
-                const notesPromise = saveCsvToGithub(CSV_PATH_NOTAS, notesContent);
+                    await Promise.all([
+                        saveCsvToGithub(CSV_PATH_LOTES, lotesContent),
+                        saveCsvToGithub(CSV_PATH_NOTAS, notesContent)
+                    ]);
 
-                const [lotesSuccess, notesSuccess] = await Promise.all([lotesPromise, notesPromise]);
-
-                setIsSaving(false);
-                if (lotesSuccess && notesSuccess) {
-                    setModalState({ isOpen: true, type: 'info', title: 'Éxito', message: '¡Histórico y notas guardados correctamente en GitHub!', onConfirm: () => { setModalState({isOpen: false}); loadData(apiToken); } });
-                } else {
-                    setModalState({ isOpen: true, type: 'info', title: 'Error', message: 'Ocurrió un error al guardar uno o más archivos.', onConfirm: () => setModalState({isOpen: false}) });
+                    setModalState({ isOpen: true, type: 'info', title: 'Éxito', message: '¡Histórico y notas guardados correctamente!', onConfirm: () => { setModalState({isOpen: false}); loadData(apiToken); } });
+                } catch (error) {
+                    setModalState({ isOpen: true, type: 'info', title: 'Error al Guardar', message: `No se pudo guardar: ${error.message}`, onConfirm: () => setModalState({isOpen: false}) });
+                } finally {
+                    setIsSaving(false);
                 }
             };
             
+            // --- MODIFICADO: Verificación de contraseña más robusta ---
             const verifyPasswordAndExecute = async (actionCallback, password) => {
                 if (!password) {
                      setModalState({ isOpen: true, type: 'info', title: 'Atención', message: 'Por favor, ingrese la contraseña.', onConfirm: () => setModalState({isOpen: false}) });
                     return;
                 }
                 const correctPassword = await getApiToken('pswsku.txt');
+                
+                if (correctPassword === null) {
+                    setModalState({ isOpen: true, type: 'info', title: 'Error de Configuración', message: 'No se pudo cargar la clave de verificación. Revise la conexión o el archivo pswsku.txt.', onConfirm: () => setModalState({isOpen: false}) });
+                    return;
+                }
+
                 if (password.trim() === correctPassword) {
                     setAuthTimestamp(Date.now());
                     setModalState({ isOpen: false });
@@ -712,7 +717,7 @@
                 doc.save(`transferencia_logistica_${new Date().toISOString().split('T')[0]}.pdf`);
             };
 
-
+            // --- MODIFICADO: Manejo de errores más detallado ---
             const handleConfirmarAlmacenamiento = () => {
                 const selectedItems = allData.filter(item => transferSelection[`${item.sku};${item.numeroDePallet}`]);
                 
@@ -737,41 +742,28 @@
                                 const existingContentRows = await fetchCsvFromGithub(CSV_PATH_ALMACENADO, apiToken, true);
                                 const newContent = [...existingContentRows, ...newKeysToAppend].join('\n');
                                 
-                                const success = await saveCsvToGithub(CSV_PATH_ALMACENADO, newContent);
+                                await saveCsvToGithub(CSV_PATH_ALMACENADO, newContent);
 
-                                if (success) {
-                                    setModalState({ 
-                                        isOpen: true, 
-                                        type: 'info', 
-                                        title: 'Éxito', 
-                                        message: '¡Almacenamiento confirmado y registrado con éxito!', 
-                                        onConfirm: async () => {
-                                            setModalState({isOpen: false});
-                                            resetAlmacenamientoMode();
-                                            await loadData(apiToken);
-                                        } 
-                                    });
-                                } else {
-                                     setModalState({ 
-                                         isOpen: true, 
-                                         type: 'info', 
-                                         title: 'Error', 
-                                         message: 'Error al guardar el registro de almacenamiento. La operación fue abortada.', 
-                                         onConfirm: () => {
-                                             setModalState({isOpen: false});
-                                             resetAlmacenamientoMode(); // También resetea en caso de error
-                                         } 
-                                    });
-                                }
+                                setModalState({ 
+                                    isOpen: true, 
+                                    type: 'info', 
+                                    title: 'Éxito', 
+                                    message: '¡Almacenamiento confirmado y registrado con éxito!', 
+                                    onConfirm: async () => {
+                                        setModalState({isOpen: false});
+                                        resetAlmacenamientoMode();
+                                        await loadData(apiToken);
+                                    } 
+                                });
                             } catch (error) {
                                 setModalState({ 
                                     isOpen: true, 
                                     type: 'info', 
-                                    title: 'Error Inesperado', 
-                                    message: `Ocurrió un error: ${error.message}`, 
+                                    title: 'Error al Guardar', 
+                                    message: `La operación fue abortada. Motivo: ${error.message}`, 
                                     onConfirm: () => {
                                         setModalState({isOpen: false});
-                                        resetAlmacenamientoMode(); // También resetea en caso de error
+                                        resetAlmacenamientoMode();
                                     } 
                                 });
                             } finally {
