@@ -181,7 +181,11 @@
                 setNotesData(parsedNotes);
 
                 const parsedLotes = lotesRows.map((row, index) => {
-                    const [sku, descripcion, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida, despachado, cliente] = row.split(';');
+                    const [sku, originalDescription, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida, despachado, cliente] = row.split(';');
+                    
+                    // CORRECCIÓN: Se busca la descripción correcta en el mapa de artículos. Si no existe, usa la original.
+                    const descripcion = articulosMap.get(sku.trim()) || originalDescription;
+
                     const noteKey = `${sku};${numeroDePallet}`;
                     const storedKey = `${sku};${numeroDePallet}`;
                     const hasNote = notesMap.has(noteKey);
@@ -192,11 +196,8 @@
                 
                 setAllData(parsedLotes);
                 setIsLoading(false);
-            }, [fetchCsvFromGithub]);
+            }, [fetchCsvFromGithub, articulosMap]);
             
-            // --- INICIO: LÓGICA DE GUARDADO CORREGIDA ---
-
-            // Función para SOBRESCRIBIR, tomada de grillaqr (2) - Funciona bien para editar
             const saveCsvToGithub = async (path, dataToSave, formatRow) => {
                 if (!apiToken) {
                     alert("Error: El token de API no está disponible.");
@@ -205,7 +206,11 @@
                 const csvContent = dataToSave.map(formatRow).join('\n');
                 const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}`;
                 try {
-                    const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${apiToken}` } });
+                    // CORRECCIÓN: Se añade un parámetro para evitar la caché del navegador y asegurar que se obtiene el SHA más reciente.
+                    const fileResponse = await fetch(`${url}?t=${new Date().getTime()}`, {
+                        headers: { 'Authorization': `token ${apiToken}` },
+                        cache: 'no-store'
+                    });
                     let currentSha = null;
                     if (fileResponse.ok) {
                         const fileData = await fileResponse.json();
@@ -234,7 +239,6 @@
                 }
             };
 
-            // Nueva función para AÑADIR contenido, basada en grillaqr (3) - Para transferencias
             const appendCsvToGithub = async (path, stringToAppend) => {
                 if (!apiToken) {
                     alert("Error: El token de API no está disponible.");
@@ -281,7 +285,6 @@
                 }
             };
 
-            // saveData ahora usa la función de sobrescribir, como en grillaqr (2)
             const saveData = async (updatedLotes, updatedNotes) => {
                 setIsSaving(true);
                 const lotesPromise = saveCsvToGithub(CSV_PATH_LOTES, updatedLotes, item => 
@@ -299,8 +302,6 @@
                     alert("Ocurrió un error al guardar uno o más archivos.");
                 }
             };
-
-            // --- FIN: LÓGICA DE GUARDADO CORREGIDA ---
 
             const verifyPasswordAndExecute = async (actionCallback, password) => {
                 if (!password) {
@@ -356,7 +357,8 @@
                             const newArticulosMap = new Map();
                             articulosText.split('\n').slice(1).forEach(row => {
                                 const [tipo, sku, descLarga, descCorta] = row.split(';');
-                                if (sku && descCorta) { newArticulosMap.set(sku.trim(), descCorta.trim()); }
+                                // CORRECCIÓN: Se utiliza descLarga (3ra columna) en lugar de descCorta (4ta columna).
+                                if (sku && descLarga) { newArticulosMap.set(sku.trim(), descLarga.trim()); }
                             });
                             setArticulosMap(newArticulosMap);
                         } catch (e) { console.error("No se pudo cargar la lista de artículos."); }
@@ -581,7 +583,6 @@
                 });
             };
 
-            // processTransfer ahora usa la nueva función appendCsvToGithub
             const processTransfer = async (itemsToTransfer) => {
                 setIsSaving(true);
                 generateTransferPDF(itemsToTransfer);
