@@ -194,17 +194,13 @@
                 setIsLoading(false);
             }, [fetchCsvFromGithub]);
             
-            // --- INICIO FUNCIONES DE GUARDADO ---
-            
             const saveCsvToGithub = async (path, dataToSave, formatRow) => {
                 if (!apiToken) {
                     alert("Error: El token de API no está disponible.");
                     return false;
                 }
-
                 const csvContent = dataToSave.map(formatRow).join('\n');
                 const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}`;
-
                 try {
                     const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${apiToken}` } });
                     let currentSha = null;
@@ -215,7 +211,6 @@
                         const errorData = await fileResponse.json();
                         throw new Error(`Error ${fileResponse.status} al obtener SHA: ${errorData.message || 'No se pudo obtener info del archivo.'}`);
                     }
-
                     const updateResponse = await fetch(url, {
                         method: 'PUT',
                         headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
@@ -225,7 +220,6 @@
                             sha: currentSha,
                         }),
                     });
-
                     if (!updateResponse.ok) {
                         const errorData = await updateResponse.json();
                         throw new Error(`Error ${updateResponse.status}: ${errorData.message || 'Falló la actualización del archivo.'}`);
@@ -246,17 +240,14 @@
                 if (!stringToAppend) {
                     return { success: true };
                 }
-
                 const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}`;
                 let currentSha = null;
                 let newContent = stringToAppend;
-
                 try {
                     const fileResponse = await fetch(`${url}?t=${new Date().getTime()}`, {
                         headers: { 'Authorization': `token ${apiToken}` },
                         cache: 'no-store'
                     });
-
                     if (fileResponse.ok) {
                         const fileData = await fileResponse.json();
                         currentSha = fileData.sha;
@@ -266,7 +257,6 @@
                         const errorData = await fileResponse.json();
                         throw new Error(`Error ${fileResponse.status} al obtener archivo para añadir: ${errorData.message}`);
                     }
-
                     const updateResponse = await fetch(url, {
                         method: 'PUT',
                         headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
@@ -276,12 +266,10 @@
                             sha: currentSha,
                         }),
                     });
-
                     if (!updateResponse.ok) {
                         const errorData = await updateResponse.json();
                         throw new Error(`Error ${updateResponse.status}: ${errorData.message || 'Falló la actualización del archivo.'}`);
                     }
-
                     return { success: true };
                 } catch (e) {
                     alert(`ERROR al añadir datos en GitHub (${path}):\n${e.message}`);
@@ -292,17 +280,13 @@
             
             const saveData = async (updatedLotes, updatedNotes) => {
                 setIsSaving(true);
-                
                 const lotesPromise = saveCsvToGithub(CSV_PATH_LOTES, updatedLotes, item => 
                     [item.sku, item.descripcion, item.numeroDePallet, item.lotesProduccion, item.fechaProduccion, item.cantidad, item.unidadMedida, item.despachado || 'FALSE', item.cliente || ''].join(';')
                 );
-
                 const notesPromise = saveCsvToGithub(CSV_PATH_NOTAS, updatedNotes, item => 
                     [item.sku, item.numeroDePallet, item.observacion].join(';')
                 );
-
                 const [lotesSuccess, notesSuccess] = await Promise.all([lotesPromise, notesPromise]);
-
                 setIsSaving(false);
                 if (lotesSuccess && notesSuccess) {
                     alert("¡Histórico y notas guardados correctamente en GitHub!");
@@ -312,8 +296,6 @@
                 }
             };
 
-            // --- FIN FUNCIONES DE GUARDADO ---
-            
             const verifyPasswordAndExecute = async (actionCallback, password) => {
                 if (!password) {
                     alert("Por favor, ingrese la contraseña.");
@@ -348,66 +330,50 @@
                 const initializeApp = async () => {
                     const loaderStatus = document.getElementById('loader-status');
                     const loaderProgress = document.getElementById('loader-progress');
-
                     loaderStatus.textContent = "Verificando acceso...";
                     loaderProgress.style.width = '20%';
                     const token = await getApiToken('cls.txt');
-                    
-                    if (token) {
-                        setApiToken(token); 
-                        loaderStatus.textContent = "Cargando lista de clientes...";
-                        loaderProgress.style.width = '40%';
-                        try {
-                            const clientResponse = await fetch('clientes.txt?t=' + new Date().getTime());
-                            const clientText = await clientResponse.text();
-                            setClientList(clientText.split('\n').map(c => c.trim().toUpperCase()).filter(Boolean));
-                        } catch (e) { console.error("No se pudo cargar la lista de clientes."); }
-                        
-                        loaderStatus.textContent = "Cargando descripciones de artículos...";
-                        loaderProgress.style.width = '60%';
-                        try {
-                            const articulosResponse = await fetch('articulos.csv?t=' + new Date().getTime());
-                            const articulosText = await articulosResponse.text();
-                            const newArticulosMap = new Map();
-                            articulosText.split('\n').slice(1).forEach(row => {
-                                const [tipo, sku, descLarga, descCorta] = row.split(';');
-                                if (sku && descCorta) { newArticulosMap.set(sku.trim(), descCorta.trim()); }
-                            });
-                            setArticulosMap(newArticulosMap);
-                        } catch (e) { console.error("No se pudo cargar la lista de artículos."); }
-                    } else {
-                        loaderStatus.textContent = "Error de autenticación. No se pudo iniciar.";
-                        loaderProgress.style.width = '100%';
-                        loaderProgress.classList.remove('bg-amber-400');
-                        loaderProgress.classList.add('bg-red-500');
-                    }
+                    setApiToken(token); 
+                    loaderStatus.textContent = "Cargando lista de clientes...";
+                    loaderProgress.style.width = '40%';
+                    try {
+                        const clientResponse = await fetch('clientes.txt?t=' + new Date().getTime());
+                        const clientText = await clientResponse.text();
+                        setClientList(clientText.split('\n').map(c => c.trim().toUpperCase()).filter(Boolean));
+                    } catch (e) { console.error("No se pudo cargar la lista de clientes."); }
+                    loaderStatus.textContent = "Cargando descripciones de artículos...";
+                    loaderProgress.style.width = '60%';
+                    try {
+                        const articulosResponse = await fetch('articulos.csv?t=' + new Date().getTime());
+                        const articulosText = await articulosResponse.text();
+                        const newArticulosMap = new Map();
+                        articulosText.split('\n').slice(1).forEach(row => {
+                            const [tipo, sku, descLarga, descCorta] = row.split(';');
+                            if (sku && descCorta) { newArticulosMap.set(sku.trim(), descCorta.trim()); }
+                        });
+                        setArticulosMap(newArticulosMap);
+                    } catch (e) { console.error("No se pudo cargar la lista de artículos."); }
                 };
-                
                 initializeApp();
             }, []);
 
             useEffect(() => {
-                if(apiToken && articulosMap.size > 0) {
+                if(apiToken) {
                     const loadInitialData = async () => {
                         const loaderStatus = document.getElementById('loader-status');
                         const loaderProgress = document.getElementById('loader-progress');
                         const staticLoader = document.getElementById('static-loader');
-
                         if (loaderStatus) loaderStatus.textContent = "Cargando histórico y notas...";
                         if (loaderProgress) loaderProgress.style.width = '80%';
-                        
                         await loadData();
-                        
                         if (!fechaDesde && !fechaHasta) {
                             const today = new Date();
                             const firstDayOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
                             setFechaHasta(today.toISOString().split('T')[0]);
                             setFechaDesde(firstDayOfLastMonth.toISOString().split('T')[0]);
                         }
-                        
                         if (loaderStatus) loaderStatus.textContent = "¡Listo!";
                         if (loaderProgress) loaderProgress.style.width = '100%';
-                        
                         setTimeout(() => {
                              if (staticLoader) {
                                 staticLoader.classList.add('opacity-0');
@@ -417,15 +383,13 @@
                     };
                     loadInitialData();
                 }
-            }, [apiToken, articulosMap, loadData]);
+            }, [apiToken, loadData]);
 
             useEffect(() => {
                 let data = [...allData];
-
                 if (isTransferMode) {
                     data = data.filter(item => !item.isStored);
                 }
-
                 Object.keys(columnFilters).forEach(key => {
                     const filterValue = columnFilters[key].toLowerCase();
                     if (filterValue) {
@@ -442,7 +406,6 @@
                         });
                     }
                 });
-                
                 if (fechaDesde || fechaHasta) {
                     const desde = fechaDesde ? new Date(fechaDesde) : null;
                     const hasta = fechaHasta ? new Date(fechaHasta) : null;
@@ -595,11 +558,8 @@
                     alert("No ha seleccionado ningún lote para transferir.");
                     return;
                 }
-
                 setModalState({
-                    isOpen: true,
-                    type: 'confirm',
-                    title: 'Confirmar Transferencia',
+                    isOpen: true, type: 'confirm', title: 'Confirmar Transferencia',
                     message: `Está a punto de transferir ${selectedItems.length} lote(s) al depósito. ¿Desea continuar?`,
                     onConfirm: () => {
                         setModalState({ isOpen: false });
@@ -611,11 +571,8 @@
             const processTransfer = async (itemsToTransfer) => {
                 setIsSaving(true);
                 generateTransferPDF(itemsToTransfer);
-                
                 const newStoredEntries = itemsToTransfer.map(item => `${item.sku};${item.numeroDePallet}`).join('\n');
-                
                 const result = await appendCsvToGithub(CSV_PATH_ALMACENADO, newStoredEntries);
-
                 setIsSaving(false);
                 if (result.success) {
                     alert("Transferencia registrada y PDF generado correctamente.");
@@ -630,12 +587,10 @@
                 const doc = new jsPDF();
                 const now = new Date();
                 const formattedDateTime = `${now.toLocaleDateString('es-AR')} ${now.toLocaleTimeString('es-AR')}`;
-                
                 doc.setFontSize(20);
                 doc.text("Reporte de Transferencia a Depósito", 105, 15, { align: 'center' });
                 doc.setFontSize(12);
                 doc.text(`Fecha y Hora: ${formattedDateTime}`, 105, 22, { align: 'center' });
-
                 doc.setFontSize(16);
                 doc.text("Detalle de Lotes Transferidos", 14, 35);
                 const detailColumns = ["SKU", "Descripción", "Nº Pallet", "Lote Prod.", "Cantidad", "U.M."];
@@ -648,7 +603,6 @@
                     headStyles: { fillColor: [41, 128, 185], textColor: 255 },
                     alternateRowStyles: { fillColor: [245, 245, 245] }
                 });
-
                 const summary = transferredItems.reduce((acc, item) => {
                     const key = `${item.sku};${item.unidadMedida}`;
                     const qty = parseFloat(item.cantidad.replace('.', '').replace(',', '.'));
@@ -658,7 +612,6 @@
                     acc[key].total += isNaN(qty) ? 0 : qty;
                     return acc;
                 }, {});
-                
                 doc.addPage();
                 doc.setFontSize(16);
                 doc.text("Resumen por SKU", 14, 20);
@@ -672,7 +625,6 @@
                     head: [summaryColumns], body: summaryRows, startY: 25,
                     headStyles: { fillColor: [39, 174, 96], textColor: 255 }
                 });
-
                 doc.save(`transferencia_${now.toISOString().split('T')[0]}.pdf`);
             };
 
@@ -726,10 +678,8 @@
                 currentY += (descLines.length * 28) + 10;
                 doc.line(margin, currentY, pageW - margin, currentY); currentY += 2;
                 doc.setFontSize(20); doc.setFont("helvetica", "bold"); doc.text(`SKU: ${data.sku}`, margin, currentY + 12);
-                
                 let lotesProdString = data.lotes.join(' / ');
                 if (data.hasNote) { lotesProdString += ' (*)'; }
-
                 if(lotesProdString) { doc.setFontSize(18); doc.setFont("helvetica", "normal"); doc.text(`Lotes: ${lotesProdString}`, pageW - margin, currentY + 12, { align: "right" }); }
                 currentY += 18; doc.line(margin, currentY, pageW - margin, currentY); currentY += 8;
                 const formatNumberES = (numStr) => { if (!numStr) return ''; const [integerPart, decimalPart] = numStr.split(','); const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, "."); return decimalPart !== undefined ? `${formattedInteger},${decimalPart}` : formattedInteger; };
@@ -828,33 +778,13 @@
                     </div>
                 );
             };
-
-            const PendingModal = ({ isOpen, onClose, data }) => {
-                if (!isOpen) return null;
-                const pendingPallets = data.filter(item => !item.isStored).map(item => item.numeroDePallet);
-                return (
-                    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
-                        <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-md h-4/6 flex flex-col">
-                            <h3 className="text-lg font-bold text-gray-800 mb-4">Pallets Pendientes de Transferencia</h3>
-                            {pendingPallets.length > 0 ? (
-                                <div className="flex-grow border rounded-lg overflow-y-auto p-3 bg-gray-50">
-                                    <ul className="list-disc list-inside text-gray-700">
-                                        {pendingPallets.map((pallet, index) => <li key={index} className="mb-1">Pallet Nº <strong>{pallet}</strong></li>)}
-                                    </ul>
-                                </div>
-                            ) : ( <p className="text-gray-600">No hay pallets pendientes de transferir.</p> )}
-                            <div className="flex justify-end mt-6"><button onClick={onClose} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Cerrar</button></div>
-                        </div>
-                    </div>
-                );
-            };
             
             const HelpModal = ({ onClose }) => ( 
                 <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
                     <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-3xl h-5/6 flex flex-col">
                         <h3 className="text-xl font-bold text-gray-800 mb-4 border-b pb-2">Guía de Usuario</h3>
                         <div className="flex-grow overflow-y-auto pr-2 space-y-6 text-gray-700">
-                            <div>
+                             <div>
                                 <h4 className="font-bold text-lg text-indigo-700">Funciones Básicas</h4>
                                 <ul className="list-disc list-inside mt-2 space-y-1">
                                     <li><strong>Filtrado:</strong> Puedes filtrar los datos por cualquier columna usando los campos de texto debajo de los encabezados. También puedes filtrar por rango de fechas.</li>
@@ -899,7 +829,6 @@
                     </div>
                 </div>
             );
-
 
             return (
                 <div className="min-h-screen p-4 sm:p-6 bg-black bg-opacity-50">
