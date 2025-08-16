@@ -11,7 +11,17 @@
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
-        /* Estilos (sin cambios) */
+        body {
+          background-image: url('fondo.jpg');
+          background-size: cover;
+          background-position: center;
+          background-repeat: no-repeat;
+          background-attachment: fixed;
+        }
+        .backdrop-blur-lg {
+            -webkit-backdrop-filter: blur(12px);
+            backdrop-filter: blur(12px);
+        }
         #preview-container {
             width: 100%;
             height: 100%;
@@ -63,15 +73,16 @@
 </head>
 <body class="bg-gray-100 font-sans">
 
-<div id="static-loader" class="fixed inset-0 bg-gray-100 flex items-center justify-center p-4 font-sans z-50 transition-opacity duration-500">
-    <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md text-center">
-        <h1 class="text-4xl font-extrabold text-gray-900 tracking-wide mb-6" style="font-family: 'Arial', sans-serif;">MOLDERIL S.A.</h1>
-        <p id="loader-status" class="text-xl text-gray-600 mb-4">Cargando aplicación...</p>
-        <div class="w-full bg-gray-200 rounded-full h-4">
-            <div id="loader-progress" class="bg-indigo-600 h-4 rounded-full transition-all duration-500" style="width: 10%"></div>
+<div id="static-loader" class="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 p-4 font-sans z-50 transition-opacity duration-500">
+    <div class="relative bg-[#D2B48C]/20 backdrop-blur-lg border border-[#D2B48C]/30 p-8 rounded-xl shadow-2xl w-full max-w-md text-center">
+        <img src="logo.jpg" alt="Logo Molderil" class="mx-auto mb-6 h-32 [filter:drop-shadow(2px_2px_4px_rgba(0,0,0,0.4))_drop-shadow(-2px_-2px_4px_rgba(255,255,255,0.6))]"/>
+        <p id="loader-status" class="text-xl text-white mb-4 [text-shadow:_1px_1px_2px_rgba(0,0,0,0.5)]">Cargando aplicación...</p>
+        <div class="w-full bg-white/20 rounded-full h-4 border border-white/30">
+            <div id="loader-progress" class="bg-amber-400 h-full rounded-full transition-all duration-500" style="width: 10%"></div>
         </div>
     </div>
 </div>
+
 
 <div id="root"></div>
 <div id="toast-container"></div>
@@ -280,7 +291,6 @@
             }
         }, [lotesProduccion.length]);
 
-        // --- FUNCIONES DE GITHUB (sin cambios) ---
         const updateLoteFile = async (nuevoContenido) => {
             const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${RUTA_LOTE_LOGISTICO}`;
             try {
@@ -374,7 +384,6 @@
             }
         };
         
-        // --- MANEJADORES DE EVENTOS Y LÓGICA DE LA APP (sin cambios) ---
         const handleLoteProdChange = (index, value) => {
             const regex = /^\d*$/;
             if (regex.test(value)) {
@@ -577,7 +586,7 @@
 
         return (
             <Fragment>
-                <div className="min-h-screen bg-gray-100 p-4 flex flex-col">
+                <div className="min-h-screen p-4 flex flex-col" style={{background: 'rgba(243, 244, 246, 0.8)'}}>
                     <div className="bg-white p-6 rounded-xl shadow-lg flex-grow">
                         <div className="flex justify-between items-center mb-6">
                             <h1 className="text-3xl font-extrabold text-gray-900">Generar Etiqueta de Pallet</h1>
