@@ -158,7 +158,6 @@
                     return atob(fileData.content).split('\n').filter(Boolean);
                 } catch (error) {
                     console.error(`Error cargando ${path}:`, error);
-                    // No mostraremos alert aquí para no interrumpir la carga inicial
                     throw error;
                 }
             }, []);
@@ -248,8 +247,7 @@
 
                 setIsSaving(false);
                 if (lotesSuccess && notesSuccess) {
-                    setModalState({ isOpen: true, type: 'info', title: 'Éxito', message: '¡Histórico y notas guardados correctamente en GitHub!', onConfirm: () => setModalState({isOpen: false}) });
-                    await loadData(apiToken);
+                    setModalState({ isOpen: true, type: 'info', title: 'Éxito', message: '¡Histórico y notas guardados correctamente en GitHub!', onConfirm: () => { setModalState({isOpen: false}); loadData(apiToken); } });
                 } else {
                     setModalState({ isOpen: true, type: 'info', title: 'Error', message: 'Ocurrió un error al guardar uno o más archivos.', onConfirm: () => setModalState({isOpen: false}) });
                 }
@@ -568,7 +566,6 @@
                 setIsExportOpen(false);
             };
             
-            // --- RESTAURADO: Función para dibujar la etiqueta ---
             const drawLabelOnDoc = async (doc, data) => {
                 const pageW = 210; const margin = 8; const contentW = pageW - (margin * 2); let currentY = margin;
                 doc.setFontSize(24); doc.setFont("helvetica", "bold"); doc.text("MOLDERIL S.A.", pageW / 2, currentY + 8, { align: "center" });
@@ -607,7 +604,6 @@
                 doc.text(date.toLocaleDateString('es-ES'), pageW - margin, currentY + 22, { align: "right" });
             };
 
-            // --- RESTAURADO: Función para reimprimir ---
             const handleReprint = async (item) => {
                 const cantidadParaQR = item.cantidad.replace(',', '.');
                 const qrString = [ item.sku, item.descripcion, item.numeroDePallet, item.lotesProduccion, item.fechaProduccion, cantidadParaQR, item.unidadMedida ].join(';');
@@ -662,12 +658,13 @@
             };
             
             const generateAlmacenamientoPDF = (selectedItems) => {
-                const doc = new jsPDF();
+                // --- MODIFICADO: PDF en horizontal ---
+                const doc = new jsPDF({ orientation: 'landscape' });
                 const fecha = new Date().toLocaleDateString('es-AR');
                 doc.setFontSize(18);
-                doc.text("Reporte de Transferencia a Logística", 105, 15, { align: 'center' });
+                doc.text("Reporte de Transferencia a Logística", 148, 15, { align: 'center' });
                 doc.setFontSize(12);
-                doc.text(`Fecha de Confirmación: ${fecha}`, 105, 22, { align: 'center' });
+                doc.text(`Fecha de Confirmación: ${fecha}`, 148, 22, { align: 'center' });
 
                 const detailColumns = ["SKU", "Descripción", "Nº Pallet", "Lotes", "Cantidad", "U.M."];
                 const detailRows = selectedItems.map(item => [
@@ -743,10 +740,19 @@
                                 
                                 const success = await saveCsvToGithub(CSV_PATH_ALMACENADO, newContent);
 
+                                // --- MODIFICADO: Lógica de recarga y reseteo ---
                                 if (success) {
-                                    setModalState({ isOpen: true, type: 'info', title: 'Éxito', message: '¡Almacenamiento confirmado y registrado con éxito!', onConfirm: () => setModalState({isOpen: false}) });
-                                    resetAlmacenamientoMode();
-                                    await loadData(apiToken);
+                                    setModalState({ 
+                                        isOpen: true, 
+                                        type: 'info', 
+                                        title: 'Éxito', 
+                                        message: '¡Almacenamiento confirmado y registrado con éxito!', 
+                                        onConfirm: async () => {
+                                            setModalState({isOpen: false});
+                                            resetAlmacenamientoMode();
+                                            await loadData(apiToken);
+                                        } 
+                                    });
                                 } else {
                                      setModalState({ isOpen: true, type: 'info', title: 'Error', message: 'Error al guardar el registro de almacenamiento. La operación fue abortada.', onConfirm: () => setModalState({isOpen: false}) });
                                 }
@@ -760,7 +766,6 @@
                 });
             };
 
-            // --- RESTAURADO: Componentes de Modales con z-index aumentado ---
             const ActionModal = ({ isOpen, type, title, message, onConfirm, onClose, suggestions }) => {
                 if (!isOpen) return null;
                 const [inputValue, setInputValue] = useState('');
