@@ -31,7 +31,7 @@
 
     <div id="static-loader" class="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 p-4 font-sans z-50">
         <div class="relative bg-[#D2B48C]/20 backdrop-blur-lg border border-[#D2B48C]/30 p-8 rounded-xl shadow-2xl w-full max-w-md text-center">
-          <img src="logo.jpg" alt="Logo Molderil" class="mx-auto mb-6 h-32 [filter:drop-shadow(2px_2px_4px_rgba(0,0,0,0.4))_drop-shadow(-2px_-2px_4px_rgba(255,255,255,0.6))]"/>
+          <img src="logo.jpg" alt="Logo Molderil" class="mx-auto mb-6 h-32 [filter:drop-shadow(2px_2px_4px_rgba(0,0,0,0.4))_drop_shadow(-2px_-2px_4px_rgba(255,255,255,0.6))]"/>
           <p id="loader-status" class="text-xl text-white mb-4 [text-shadow:_1px_1px_2px_rgba(0,0,0,0.5)]">Cargando aplicación...</p>
           <div class="w-full bg-white/20 rounded-full h-4 border border-white/30">
             <div id="loader-progress" class="bg-amber-400 h-full rounded-full transition-all duration-500" style="width: 10%"></div>
@@ -181,7 +181,10 @@
                 setNotesData(parsedNotes);
 
                 const parsedLotes = lotesRows.map((row, index) => {
-                    const [sku, descripcion, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida, despachado, cliente] = row.split(';');
+                    const [sku, originalDescription, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida, despachado, cliente] = row.split(';');
+                    
+                    const descripcion = articulosMap.get(sku.trim()) || originalDescription;
+
                     const noteKey = `${sku};${numeroDePallet}`;
                     const storedKey = `${sku};${numeroDePallet}`;
                     const hasNote = notesMap.has(noteKey);
@@ -192,11 +195,9 @@
                 
                 setAllData(parsedLotes);
                 setIsLoading(false);
-            }, [fetchCsvFromGithub]);
+            }, [fetchCsvFromGithub, articulosMap]);
             
-            // --- INICIO: LÓGICA DE GUARDADO CORREGIDA ---
-
-            // Función para SOBRESCRIBIR, tomada de grillaqr (2) - Funciona bien para editar
+            // CORRECCIÓN DEFINITIVA: Lógica de guardado robusta contra caché.
             const saveCsvToGithub = async (path, dataToSave, formatRow) => {
                 if (!apiToken) {
                     alert("Error: El token de API no está disponible.");
@@ -205,14 +206,20 @@
                 const csvContent = dataToSave.map(formatRow).join('\n');
                 const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}`;
                 try {
-                    const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${apiToken}` } });
+                    const fileResponse = await fetch(`${url}?t=${new Date().getTime()}`, {
+                        headers: { 'Authorization': `token ${apiToken}` },
+                        cache: 'no-store' // Evita que el navegador use una respuesta en caché.
+                    });
+
                     let currentSha = null;
                     if (fileResponse.ok) {
                         const fileData = await fileResponse.json();
                         currentSha = fileData.sha;
                     } else if (fileResponse.status !== 404) {
-                        throw new Error(`Error ${fileResponse.status}: No se pudo obtener info del archivo ${path}.`);
+                        const errorData = await fileResponse.json();
+                        throw new Error(`Error ${fileResponse.status} al obtener SHA: ${errorData.message}`);
                     }
+
                     const updateResponse = await fetch(url, {
                         method: 'PUT',
                         headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
@@ -222,6 +229,7 @@
                             sha: currentSha,
                         }),
                     });
+
                     if (!updateResponse.ok) {
                         const errorData = await updateResponse.json();
                         throw new Error(`Error ${updateResponse.status}: ${errorData.message || 'Falló la actualización del archivo.'}`);
@@ -234,7 +242,6 @@
                 }
             };
 
-            // Nueva función para AÑADIR contenido, basada en grillaqr (3) - Para transferencias
             const appendCsvToGithub = async (path, stringToAppend) => {
                 if (!apiToken) {
                     alert("Error: El token de API no está disponible.");
@@ -281,7 +288,6 @@
                 }
             };
 
-            // saveData ahora usa la función de sobrescribir, como en grillaqr (2)
             const saveData = async (updatedLotes, updatedNotes) => {
                 setIsSaving(true);
                 const lotesPromise = saveCsvToGithub(CSV_PATH_LOTES, updatedLotes, item => 
@@ -299,8 +305,6 @@
                     alert("Ocurrió un error al guardar uno o más archivos.");
                 }
             };
-
-            // --- FIN: LÓGICA DE GUARDADO CORREGIDA ---
 
             const verifyPasswordAndExecute = async (actionCallback, password) => {
                 if (!password) {
@@ -356,7 +360,7 @@
                             const newArticulosMap = new Map();
                             articulosText.split('\n').slice(1).forEach(row => {
                                 const [tipo, sku, descLarga, descCorta] = row.split(';');
-                                if (sku && descCorta) { newArticulosMap.set(sku.trim(), descCorta.trim()); }
+                                if (sku && descLarga) { newArticulosMap.set(sku.trim(), descLarga.trim()); }
                             });
                             setArticulosMap(newArticulosMap);
                         } catch (e) { console.error("No se pudo cargar la lista de artículos."); }
@@ -581,7 +585,6 @@
                 });
             };
 
-            // processTransfer ahora usa la nueva función appendCsvToGithub
             const processTransfer = async (itemsToTransfer) => {
                 setIsSaving(true);
                 generateTransferPDF(itemsToTransfer);
