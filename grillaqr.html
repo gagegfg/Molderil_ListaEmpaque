@@ -785,50 +785,76 @@
                         <h3 className="text-xl font-bold text-gray-800 mb-4 border-b pb-2">Guía de Usuario</h3>
                         <div className="flex-grow overflow-y-auto pr-2 space-y-6 text-gray-700">
                              <div>
-                                <h4 className="font-bold text-lg text-indigo-700">Funciones Básicas</h4>
-                                <ul className="list-disc list-inside mt-2 space-y-1">
-                                    <li><strong>Filtrado:</strong> Puedes filtrar los datos por cualquier columna usando los campos de texto debajo de los encabezados. También puedes filtrar por rango de fechas.</li>
-                                    <li><strong>Limpiar Filtros:</strong> El botón "Limpiar Filtros" borra todas las búsquedas y fechas.</li>
-                                    <li><strong>Refrescar:</strong> Recarga todos los datos directamente desde el repositorio de GitHub.</li>
-                                    <li><strong>Exportar:</strong> Permite descargar la vista actual de la tabla en formato PDF o Excel.</li>
-                                    <li><strong>Observaciones:</strong> Las filas resaltadas en amarillo claro tienen una nota. Haz doble clic o una pulsación larga en la fila para ver la observación.</li>
-                                </ul>
-                            </div>
-                            <div>
-                                <h4 className="font-bold text-lg text-indigo-700">Gestión de Clientes</h4>
-                                <ul className="list-disc list-inside mt-2 space-y-1">
-                                    <li><strong>Añadir Cliente:</strong> En el menú de acciones (<i className="fas fa-ellipsis-v"></i>) de una fila, selecciona "Añadir Cliente" para asignar un cliente a ese lote. El lote se marcará como "Despachado".</li>
-                                    <li><strong>Modificar Cliente:</strong> Haz clic en el nombre de un cliente ya asignado para abrir un menú que te permitirá cambiar su nombre o eliminarlo del lote.</li>
-                                </ul>
-                            </div>
+                                 <h4 className="font-bold text-lg text-indigo-700">Funciones Básicas</h4>
+                                 <ul className="list-disc list-inside mt-2 space-y-1">
+                                     <li><strong>Filtrado:</strong> Puedes filtrar los datos por cualquier columna usando los campos de texto debajo de los encabezados. También puedes filtrar por rango de fechas.</li>
+                                     <li><strong>Limpiar Filtros:</strong> El botón "Limpiar Filtros" borra todas las búsquedas y fechas.</li>
+                                     <li><strong>Refrescar:</strong> Recarga todos los datos directamente desde el repositorio de GitHub.</li>
+                                     <li><strong>Exportar:</strong> Permite descargar la vista actual de la tabla en formato PDF o Excel.</li>
+                                     <li><strong>Observaciones:</strong> Las filas resaltadas en amarillo claro tienen una nota. Haz doble clic o una pulsación larga en la fila para ver la observación.</li>
+                                 </ul>
+                             </div>
                              <div>
-                                <h4 className="font-bold text-lg text-indigo-700">Módulo de Transferencia a Depósito</h4>
-                                <p className="mt-2">Esta sección te permite gestionar qué pallets han sido físicamente movidos al depósito final.</p>
-                                <ul className="list-disc list-inside mt-2 space-y-2">
-                                    <li><strong>Columna "ALMACENADO":</strong> Indica con un check si un lote (SKU + Pallet) ya ha sido registrado en el archivo <strong>nropalletalmacenado.csv</strong>.</li>
-                                    <li><strong>Botón "Pendientes de Transferencia":</strong> Ubicado en la cabecera, este botón te muestra una lista rápida de todos los números de pallet que aún no han sido transferidos.</li>
-                                    <li><strong>Activar "Modo Transferencia":</strong>
-                                        <ul className="list-disc list-inside ml-5 mt-1">
-                                            <li>Haz clic en el botón <strong>"Modo Transferencia"</strong>, ubicado arriba de la columna "ALMACENADO".</li>
-                                            <li>La grilla se filtrará para mostrar solo los lotes pendientes.</li>
-                                            <li>Los checkboxes se activarán para que puedas seleccionar los lotes que vas a transferir.</li>
-                                        </ul>
-                                    </li>
-                                    <li><strong>Realizar la Transferencia:</strong>
-                                        <ul className="list-disc list-inside ml-5 mt-1">
-                                            <li>Una vez seleccionados los lotes, haz clic en <strong>"Transferir a Depósito"</strong>.</li>
-                                            <li>Se te pedirá confirmación y luego la contraseña de administrador.</li>
-                                            <li>Si todo es correcto, se generará un PDF del remito y se guardarán los cambios en la base de datos de GitHub.</li>
-                                        </ul>
-                                    </li>
-                                     <li><strong>Cancelar:</strong> Si activaste el "Modo Transferencia" por error, presiona <strong>"Cancelar"</strong> para volver a la vista normal sin hacer cambios.</li>
-                                </ul>
-                            </div>
+                                 <h4 className="font-bold text-lg text-indigo-700">Gestión de Clientes</h4>
+                                 <ul className="list-disc list-inside mt-2 space-y-1">
+                                     <li><strong>Añadir Cliente:</strong> En el menú de acciones (<i className="fas fa-ellipsis-v"></i>) de una fila, selecciona "Añadir Cliente" para asignar un cliente a ese lote. El lote se marcará como "Despachado".</li>
+                                     <li><strong>Modificar Cliente:</strong> Haz clic en el nombre de un cliente ya asignado para abrir un menú que te permitirá cambiar su nombre o eliminarlo del lote.</li>
+                                 </ul>
+                             </div>
+                              <div>
+                                 <h4 className="font-bold text-lg text-indigo-700">Módulo de Transferencia a Depósito</h4>
+                                 <p className="mt-2">Esta sección te permite gestionar qué pallets han sido físicamente movidos al depósito final.</p>
+                                 <ul className="list-disc list-inside mt-2 space-y-2">
+                                     <li><strong>Columna "ALMACENADO":</strong> Indica con un check si un lote (SKU + Pallet) ya ha sido registrado en el archivo <strong>nropalletalmacenado.csv</strong>.</li>
+                                     <li><strong>Botón "Pendientes de Transferencia":</strong> Ubicado en la cabecera, este botón te muestra una lista rápida de todos los números de pallet que aún no han sido transferidos.</li>
+                                     <li><strong>Activar "Modo Transferencia":</strong>
+                                         <ul className="list-disc list-inside ml-5 mt-1">
+                                             <li>Haz clic en el botón <strong>"Modo Transferencia"</strong>, ubicado arriba de la columna "ALMACENADO".</li>
+                                             <li>La grilla se filtrará para mostrar solo los lotes pendientes.</li>
+                                             <li>Los checkboxes se activarán para que puedas seleccionar los lotes que vas a transferir.</li>
+                                         </ul>
+                                     </li>
+                                     <li><strong>Realizar la Transferencia:</strong>
+                                         <ul className="list-disc list-inside ml-5 mt-1">
+                                             <li>Una vez seleccionados los lotes, haz clic en <strong>"Transferir a Depósito"</strong>.</li>
+                                             <li>Se te pedirá confirmación y luego la contraseña de administrador.</li>
+                                             <li>Si todo es correcto, se generará un PDF del remito y se guardarán los cambios en la base de datos de GitHub.</li>
+                                         </ul>
+                                     </li>
+                                      <li><strong>Cancelar:</strong> Si activaste el "Modo Transferencia" por error, presiona <strong>"Cancelar"</strong> para volver a la vista normal sin hacer cambios.</li>
+                                 </ul>
+                             </div>
                         </div>
                         <div className="flex justify-end mt-6"><button onClick={onClose} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Cerrar</button></div>
                     </div>
                 </div>
             );
+
+            // Placeholder for PendingModal if its definition is needed.
+            const PendingModal = ({ isOpen, onClose, data }) => {
+                if (!isOpen) return null;
+                const pendingItems = data.filter(item => !item.isStored);
+                return (
+                    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
+                         <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-md h-4/6 flex flex-col">
+                            <h3 className="text-lg font-bold text-gray-800 mb-4">Pallets Pendientes de Transferencia</h3>
+                            <div className="flex-grow border rounded-lg overflow-y-auto p-2">
+                                <ul className="divide-y divide-gray-200">
+                                    {pendingItems.length > 0 ? pendingItems.map(item => (
+                                        <li key={item.id} className="py-2 px-3 text-sm">
+                                            <span className="font-semibold text-gray-800">Pallet Nº: {item.numeroDePallet}</span>
+                                            <span className="text-gray-600"> - SKU: {item.sku}</span>
+                                        </li>
+                                    )) : <p className="text-gray-500 p-4 text-center">No hay pallets pendientes.</p>}
+                                </ul>
+                            </div>
+                            <div className="flex justify-end mt-4">
+                                <button onClick={onClose} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Cerrar</button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
 
             return (
                 <div className="min-h-screen p-4 sm:p-6 bg-black bg-opacity-50">
