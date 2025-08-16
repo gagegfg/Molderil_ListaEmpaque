@@ -158,8 +158,8 @@
                     return atob(fileData.content).split('\n').filter(Boolean);
                 } catch (error) {
                     console.error(`Error cargando ${path}:`, error);
-                    alert(`Error al cargar datos desde GitHub: ${error.message}`);
-                    return [];
+                    // No mostraremos alert aquí para no interrumpir la carga inicial
+                    throw error;
                 }
             }, []);
             
@@ -198,7 +198,7 @@
             
             const saveCsvToGithub = async (path, content) => {
                 if (!apiToken) {
-                    alert("Error: El token de API no está disponible.");
+                    setModalState({ isOpen: true, type: 'info', title: 'Error', message: 'El token de API no está disponible.', onConfirm: () => setModalState({isOpen: false}) });
                     return false;
                 }
                 
@@ -226,7 +226,7 @@
                     if (!updateResponse.ok) throw new Error(`Error ${updateResponse.status}: Falló la actualización de ${path}.`);
                     return true;
                 } catch (e) {
-                    alert(`ERROR al guardar ${path} en GitHub: ${e.message}`);
+                    setModalState({ isOpen: true, type: 'info', title: 'Error al Guardar', message: `ERROR al guardar ${path} en GitHub: ${e.message}`, onConfirm: () => setModalState({isOpen: false}) });
                     return false;
                 }
             };
@@ -248,16 +248,16 @@
 
                 setIsSaving(false);
                 if (lotesSuccess && notesSuccess) {
-                    alert("¡Histórico y notas guardados correctamente en GitHub!");
+                    setModalState({ isOpen: true, type: 'info', title: 'Éxito', message: '¡Histórico y notas guardados correctamente en GitHub!', onConfirm: () => setModalState({isOpen: false}) });
                     await loadData(apiToken);
                 } else {
-                    alert("Ocurrió un error al guardar uno o más archivos.");
+                    setModalState({ isOpen: true, type: 'info', title: 'Error', message: 'Ocurrió un error al guardar uno o más archivos.', onConfirm: () => setModalState({isOpen: false}) });
                 }
             };
             
             const verifyPasswordAndExecute = async (actionCallback, password) => {
                 if (!password) {
-                    alert("Por favor, ingrese la contraseña.");
+                     setModalState({ isOpen: true, type: 'info', title: 'Atención', message: 'Por favor, ingrese la contraseña.', onConfirm: () => setModalState({isOpen: false}) });
                     return;
                 }
                 const correctPassword = await getApiToken('pswsku.txt');
@@ -266,7 +266,7 @@
                     setModalState({ isOpen: false });
                     actionCallback();
                 } else {
-                    alert("Contraseña incorrecta.");
+                    setModalState({ isOpen: true, type: 'info', title: 'Error', message: 'Contraseña incorrecta.', onConfirm: () => setModalState({isOpen: false}) });
                 }
             };
 
@@ -443,16 +443,17 @@
                     message: 'Ingrese el nombre del nuevo cliente para este lote.',
                     onConfirm: (newClient) => {
                         if (!newClient || !clientList.includes(newClient.toUpperCase())) {
-                            alert(`El cliente "${newClient || ''}" no es válido. Por favor, seleccione uno de la lista.`);
+                            setModalState({ isOpen: true, type: 'info', title: 'Cliente no válido', message: `El cliente "${newClient || ''}" no es válido. Por favor, seleccione uno de la lista.`, onConfirm: () => setModalState({isOpen: false}) });
                             return;
                         }
                         setModalState({ isOpen: false });
                         executeActionWithAuth(() => {
+                            let clientAlreadyExists = false;
                             const newData = allData.map(item => {
                                 if (item.id === rowId) {
                                     const existingClients = item.cliente ? item.cliente.split('#') : [];
                                     if (existingClients.includes(newClient.toUpperCase())) {
-                                        alert("Este cliente ya está asignado a este lote.");
+                                        clientAlreadyExists = true;
                                         return item;
                                     }
                                     const updatedClients = [...existingClients, newClient.toUpperCase()].join('#');
@@ -460,7 +461,11 @@
                                 }
                                 return item;
                             });
-                            saveData(newData, notesData);
+                            if (clientAlreadyExists) {
+                                setModalState({ isOpen: true, type: 'info', title: 'Atención', message: 'Este cliente ya está asignado a este lote.', onConfirm: () => setModalState({isOpen: false}) });
+                            } else {
+                                saveData(newData, notesData);
+                            }
                         });
                     }
                 });
@@ -468,7 +473,7 @@
 
             const handleChangeClientName = (rowId, oldClient, newClient) => {
                 if (!newClient || !clientList.includes(newClient.toUpperCase())) {
-                    alert(`El cliente "${newClient || ''}" no es válido. Por favor, seleccione un cliente de la lista.`);
+                    setModalState({ isOpen: true, type: 'info', title: 'Cliente no válido', message: `El cliente "${newClient || ''}" no es válido. Por favor, seleccione un cliente de la lista.`, onConfirm: () => setModalState({isOpen: false}) });
                     return;
                 }
                 setModalState({ isOpen: false });
@@ -563,8 +568,79 @@
                 setIsExportOpen(false);
             };
             
-            const drawLabelOnDoc = async (doc, data) => { /* ... (sin cambios) ... */ };
-            const handleReprint = async (item) => { /* ... (sin cambios) ... */ };
+            // --- RESTAURADO: Función para dibujar la etiqueta ---
+            const drawLabelOnDoc = async (doc, data) => {
+                const pageW = 210; const margin = 8; const contentW = pageW - (margin * 2); let currentY = margin;
+                doc.setFontSize(24); doc.setFont("helvetica", "bold"); doc.text("MOLDERIL S.A.", pageW / 2, currentY + 8, { align: "center" });
+                currentY += 15; doc.line(margin, currentY, pageW - margin, currentY); currentY += 10;
+                doc.setFontSize(84); doc.setFont("helvetica", "bold");
+                const descLines = doc.splitTextToSize(data.descripcion, contentW);
+                doc.text(descLines, pageW / 2, currentY + 28, { align: "center", lineHeightFactor: 1 });
+                currentY += (descLines.length * 28) + 10;
+                doc.line(margin, currentY, pageW - margin, currentY); currentY += 2;
+                doc.setFontSize(20); doc.setFont("helvetica", "bold"); doc.text(`SKU: ${data.sku}`, margin, currentY + 12);
+                
+                let lotesProdString = data.lotes.join(' / ');
+                if (data.hasNote) {
+                    lotesProdString += ' (*)';
+                }
+
+                if(lotesProdString) { doc.setFontSize(18); doc.setFont("helvetica", "normal"); doc.text(`Lotes: ${lotesProdString}`, pageW - margin, currentY + 12, { align: "right" }); }
+                currentY += 18; doc.line(margin, currentY, pageW - margin, currentY); currentY += 8;
+                const formatNumberES = (numStr) => { if (!numStr) return ''; const [integerPart, decimalPart] = numStr.split(','); const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, "."); return decimalPart !== undefined ? `${formattedInteger},${decimalPart}` : formattedInteger; };
+                const formattedCantidad = formatNumberES(data.cantidad);
+                const uomText = data.uom === 'Unidad' ? 'Unidades' : 'Millares';
+                const cantidadString = `${formattedCantidad} ${uomText}`;
+                doc.setFont("helvetica", "bold"); doc.setFontSize(44);
+                const cantidadWidth = doc.getStringUnitWidth(cantidadString) * doc.getFontSize() / doc.internal.scaleFactor;
+                const cantidadX = (pageW - cantidadWidth) / 2;
+                doc.text(cantidadString, cantidadX, currentY + 12); currentY += 20;
+                const qrSize = 90; const qrX = (pageW - qrSize) / 2; const qrY = currentY;
+                const qrImageData = await QRCode.toDataURL(data.qrString, { width: 400, margin: 2, errorCorrectionLevel: 'M' });
+                doc.addImage(qrImageData, 'PNG', qrX, qrY, qrSize, qrSize); currentY += qrSize + 5;
+                doc.line(margin, currentY, pageW - margin, currentY); currentY += 5;
+                doc.setFontSize(22); doc.setFont("helvetica", "bold"); doc.text("Nº de Pallet", margin, currentY + 10); doc.text("Fabricación", pageW - margin, currentY + 10, { align: "right" });
+                doc.setFontSize(36); doc.text(String(data.palletId), margin, currentY + 22);
+                doc.setFontSize(22);
+                const [day, month, year] = data.fechaProd.split('/');
+                const date = new Date(year, month - 1, day);
+                doc.text(date.toLocaleDateString('es-ES'), pageW - margin, currentY + 22, { align: "right" });
+            };
+
+            // --- RESTAURADO: Función para reimprimir ---
+            const handleReprint = async (item) => {
+                const cantidadParaQR = item.cantidad.replace(',', '.');
+                const qrString = [ item.sku, item.descripcion, item.numeroDePallet, item.lotesProduccion, item.fechaProduccion, cantidadParaQR, item.unidadMedida ].join(';');
+                const descripcionCorta = articulosMap.get(item.sku) || item.descripcion;
+
+                const data = {
+                    sku: item.sku,
+                    descripcion: descripcionCorta,
+                    lotes: item.lotesProduccion.split('#').filter(Boolean),
+                    cantidad: item.cantidad,
+                    uom: item.unidadMedida,
+                    fechaProd: item.fechaProduccion,
+                    palletId: item.numeroDePallet,
+                    qrString: qrString,
+                    hasNote: item.hasNote
+                };
+
+                const previewDoc = new jsPDF('p', 'mm', 'a4');
+                await drawLabelOnDoc(previewDoc, data);
+                const pdfDataUrl = previewDoc.output('datauristring');
+
+                const printDoc = new jsPDF('p', 'mm', 'a4');
+                await drawLabelOnDoc(printDoc, data);
+                printDoc.autoPrint();
+                const printablePdfUrl = printDoc.output('bloburl');
+
+                setReprintModal({ 
+                    isOpen: true, 
+                    pdfUrl: pdfDataUrl, 
+                    printablePdfUrl: printablePdfUrl,
+                    palletId: item.numeroDePallet 
+                });
+            };
             
             const handlePendientesClick = () => {
                 setColumnFilters({ sku: '', descripcion: '', numeroDePallet: '', lotesProduccion: '', transferido: '', despachado: '', cliente: '' });
@@ -645,7 +721,7 @@
                 const selectedItems = allData.filter(item => transferSelection[`${item.sku};${item.numeroDePallet}`]);
                 
                 if (selectedItems.length === 0) {
-                    alert("No ha seleccionado ningún pallet para confirmar.");
+                    setModalState({ isOpen: true, type: 'info', title: 'Atención', message: 'No ha seleccionado ningún pallet para confirmar.', onConfirm: () => setModalState({isOpen: false}) });
                     return;
                 }
 
@@ -668,14 +744,14 @@
                                 const success = await saveCsvToGithub(CSV_PATH_ALMACENADO, newContent);
 
                                 if (success) {
-                                    alert("¡Almacenamiento confirmado y registrado con éxito!");
+                                    setModalState({ isOpen: true, type: 'info', title: 'Éxito', message: '¡Almacenamiento confirmado y registrado con éxito!', onConfirm: () => setModalState({isOpen: false}) });
                                     resetAlmacenamientoMode();
                                     await loadData(apiToken);
                                 } else {
-                                    alert("Error al guardar el registro de almacenamiento. La operación fue abortada.");
+                                     setModalState({ isOpen: true, type: 'info', title: 'Error', message: 'Error al guardar el registro de almacenamiento. La operación fue abortada.', onConfirm: () => setModalState({isOpen: false}) });
                                 }
                             } catch (error) {
-                                alert(`Ocurrió un error inesperado: ${error.message}`);
+                                setModalState({ isOpen: true, type: 'info', title: 'Error Inesperado', message: `Ocurrió un error: ${error.message}`, onConfirm: () => setModalState({isOpen: false}) });
                             } finally {
                                 setIsSaving(false);
                             }
@@ -684,15 +760,88 @@
                 });
             };
 
-            const ActionModal = ({ isOpen, type, title, message, onConfirm, onClose, suggestions }) => { /* ... (sin cambios) ... */ };
-            const ObservationModal = ({ isOpen, text, onClose }) => { /* ... (sin cambios) ... */ };
-            const ReprintModal = ({ isOpen, pdfUrl, printablePdfUrl, palletId, onClose }) => { /* ... (sin cambios) ... */ };
-            const HelpModal = ({ onClose }) => ( <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">{/* Contenido del modal de ayuda */}</div>);
+            // --- RESTAURADO: Componentes de Modales con z-index aumentado ---
+            const ActionModal = ({ isOpen, type, title, message, onConfirm, onClose, suggestions }) => {
+                if (!isOpen) return null;
+                const [inputValue, setInputValue] = useState('');
+                const [showSuggestions, setShowSuggestions] = useState(false);
+                const inputRef = useRef(null);
+                const modalContentRef = useRef(null);
+                useEffect(() => { if (isOpen) setTimeout(() => inputRef.current?.focus(), 100); }, [isOpen]);
+                useEffect(() => {
+                    const handleClickOutside = (e) => { if (modalContentRef.current && !modalContentRef.current.contains(e.target)) setShowSuggestions(false); };
+                    document.addEventListener('mousedown', handleClickOutside);
+                    return () => document.removeEventListener('mousedown', handleClickOutside);
+                }, []);
+                const handleConfirm = () => onConfirm(inputValue);
+                const filteredSuggestions = suggestions ? suggestions.filter(s => s.toLowerCase().includes(inputValue.toLowerCase())) : [];
+                return (
+                    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-[100] p-4">
+                        <div ref={modalContentRef} className="bg-white p-6 rounded-xl shadow-lg w-full max-w-sm">
+                            <h3 className="text-lg font-bold text-gray-800 mb-4">{title}</h3>
+                            <p className="text-sm text-gray-600 mb-4">{message}</p>
+                            {(type === 'password' || type === 'textInputWithSuggestions') && (
+                                <div className="relative">
+                                    <input ref={inputRef} type={type === 'password' ? 'password' : 'text'} value={inputValue} onChange={e => { setInputValue(e.target.value); if (type === 'textInputWithSuggestions') setShowSuggestions(true); }} onKeyDown={e => e.key === 'Enter' && handleConfirm()} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" autoComplete="off" />
+                                    {type === 'textInputWithSuggestions' && showSuggestions && filteredSuggestions.length > 0 && (
+                                        <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">
+                                            {filteredSuggestions.map(client => ( <li key={client} className="p-2 hover:bg-indigo-100 cursor-pointer" onClick={() => { setInputValue(client); setShowSuggestions(false); }}>{client}</li> ))}
+                                        </ul>
+                                    )}
+                                </div>
+                            )}
+                            <div className="flex justify-end space-x-3 mt-6">
+                                {type !== 'info' && <button onClick={onClose} className="bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300">Cancelar</button>}
+                                <button onClick={handleConfirm} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Aceptar</button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            const ObservationModal = ({ isOpen, text, onClose }) => {
+                if (!isOpen) return null;
+                return (
+                    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-[100] p-4">
+                        <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-md">
+                            <h3 className="text-lg font-bold text-gray-800 mb-4">Observación del Lote</h3>
+                            <p className="text-base text-gray-700 mb-6 whitespace-pre-wrap">{text}</p>
+                            <div className="flex justify-end"><button onClick={onClose} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Cerrar</button></div>
+                        </div>
+                    </div>
+                );
+            };
+
+            const ReprintModal = ({ isOpen, pdfUrl, printablePdfUrl, palletId, onClose }) => {
+                if (!isOpen) return null;
+                
+                const handlePrint = () => {
+                    if (printablePdfUrl) {
+                        window.open(printablePdfUrl, '_blank');
+                    }
+                };
+                return (
+                    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-[100] p-4">
+                        <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-2xl h-5/6 flex flex-col">
+                            <h3 className="text-lg font-bold text-gray-800 mb-4">Reimprimir Etiqueta - Pallet Nº {palletId}</h3>
+                            <div className="flex-grow border rounded-lg overflow-hidden">
+                                <iframe src={pdfUrl} className="w-full h-full" title={`Etiqueta Pallet ${palletId}`}></iframe>
+                            </div>
+                            <div className="flex justify-end space-x-3 mt-6">
+                                <button onClick={onClose} className="bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300">Cancelar</button>
+                                <button onClick={handlePrint} className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 flex items-center"><i className="fas fa-print mr-2"></i>Imprimir</button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+            
+            const HelpModal = ({ onClose }) => ( <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-[100] p-4">{/* Contenido del modal de ayuda */}</div>);
 
             return (
                 <div className="min-h-screen p-4 sm:p-6 bg-black bg-opacity-50">
                     {isSaving && (
-                        <div className="fixed inset-0 bg-white bg-opacity-80 flex items-center justify-center z-50">
+                        <div className="fixed inset-0 bg-white bg-opacity-80 flex items-center justify-center z-[110]">
                             <div className="flex items-center space-x-3 text-xl font-semibold text-gray-700"><i className="fas fa-sync-alt animate-spin"></i><span>Guardando en GitHub...</span></div>
                         </div>
                     )}
@@ -732,7 +881,6 @@
                         <div className="flex flex-col sm:flex-row justify-between items-center mb-4">
                             <div className="flex items-center space-x-2">
                                 <p className="text-gray-600 font-semibold">{filteredData.length} registro(s) encontrado(s)</p>
-                                {/* --- MODIFICADO: Lógica de botones de almacenamiento --- */}
                                 {!isAlmacenamientoMode ? (
                                     <button onClick={handlePendientesClick} className="bg-yellow-500 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-yellow-600 flex items-center"><i className="fas fa-box-open mr-2"></i>Pendientes por Almacenar</button>
                                 ) : (
@@ -762,7 +910,6 @@
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-800 text-white sticky top-0 z-10">
                                     <tr>
-                                        {/* --- MODIFICADO: Ancho de columna reducido --- */}
                                         <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider w-24">TRANSFERIDO</th>
                                         {["SKU", "Descripción", "Nº Pallet", "Lotes Prod.", "Despachado", "Cliente", "F. Prod.", "Cantidad", "U.M.", "Acciones"].map(header => (
                                             <th key={header} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">{header}</th>
