@@ -183,7 +183,8 @@
                 const parsedLotes = lotesRows.map((row, index) => {
                     const [sku, originalDescription, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida, despachado, cliente] = row.split(';');
                     
-                    const descripcion = articulosMap.get(sku.trim()) || originalDescription;
+                    const articuloInfo = articulosMap.get(sku.trim());
+                    const descripcion = (articuloInfo && articuloInfo.larga) ? articuloInfo.larga : originalDescription;
 
                     const noteKey = `${sku};${numeroDePallet}`;
                     const storedKey = `${sku};${numeroDePallet}`;
@@ -236,7 +237,6 @@
                     return true;
                 } catch (e) {
                     console.error(e);
-                    // Devolvemos el mensaje de error para mostrarlo en la alerta de saveData
                     return e.message; 
                 }
             };
@@ -286,7 +286,6 @@
                 }
             };
 
-            // CORRECCIÓN: Lógica de guardado y recarga robusta
             const saveData = async (updatedLotes, updatedNotes) => {
                 setIsSaving(true);
                 const [lotesResult, notesResult] = await Promise.all([
@@ -309,7 +308,6 @@
                     alert(errorMessage);
                 }
                 
-                // Siempre recargamos los datos desde la fuente de verdad (GitHub)
                 await loadData();
             };
 
@@ -367,7 +365,12 @@
                             const newArticulosMap = new Map();
                             articulosText.split('\n').slice(1).forEach(row => {
                                 const [tipo, sku, descLarga, descCorta] = row.split(';');
-                                if (sku && descLarga) { newArticulosMap.set(sku.trim(), descLarga.trim()); }
+                                if (sku) { 
+                                    newArticulosMap.set(sku.trim(), {
+                                        larga: (descLarga || '').trim(),
+                                        corta: (descCorta || '').trim()
+                                    }); 
+                                }
                             });
                             setArticulosMap(newArticulosMap);
                         } catch (e) { console.error("No se pudo cargar la lista de artículos."); }
@@ -608,14 +611,16 @@
                 await loadData();
             };
 
+            // CORRECCIÓN: PDF de transferencia en horizontal
             const generateTransferPDF = (transferredItems) => {
-                const doc = new jsPDF();
+                const doc = new jsPDF({ orientation: 'landscape' });
                 const now = new Date();
+                const pageW = doc.internal.pageSize.getWidth();
                 const formattedDateTime = `${now.toLocaleDateString('es-AR')} ${now.toLocaleTimeString('es-AR')}`;
                 doc.setFontSize(20);
-                doc.text("Reporte de Transferencia a Depósito", 105, 15, { align: 'center' });
+                doc.text("Reporte de Transferencia a Depósito", pageW / 2, 15, { align: 'center' });
                 doc.setFontSize(12);
-                doc.text(`Fecha y Hora: ${formattedDateTime}`, 105, 22, { align: 'center' });
+                doc.text(`Fecha y Hora: ${formattedDateTime}`, pageW / 2, 22, { align: 'center' });
                 doc.setFontSize(16);
                 doc.text("Detalle de Lotes Transferidos", 14, 35);
                 const detailColumns = ["SKU", "Descripción", "Nº Pallet", "Lote Prod.", "Cantidad", "U.M."];
@@ -628,6 +633,16 @@
                     headStyles: { fillColor: [41, 128, 185], textColor: 255 },
                     alternateRowStyles: { fillColor: [245, 245, 245] }
                 });
+
+                // El resumen podría necesitar una nueva página si hay muchos detalles
+                let finalY = doc.lastAutoTable.finalY;
+                if (finalY > 150) { // Umbral para decidir si añadir nueva página
+                    doc.addPage();
+                    finalY = 0; // Reset Y position
+                }
+
+                doc.setFontSize(16);
+                doc.text("Resumen por SKU", 14, finalY + 15);
                 const summary = transferredItems.reduce((acc, item) => {
                     const key = `${item.sku};${item.unidadMedida}`;
                     const qty = parseFloat(item.cantidad.replace('.', '').replace(',', '.'));
@@ -637,9 +652,7 @@
                     acc[key].total += isNaN(qty) ? 0 : qty;
                     return acc;
                 }, {});
-                doc.addPage();
-                doc.setFontSize(16);
-                doc.text("Resumen por SKU", 14, 20);
+                
                 const summaryColumns = ["SKU", "Cantidad Total", "Unidad de Medida"];
                 const summaryRows = Object.values(summary).map(s => [
                     s.sku,
@@ -647,7 +660,7 @@
                     s.um
                 ]);
                 doc.autoTable({
-                    head: [summaryColumns], body: summaryRows, startY: 25,
+                    head: [summaryColumns], body: summaryRows, startY: finalY + 20,
                     headStyles: { fillColor: [39, 174, 96], textColor: 255 }
                 });
                 doc.save(`transferencia_${now.toISOString().split('T')[0]}.pdf`);
@@ -725,11 +738,15 @@
                 doc.text(new Date(year, month - 1, day).toLocaleDateString('es-ES'), pageW - margin, currentY + 22, { align: "right" });
             };
 
+            // CORRECCIÓN: Usar descripción corta (4ta columna) para la etiqueta
             const handleReprint = async (item) => {
                 const cantidadParaQR = item.cantidad.replace(',', '.');
                 const qrString = [ item.sku, item.descripcion, item.numeroDePallet, item.lotesProduccion, item.fechaProduccion, cantidadParaQR, item.unidadMedida ].join(';');
-                const descripcionCorta = articulosMap.get(item.sku) || item.descripcion;
-                const data = { sku: item.sku, descripcion: descripcionCorta, lotes: item.lotesProduccion.split('#').filter(Boolean), cantidad: item.cantidad, uom: item.unidadMedida, fechaProd: item.fechaProduccion, palletId: item.numeroDePallet, qrString: qrString, hasNote: item.hasNote };
+                
+                const articuloInfo = articulosMap.get(item.sku);
+                const descripcionParaEtiqueta = (articuloInfo && articuloInfo.corta) ? articuloInfo.corta : item.descripcion;
+
+                const data = { sku: item.sku, descripcion: descripcionParaEtiqueta, lotes: item.lotesProduccion.split('#').filter(Boolean), cantidad: item.cantidad, uom: item.unidadMedida, fechaProd: item.fechaProduccion, palletId: item.numeroDePallet, qrString: qrString, hasNote: item.hasNote };
                 const previewDoc = new jsPDF('p', 'mm', 'a4'); await drawLabelOnDoc(previewDoc, data);
                 const printDoc = new jsPDF('p', 'mm', 'a4'); await drawLabelOnDoc(printDoc, data);
                 printDoc.autoPrint();
@@ -1005,7 +1022,6 @@
                                                 <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">
                                                     <div className="flex flex-wrap gap-1">{clients.map(client => (
                                                         <div key={client} className="relative">
-                                                            {/* CORRECCIÓN: Botón deshabilitado mientras se guarda */}
                                                             <button 
                                                                 onClick={() => setActiveClientMenu({rowId: item.id, client: client})} 
                                                                 disabled={isSaving}
@@ -1029,7 +1045,6 @@
                                                 <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{item.unidadMedida}</td>
                                                 <td className="px-4 py-2 text-center">
                                                     <div className="relative" ref={activeActionMenu === item.id ? actionMenuRef : null}>
-                                                        {/* CORRECCIÓN: Botón deshabilitado mientras se guarda */}
                                                         <button 
                                                             onClick={() => setActiveActionMenu(activeActionMenu === item.id ? null : item.id)} 
                                                             disabled={isSaving}
