@@ -31,7 +31,7 @@
 
     <div id="static-loader" class="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 p-4 font-sans z-50">
         <div class="relative bg-[#D2B48C]/20 backdrop-blur-lg border border-[#D2B48C]/30 p-8 rounded-xl shadow-2xl w-full max-w-md text-center">
-          <img src="logo.jpg" alt="Logo Molderil" class="mx-auto mb-6 h-32 [filter:drop-shadow(2px_2px_4px_rgba(0,0,0,0.4))_drop-shadow(-2px_-2px_4px_rgba(255,255,255,0.6))]"/>
+          <img src="logo.jpg" alt="Logo Molderil" class="mx-auto mb-6 h-32 [filter:drop-shadow(2px_2px_4px_rgba(0,0,0,0.4))_drop_shadow(-2px_-2px_4px_rgba(255,255,255,0.6))]"/>
           <p id="loader-status" class="text-xl text-white mb-4 [text-shadow:_1px_1px_2px_rgba(0,0,0,0.5)]">Cargando aplicación...</p>
           <div class="w-full bg-white/20 rounded-full h-4 border border-white/30">
             <div id="loader-progress" class="bg-amber-400 h-full rounded-full transition-all duration-500" style="width: 10%"></div>
@@ -183,7 +183,6 @@
                 const parsedLotes = lotesRows.map((row, index) => {
                     const [sku, originalDescription, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida, despachado, cliente] = row.split(';');
                     
-                    // CORRECCIÓN: Se busca la descripción correcta en el mapa de artículos. Si no existe, usa la original.
                     const descripcion = articulosMap.get(sku.trim()) || originalDescription;
 
                     const noteKey = `${sku};${numeroDePallet}`;
@@ -198,19 +197,18 @@
                 setIsLoading(false);
             }, [fetchCsvFromGithub, articulosMap]);
             
+            // CORRECCIÓN: Se reemplaza esta función con la versión de grillaqr (2).html que funciona correctamente.
             const saveCsvToGithub = async (path, dataToSave, formatRow) => {
                 if (!apiToken) {
                     alert("Error: El token de API no está disponible.");
                     return false;
                 }
+                
                 const csvContent = dataToSave.map(formatRow).join('\n');
                 const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}`;
+
                 try {
-                    // CORRECCIÓN: Se añade un parámetro para evitar la caché del navegador y asegurar que se obtiene el SHA más reciente.
-                    const fileResponse = await fetch(`${url}?t=${new Date().getTime()}`, {
-                        headers: { 'Authorization': `token ${apiToken}` },
-                        cache: 'no-store'
-                    });
+                    const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${apiToken}` } });
                     let currentSha = null;
                     if (fileResponse.ok) {
                         const fileData = await fileResponse.json();
@@ -218,6 +216,7 @@
                     } else if (fileResponse.status !== 404) {
                         throw new Error(`Error ${fileResponse.status}: No se pudo obtener info del archivo ${path}.`);
                     }
+
                     const updateResponse = await fetch(url, {
                         method: 'PUT',
                         headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
@@ -227,14 +226,11 @@
                             sha: currentSha,
                         }),
                     });
-                    if (!updateResponse.ok) {
-                        const errorData = await updateResponse.json();
-                        throw new Error(`Error ${updateResponse.status}: ${errorData.message || 'Falló la actualización del archivo.'}`);
-                    }
+
+                    if (!updateResponse.ok) throw new Error(`Error ${updateResponse.status}: Falló la actualización de ${path}.`);
                     return true;
                 } catch (e) {
-                    alert(`ERROR al guardar en GitHub (${path}):\n${e.message}`);
-                    console.error(e);
+                    alert(`ERROR al guardar ${path} en GitHub: ${e.message}`);
                     return false;
                 }
             };
@@ -357,7 +353,6 @@
                             const newArticulosMap = new Map();
                             articulosText.split('\n').slice(1).forEach(row => {
                                 const [tipo, sku, descLarga, descCorta] = row.split(';');
-                                // CORRECCIÓN: Se utiliza descLarga (3ra columna) en lugar de descCorta (4ta columna).
                                 if (sku && descLarga) { newArticulosMap.set(sku.trim(), descLarga.trim()); }
                             });
                             setArticulosMap(newArticulosMap);
