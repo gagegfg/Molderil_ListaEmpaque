@@ -197,7 +197,6 @@
                 setIsLoading(false);
             }, [fetchCsvFromGithub, articulosMap]);
             
-            // CORRECCIÓN DEFINITIVA: Lógica de guardado robusta contra caché.
             const saveCsvToGithub = async (path, dataToSave, formatRow) => {
                 if (!apiToken) {
                     alert("Error: El token de API no está disponible.");
@@ -208,7 +207,7 @@
                 try {
                     const fileResponse = await fetch(`${url}?t=${new Date().getTime()}`, {
                         headers: { 'Authorization': `token ${apiToken}` },
-                        cache: 'no-store' // Evita que el navegador use una respuesta en caché.
+                        cache: 'no-store'
                     });
 
                     let currentSha = null;
@@ -236,16 +235,16 @@
                     }
                     return true;
                 } catch (e) {
-                    alert(`ERROR al guardar en GitHub (${path}):\n${e.message}`);
                     console.error(e);
-                    return false;
+                    // Devolvemos el mensaje de error para mostrarlo en la alerta de saveData
+                    return e.message; 
                 }
             };
 
             const appendCsvToGithub = async (path, stringToAppend) => {
                 if (!apiToken) {
                     alert("Error: El token de API no está disponible.");
-                    return { success: false };
+                    return { success: false, error: "Token no disponible." };
                 }
                 if (!stringToAppend) {
                     return { success: true };
@@ -282,28 +281,36 @@
                     }
                     return { success: true };
                 } catch (e) {
-                    alert(`ERROR al añadir datos en GitHub (${path}):\n${e.message}`);
                     console.error(e);
-                    return { success: false };
+                    return { success: false, error: e.message };
                 }
             };
 
+            // CORRECCIÓN: Lógica de guardado y recarga robusta
             const saveData = async (updatedLotes, updatedNotes) => {
                 setIsSaving(true);
-                const lotesPromise = saveCsvToGithub(CSV_PATH_LOTES, updatedLotes, item => 
-                    [item.sku, item.descripcion, item.numeroDePallet, item.lotesProduccion, item.fechaProduccion, item.cantidad, item.unidadMedida, item.despachado || 'FALSE', item.cliente || ''].join(';')
-                );
-                const notesPromise = saveCsvToGithub(CSV_PATH_NOTAS, updatedNotes, item => 
-                    [item.sku, item.numeroDePallet, item.observacion].join(';')
-                );
-                const [lotesSuccess, notesSuccess] = await Promise.all([lotesPromise, notesPromise]);
+                const [lotesResult, notesResult] = await Promise.all([
+                    saveCsvToGithub(CSV_PATH_LOTES, updatedLotes, item => 
+                        [item.sku, item.descripcion, item.numeroDePallet, item.lotesProduccion, item.fechaProduccion, item.cantidad, item.unidadMedida, item.despachado || 'FALSE', item.cliente || ''].join(';')
+                    ),
+                    saveCsvToGithub(CSV_PATH_NOTAS, updatedNotes, item => 
+                        [item.sku, item.numeroDePallet, item.observacion].join(';')
+                    )
+                ]);
+                
+                const success = lotesResult === true && notesResult === true;
+
                 setIsSaving(false);
-                if (lotesSuccess && notesSuccess) {
-                    alert("¡Histórico y notas guardados correctamente en GitHub!");
-                    await loadData();
+
+                if (success) {
+                    alert("¡Operación exitosa! Los datos se han guardado correctamente.");
                 } else {
-                    alert("Ocurrió un error al guardar uno o más archivos.");
+                    const errorMessage = `Ocurrió un error al guardar:\n- Lotes: ${lotesResult === true ? 'OK' : lotesResult}\n- Notas: ${notesResult === true ? 'OK' : notesResult}\n\nSe recargarán los datos para asegurar la consistencia.`;
+                    alert(errorMessage);
                 }
+                
+                // Siempre recargamos los datos desde la fuente de verdad (GitHub)
+                await loadData();
             };
 
             const verifyPasswordAndExecute = async (actionCallback, password) => {
@@ -587,17 +594,18 @@
 
             const processTransfer = async (itemsToTransfer) => {
                 setIsSaving(true);
-                generateTransferPDF(itemsToTransfer);
                 const newStoredEntries = itemsToTransfer.map(item => `${item.sku};${item.numeroDePallet}`).join('\n');
                 const result = await appendCsvToGithub(CSV_PATH_ALMACENADO, newStoredEntries);
-                setIsSaving(false);
+                
                 if (result.success) {
+                    generateTransferPDF(itemsToTransfer);
                     alert("Transferencia registrada y PDF generado correctamente.");
                     handleCancelTransferMode();
-                    await loadData();
                 } else {
-                    alert("Ocurrió un error al registrar la transferencia.");
+                    alert(`Ocurrió un error al registrar la transferencia: ${result.error}`);
                 }
+                setIsSaving(false);
+                await loadData();
             };
 
             const generateTransferPDF = (transferredItems) => {
@@ -997,7 +1005,14 @@
                                                 <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">
                                                     <div className="flex flex-wrap gap-1">{clients.map(client => (
                                                         <div key={client} className="relative">
-                                                            <button onClick={() => setActiveClientMenu({rowId: item.id, client: client})} className="px-2.5 py-0.5 text-xs font-semibold bg-indigo-100 text-indigo-800 rounded-full hover:bg-indigo-200">{client}</button>
+                                                            {/* CORRECCIÓN: Botón deshabilitado mientras se guarda */}
+                                                            <button 
+                                                                onClick={() => setActiveClientMenu({rowId: item.id, client: client})} 
+                                                                disabled={isSaving}
+                                                                className="px-2.5 py-0.5 text-xs font-semibold bg-indigo-100 text-indigo-800 rounded-full hover:bg-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                            >
+                                                                {client}
+                                                            </button>
                                                             {activeClientMenu.rowId === item.id && activeClientMenu.client === client && (
                                                                 <div ref={clientMenuRef} className="absolute left-0 mt-2 w-48 bg-white rounded-md shadow-lg border z-30">
                                                                     <ul className="text-gray-700 text-left">
@@ -1014,7 +1029,14 @@
                                                 <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{item.unidadMedida}</td>
                                                 <td className="px-4 py-2 text-center">
                                                     <div className="relative" ref={activeActionMenu === item.id ? actionMenuRef : null}>
-                                                        <button onClick={() => setActiveActionMenu(activeActionMenu === item.id ? null : item.id)} className="text-gray-500 hover:text-blue-600 p-2 rounded-full"><i className="fas fa-ellipsis-v"></i></button>
+                                                        {/* CORRECCIÓN: Botón deshabilitado mientras se guarda */}
+                                                        <button 
+                                                            onClick={() => setActiveActionMenu(activeActionMenu === item.id ? null : item.id)} 
+                                                            disabled={isSaving}
+                                                            className="text-gray-500 hover:text-blue-600 p-2 rounded-full disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        >
+                                                            <i className="fas fa-ellipsis-v"></i>
+                                                        </button>
                                                         {activeActionMenu === item.id && (
                                                             <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border z-30">
                                                                 <ul className="text-gray-700 text-left">
