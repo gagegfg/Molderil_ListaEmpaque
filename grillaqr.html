@@ -116,19 +116,6 @@
             const [isExportOpen, setIsExportOpen] = useState(false);
             const exportMenuRef = useRef(null);
             
-            const longPressTimer = useRef(null);
-            const touchDuration = 500; 
-
-            const handlePressStart = (callback) => {
-                longPressTimer.current = setTimeout(() => {
-                    callback();
-                }, touchDuration);
-            };
-
-            const handlePressEnd = () => {
-                clearTimeout(longPressTimer.current);
-            };
-
             const getApiToken = async (file) => {
                 try {
                     const response = await fetch(file + '?t=' + new Date().getTime());
@@ -195,7 +182,6 @@
                 setIsLoading(false);
             }, [fetchCsvFromGithub]);
             
-            // --- MODIFICADO: saveCsvToGithub ahora lanza errores detallados ---
             const saveCsvToGithub = async (path, content) => {
                 if (!apiToken) {
                     throw new Error('El token de API no está disponible.');
@@ -203,28 +189,35 @@
                 
                 const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}`;
                 
-                const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${apiToken}`, 'cache': 'no-store' } });
-                let currentSha = null;
-                if (fileResponse.ok) {
-                    const fileData = await fileResponse.json();
-                    currentSha = fileData.sha;
-                } else if (fileResponse.status !== 404) {
-                    throw new Error(`Error ${fileResponse.status} al obtener info del archivo ${path}.`);
-                }
+                try {
+                    const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${apiToken}`, 'cache': 'no-store' } });
+                    let currentSha = null;
+                    if (fileResponse.ok) {
+                        const fileData = await fileResponse.json();
+                        currentSha = fileData.sha;
+                    } else if (fileResponse.status !== 404) {
+                        throw new Error(`Error ${fileResponse.status} al obtener info del archivo ${path}.`);
+                    }
 
-                const updateResponse = await fetch(url, {
-                    method: 'PUT',
-                    headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        message: `Actualización de ${path} desde grilla web`,
-                        content: btoa(unescape(encodeURIComponent(content))),
-                        sha: currentSha,
-                    }),
-                });
+                    const updateResponse = await fetch(url, {
+                        method: 'PUT',
+                        headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            message: `Actualización de ${path} desde grilla web`,
+                            content: btoa(unescape(encodeURIComponent(content))),
+                            sha: currentSha,
+                        }),
+                    });
 
-                if (!updateResponse.ok) {
-                    const errorData = await updateResponse.json();
-                    throw new Error(`Error ${updateResponse.status}: ${errorData.message || 'Falló la actualización del archivo.'}`);
+                    if (!updateResponse.ok) {
+                        const errorData = await updateResponse.json();
+                        throw new Error(`Error ${updateResponse.status}: ${errorData.message || 'Falló la actualización del archivo.'}`);
+                    }
+                } catch (error) {
+                    if (error.message.includes('Failed to fetch')) {
+                        throw new Error('Error de red. Verifique su conexión a internet e intente nuevamente.');
+                    }
+                    throw error;
                 }
             };
 
@@ -251,7 +244,6 @@
                 }
             };
             
-            // --- MODIFICADO: Verificación de contraseña más robusta ---
             const verifyPasswordAndExecute = async (actionCallback, password) => {
                 if (!password) {
                      setModalState({ isOpen: true, type: 'info', title: 'Atención', message: 'Por favor, ingrese la contraseña.', onConfirm: () => setModalState({isOpen: false}) });
@@ -717,7 +709,6 @@
                 doc.save(`transferencia_logistica_${new Date().toISOString().split('T')[0]}.pdf`);
             };
 
-            // --- MODIFICADO: Manejo de errores más detallado ---
             const handleConfirmarAlmacenamiento = () => {
                 const selectedItems = allData.filter(item => transferSelection[`${item.sku};${item.numeroDePallet}`]);
                 
@@ -849,7 +840,28 @@
                 );
             };
             
-            const HelpModal = ({ onClose }) => ( <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-[100] p-4">{/* Contenido del modal de ayuda */}</div>);
+            const HelpModal = ({ onClose }) => ( 
+                <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-[100] p-4">
+                    <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-lg">
+                        <h3 className="text-lg font-bold text-gray-800 mb-4">Ayuda y Referencias</h3>
+                        <div className="text-sm text-gray-700 space-y-4">
+                            <p><b>Filtrado:</b> Utilice los campos de fecha y las cajas de texto debajo de los encabezados para filtrar los registros.</p>
+                            <p><b>Ver Observación:</b> Haga doble clic o una pulsación larga sobre una fila marcada con <b>(*)</b> para ver la nota asociada.</p>
+                            <p><b>Acciones:</b> Use el menú de tres puntos (<b><i className="fas fa-ellipsis-v"></i></b>) en cada fila para reimprimir etiquetas, añadir clientes o eliminar el registro.</p>
+                            <p><b>Transferencia de Pallets:</b></p>
+                            <ul className="list-disc list-inside ml-4 space-y-1">
+                                <li>Presione <b>"Pendientes por Almacenar"</b> para ver los pallets que aún no han sido transferidos a Logística.</li>
+                                <li>Seleccione los pallets que desea transferir marcando la casilla en la columna <b>"TRANSFERIDO"</b>.</li>
+                                <li>Haga clic en <b>"Confirmar Almacenamiento"</b>, ingrese la clave y se generará un PDF y se guardará el registro.</li>
+                                <li>Use <b>"Cancelar"</b> para salir del modo de transferencia.</li>
+                            </ul>
+                        </div>
+                        <div className="flex justify-end mt-6">
+                            <button onClick={onClose} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Entendido</button>
+                        </div>
+                    </div>
+                </div>
+            );
 
             return (
                 <div className="min-h-screen p-4 sm:p-6 bg-black bg-opacity-50">
