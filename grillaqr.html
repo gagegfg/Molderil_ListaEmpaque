@@ -658,7 +658,6 @@
             };
             
             const generateAlmacenamientoPDF = (selectedItems) => {
-                // --- MODIFICADO: PDF en horizontal ---
                 const doc = new jsPDF({ orientation: 'landscape' });
                 const fecha = new Date().toLocaleDateString('es-AR');
                 doc.setFontSize(18);
@@ -740,7 +739,6 @@
                                 
                                 const success = await saveCsvToGithub(CSV_PATH_ALMACENADO, newContent);
 
-                                // --- MODIFICADO: Lógica de recarga y reseteo ---
                                 if (success) {
                                     setModalState({ 
                                         isOpen: true, 
@@ -754,10 +752,28 @@
                                         } 
                                     });
                                 } else {
-                                     setModalState({ isOpen: true, type: 'info', title: 'Error', message: 'Error al guardar el registro de almacenamiento. La operación fue abortada.', onConfirm: () => setModalState({isOpen: false}) });
+                                     setModalState({ 
+                                         isOpen: true, 
+                                         type: 'info', 
+                                         title: 'Error', 
+                                         message: 'Error al guardar el registro de almacenamiento. La operación fue abortada.', 
+                                         onConfirm: () => {
+                                             setModalState({isOpen: false});
+                                             resetAlmacenamientoMode(); // También resetea en caso de error
+                                         } 
+                                    });
                                 }
                             } catch (error) {
-                                setModalState({ isOpen: true, type: 'info', title: 'Error Inesperado', message: `Ocurrió un error: ${error.message}`, onConfirm: () => setModalState({isOpen: false}) });
+                                setModalState({ 
+                                    isOpen: true, 
+                                    type: 'info', 
+                                    title: 'Error Inesperado', 
+                                    message: `Ocurrió un error: ${error.message}`, 
+                                    onConfirm: () => {
+                                        setModalState({isOpen: false});
+                                        resetAlmacenamientoMode(); // También resetea en caso de error
+                                    } 
+                                });
                             } finally {
                                 setIsSaving(false);
                             }
