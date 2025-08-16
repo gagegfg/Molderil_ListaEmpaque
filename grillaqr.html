@@ -1,3 +1,5 @@
+
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -172,7 +174,7 @@
                 setStoredData(storedSet);
 
                 const notesMap = new Map();
-                const parsedNotes = notasRows.map(row => {
+                parsedNotes = notasRows.map(row => {
                     const [sku, numeroDePallet, observacion] = row.split(';');
                     const key = `${sku};${numeroDePallet}`;
                     notesMap.set(key, observacion);
@@ -194,29 +196,24 @@
                 setIsLoading(false);
             }, [fetchCsvFromGithub]);
             
-            const saveCsvToGithub = async (path, data, { isAppend = false } = {}) => {
+            // --- INICIO FUNCIONES DE GUARDADO ---
+            
+            // Función de guardado ORIGINAL (sobrescribe el archivo), usada para clientes y eliminar filas.
+            const saveCsvToGithub = async (path, dataToSave, formatRow) => {
                 if (!apiToken) {
                     alert("Error: El token de API no está disponible.");
-                    return { success: false };
+                    return false;
                 }
 
+                const csvContent = dataToSave.map(formatRow).join('\n');
                 const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}`;
-                let currentSha = null;
-                let finalContent = data;
 
                 try {
-                    const fileResponse = await fetch(`${url}?t=${new Date().getTime()}`, {
-                        headers: { 'Authorization': `token ${apiToken}` },
-                        cache: 'no-store'
-                    });
-
+                    const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${apiToken}` } });
+                    let currentSha = null;
                     if (fileResponse.ok) {
                         const fileData = await fileResponse.json();
                         currentSha = fileData.sha;
-                        if (isAppend) {
-                            const existingContent = atob(fileData.content).trim();
-                            finalContent = existingContent ? `${existingContent}\n${data}` : data;
-                        }
                     } else if (fileResponse.status !== 404) {
                         const errorData = await fileResponse.json();
                         throw new Error(`Error ${fileResponse.status} al obtener SHA: ${errorData.message || 'No se pudo obtener info del archivo.'}`);
@@ -227,7 +224,59 @@
                         headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             message: `Actualización de ${path} desde la web`,
-                            content: btoa(unescape(encodeURIComponent(finalContent))),
+                            content: btoa(unescape(encodeURIComponent(csvContent))),
+                            sha: currentSha,
+                        }),
+                    });
+
+                    if (!updateResponse.ok) {
+                        const errorData = await updateResponse.json();
+                        throw new Error(`Error ${updateResponse.status}: ${errorData.message || 'Falló la actualización del archivo.'}`);
+                    }
+                    return true;
+                } catch (e) {
+                    alert(`ERROR al guardar en GitHub (${path}):\n${e.message}`);
+                    console.error(e);
+                    return false;
+                }
+            };
+            
+            // Función NUEVA (añade al final del archivo), usada para la transferencia.
+            const appendCsvToGithub = async (path, stringToAppend) => {
+                if (!apiToken) {
+                    alert("Error: El token de API no está disponible.");
+                    return { success: false };
+                }
+                if (!stringToAppend) {
+                    return { success: true };
+                }
+
+                const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}`;
+                let currentSha = null;
+                let newContent = stringToAppend;
+
+                try {
+                    const fileResponse = await fetch(`${url}?t=${new Date().getTime()}`, {
+                        headers: { 'Authorization': `token ${apiToken}` },
+                        cache: 'no-store'
+                    });
+
+                    if (fileResponse.ok) {
+                        const fileData = await fileResponse.json();
+                        currentSha = fileData.sha;
+                        const existingContent = atob(fileData.content).trim();
+                        newContent = existingContent ? `${existingContent}\n${stringToAppend}` : stringToAppend;
+                    } else if (fileResponse.status !== 404) {
+                        const errorData = await fileResponse.json();
+                        throw new Error(`Error ${fileResponse.status} al obtener archivo para añadir: ${errorData.message}`);
+                    }
+
+                    const updateResponse = await fetch(url, {
+                        method: 'PUT',
+                        headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            message: `Añadir a ${path} desde la web`,
+                            content: btoa(unescape(encodeURIComponent(newContent))),
                             sha: currentSha,
                         }),
                     });
@@ -239,36 +288,36 @@
 
                     return { success: true };
                 } catch (e) {
-                    alert(`ERROR al guardar en GitHub (${path}):\n${e.message}`);
+                    alert(`ERROR al añadir datos en GitHub (${path}):\n${e.message}`);
                     console.error(e);
                     return { success: false };
                 }
             };
             
+            // saveData usa la función original saveCsvToGithub
             const saveData = async (updatedLotes, updatedNotes) => {
                 setIsSaving(true);
                 
-                const lotesContent = updatedLotes.map(item => 
+                const lotesPromise = saveCsvToGithub(CSV_PATH_LOTES, updatedLotes, item => 
                     [item.sku, item.descripcion, item.numeroDePallet, item.lotesProduccion, item.fechaProduccion, item.cantidad, item.unidadMedida, item.despachado || 'FALSE', item.cliente || ''].join(';')
-                ).join('\n');
-                
-                const notesContent = updatedNotes.map(item => 
-                    [item.sku, item.numeroDePallet, item.observacion].join(';')
-                ).join('\n');
+                );
 
-                const [lotesResult, notesResult] = await Promise.all([
-                    saveCsvToGithub(CSV_PATH_LOTES, lotesContent),
-                    saveCsvToGithub(CSV_PATH_NOTAS, notesContent)
-                ]);
+                const notesPromise = saveCsvToGithub(CSV_PATH_NOTAS, updatedNotes, item => 
+                    [item.sku, item.numeroDePallet, item.observacion].join(';')
+                );
+
+                const [lotesSuccess, notesSuccess] = await Promise.all([lotesPromise, notesPromise]);
 
                 setIsSaving(false);
-                if (lotesResult.success && notesResult.success) {
+                if (lotesSuccess && notesSuccess) {
                     alert("¡Histórico y notas guardados correctamente en GitHub!");
                     await loadData();
                 } else {
                     alert("Ocurrió un error al guardar uno o más archivos.");
                 }
             };
+
+            // --- FIN FUNCIONES DE GUARDADO ---
             
             const verifyPasswordAndExecute = async (actionCallback, password) => {
                 if (!password) {
@@ -466,7 +515,7 @@
                         executeActionWithAuth(() => {
                             const newData = allData.map(item => {
                                 if (item.id === rowId) {
-                                    const existingClients = item.cliente ? item.cliente.split('#') : [];
+                                    const existingClients = item.cliente ? item.cliente.split('#').filter(Boolean) : [];
                                     if (existingClients.includes(newClient.toUpperCase())) {
                                         alert("Este cliente ya está asignado a este lote."); return item;
                                     }
@@ -570,7 +619,7 @@
                 
                 const newStoredEntries = itemsToTransfer.map(item => `${item.sku};${item.numeroDePallet}`).join('\n');
                 
-                const result = await saveCsvToGithub(CSV_PATH_ALMACENADO, newStoredEntries, { isAppend: true });
+                const result = await appendCsvToGithub(CSV_PATH_ALMACENADO, newStoredEntries);
 
                 setIsSaving(false);
                 if (result.success) {
