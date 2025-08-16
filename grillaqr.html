@@ -172,7 +172,7 @@
                 setStoredData(storedSet);
 
                 const notesMap = new Map();
-                parsedNotes = notasRows.map(row => {
+                const parsedNotes = notasRows.map(row => {
                     const [sku, numeroDePallet, observacion] = row.split(';');
                     const key = `${sku};${numeroDePallet}`;
                     notesMap.set(key, observacion);
@@ -196,7 +196,6 @@
             
             // --- INICIO FUNCIONES DE GUARDADO ---
             
-            // Función de guardado ORIGINAL (sobrescribe el archivo), usada para clientes y eliminar filas.
             const saveCsvToGithub = async (path, dataToSave, formatRow) => {
                 if (!apiToken) {
                     alert("Error: El token de API no está disponible.");
@@ -239,7 +238,6 @@
                 }
             };
             
-            // Función NUEVA (añade al final del archivo), usada para la transferencia.
             const appendCsvToGithub = async (path, stringToAppend) => {
                 if (!apiToken) {
                     alert("Error: El token de API no está disponible.");
@@ -292,7 +290,6 @@
                 }
             };
             
-            // saveData usa la función original saveCsvToGithub
             const saveData = async (updatedLotes, updatedNotes) => {
                 setIsSaving(true);
                 
@@ -391,11 +388,11 @@
 
             useEffect(() => {
                 if(apiToken && articulosMap.size > 0) {
-                    const loaderStatus = document.getElementById('loader-status');
-                    const loaderProgress = document.getElementById('loader-progress');
-                    const staticLoader = document.getElementById('static-loader');
-
                     const loadInitialData = async () => {
+                        const loaderStatus = document.getElementById('loader-status');
+                        const loaderProgress = document.getElementById('loader-progress');
+                        const staticLoader = document.getElementById('static-loader');
+
                         if (loaderStatus) loaderStatus.textContent = "Cargando histórico y notas...";
                         if (loaderProgress) loaderProgress.style.width = '80%';
                         
@@ -420,7 +417,7 @@
                     };
                     loadInitialData();
                 }
-            }, [apiToken, articulosMap]);
+            }, [apiToken, articulosMap, loadData]);
 
             useEffect(() => {
                 let data = [...allData];
@@ -1078,4 +1075,3 @@
     </script>
 </body>
 </html>
-
