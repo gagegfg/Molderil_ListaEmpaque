@@ -53,7 +53,6 @@
         const CSV_PATH_NOTAS = 'notasskulote.csv';
         const CSV_PATH_ALMACENADO = 'nropalletalmacenado.csv';
         const AUTH_TIMEOUT = 5 * 60 * 1000;
-        const MAX_SAVE_RETRIES = 3; 
         
         // ### INICIO: CONFIGURACIÓN DEL SISTEMA DE BLOQUEO ###
         const LOCK_FILE_PATH = 'lock.json'; // Archivo que simula el estado del servidor
@@ -144,6 +143,8 @@
                     }
                     if (!response.ok) throw new Error(`No se pudo cargar ${path} (Estado: ${response.status})`);
                     const fileData = await response.json();
+                    // ### CORRECCIÓN: Manejar caso de archivo sin contenido ###
+                    if (!fileData.content) return [];
                     return atob(fileData.content).split('\n').filter(Boolean);
                 } catch (error) {
                     console.error(`Error cargando ${path}:`, error);
@@ -184,7 +185,7 @@
                 setIsLoading(false);
             }, [fetchCsvFromGithub, articulosMap]);
             
-            // ### INICIO: LÓGICA DE BLOQUEO ###
+            // ### INICIO: LÓGICA DE BLOQUEO (CON CORRECCIÓN) ###
             const acquireLock = async (retries = LOCK_MAX_RETRIES) => {
                 const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${LOCK_FILE_PATH}`;
                 const headers = { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' };
@@ -195,7 +196,10 @@
                     if (response.ok) {
                         const file = await response.json();
                         currentSha = file.sha;
-                        lockData = JSON.parse(atob(file.content));
+                        // ### CORRECCIÓN: Verificar si el archivo tiene contenido antes de parsear ###
+                        if (file.content) {
+                            lockData = JSON.parse(atob(file.content));
+                        }
                     } else if (response.status !== 404) {
                         throw new Error("No se pudo verificar el estado del sistema.");
                     }
@@ -245,7 +249,9 @@
                     if (response.ok) {
                         const file = await response.json();
                         currentSha = file.sha;
-                        lockData = JSON.parse(atob(file.content));
+                        if(file.content) {
+                            lockData = JSON.parse(atob(file.content));
+                        }
                     }
                 } catch(e) { /* No hacer nada */ }
                 if (lockData && lockData.lockedBy !== sessionId) {
@@ -270,89 +276,60 @@
             };
             // ### FIN: LÓGICA DE BLOQUEO ###
 
-            const updateGithubFile = async (path, contentB64, commitMessage, retries = MAX_SAVE_RETRIES) => {
-                const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}`;
-                const headers = { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' };
-                try {
-                    const fileResponse = await fetch(`${url}?t=${new Date().getTime()}`, { headers, cache: 'no-store' });
-                    let currentSha = null;
-                    if (fileResponse.ok) {
-                        currentSha = (await fileResponse.json()).sha;
-                    } else if (fileResponse.status !== 404) {
-                        const errorData = await fileResponse.json();
-                        throw new Error(`Error ${fileResponse.status} al obtener SHA: ${errorData.message}`);
-                    }
-                    const updateResponse = await fetch(url, {
-                        method: 'PUT',
-                        headers: headers,
-                        body: JSON.stringify({ message: commitMessage, content: contentB64, sha: currentSha }),
-                    });
-                    if (updateResponse.status === 409 && retries > 0) {
-                        console.warn(`Conflicto al guardar ${path}. Reintentando... (${retries - 1} restantes)`);
-                        await new Promise(resolve => setTimeout(resolve, 500)); 
-                        return await updateGithubFile(path, contentB64, commitMessage, retries - 1);
-                    }
-                    if (!updateResponse.ok) {
-                        const errorData = await updateResponse.json();
-                        throw new Error(`Error ${updateResponse.status}: ${errorData.message || 'Falló la actualización del archivo.'}`);
-                    }
-                    return { success: true, error: null };
-                } catch (e) {
-                    console.error(`Error final al actualizar ${path}:`, e);
-                    return { success: false, error: e.message };
-                }
-            };
-            
             const saveCsvToGithub = async (path, dataToSave, formatRow) => {
                  if (!apiToken) return { success: false, error: "El token de API no está disponible." };
                 const csvContent = dataToSave.map(formatRow).join('\n');
                 const contentB64 = btoa(unescape(encodeURIComponent(csvContent)));
                 const commitMessage = `Actualización de ${path} desde grilla web`;
-                const result = await updateGithubFile(path, contentB64, commitMessage);
-                return result.success ? true : result.error;
+                const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}`;
+                let currentSha = null;
+                try {
+                    const fileResponse = await fetch(`${url}?t=${new Date().getTime()}`, { headers: { 'Authorization': `token ${apiToken}` }, cache: 'no-store' });
+                    if (fileResponse.ok) currentSha = (await fileResponse.json()).sha;
+                    const updateResponse = await fetch(url, {
+                        method: 'PUT',
+                        headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: commitMessage, content: contentB64, sha: currentSha }),
+                    });
+                    if (!updateResponse.ok) {
+                        const errorData = await updateResponse.json();
+                        throw new Error(`Error ${updateResponse.status}: ${errorData.message}`);
+                    }
+                    return true;
+                } catch (e) {
+                    return e.message;
+                }
             };
             
-            const appendCsvToGithub = async (path, stringToAppend, retries = MAX_SAVE_RETRIES) => {
+            const appendCsvToGithub = async (path, stringToAppend) => {
                 if (!apiToken) return { success: false, error: "Token no disponible." };
                 if (!stringToAppend) return { success: true };
                 const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}`;
-                const headers = { 'Authorization': `token ${apiToken}` };
+                let currentSha = null;
+                let newContent = stringToAppend;
                 try {
-                    let currentSha = null;
-                    let newContent = stringToAppend;
-                    const fileResponse = await fetch(`${url}?t=${new Date().getTime()}`, { headers, cache: 'no-store' });
+                    const fileResponse = await fetch(`${url}?t=${new Date().getTime()}`, { headers: { 'Authorization': `token ${apiToken}` }, cache: 'no-store' });
                     if (fileResponse.ok) {
                         const fileData = await fileResponse.json();
                         currentSha = fileData.sha;
                         const existingContent = atob(fileData.content).trim();
                         newContent = existingContent ? `${existingContent}\n${stringToAppend}` : stringToAppend;
-                    } else if (fileResponse.status !== 404) {
-                        const errorData = await fileResponse.json();
-                        throw new Error(`Error ${fileResponse.status} al obtener archivo para añadir: ${errorData.message}`);
                     }
-                    const contentB64 = btoa(unescape(encodeURIComponent(newContent)));
-                    const commitMessage = `Añadir a ${path} desde grilla web`;
                     const updateResponse = await fetch(url, {
                         method: 'PUT',
-                        headers: { ...headers, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message: commitMessage, content: contentB64, sha: currentSha }),
+                        headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: `Añadir a ${path}`, content: btoa(unescape(encodeURIComponent(newContent))), sha: currentSha }),
                     });
-                    if (updateResponse.status === 409 && retries > 0) {
-                        console.warn(`Conflicto al añadir en ${path}. Reintentando... (${retries - 1} restantes)`);
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                        return await appendCsvToGithub(path, stringToAppend, retries - 1);
-                    }
                     if (!updateResponse.ok) {
                         const errorData = await updateResponse.json();
-                        throw new Error(`Error ${updateResponse.status}: ${errorData.message || 'Falló la actualización del archivo.'}`);
+                        throw new Error(`Error ${updateResponse.status}: ${errorData.message}`);
                     }
                     return { success: true };
                 } catch (e) {
-                    console.error(e);
                     return { success: false, error: e.message };
                 }
             };
-
+            
             // ### MODIFICADO: saveData ahora usa el sistema de bloqueo ###
             const saveData = async (updatedLotes, updatedNotes) => {
                 setIsSaving(true);
@@ -671,7 +648,7 @@
                     }
                 });
             };
-
+            
             // ### MODIFICADO: processTransfer ahora usa el sistema de bloqueo ###
             const processTransfer = async (itemsToTransfer) => {
                 setIsSaving(true);
