@@ -52,14 +52,13 @@
         const CSV_PATH_LOTES = 'detallelotes.csv';
         const CSV_PATH_NOTAS = 'notasskulote.csv';
         const CSV_PATH_ALMACENADO = 'nropalletalmacenado.csv';
-        const AUTH_TIMEOUT = 5 * 60 * 1000;
-        
-        // ### INICIO: CONFIGURACIÓN DEL SISTEMA DE BLOQUEO ###
-        const LOCK_FILE_PATH = 'lock.json'; // Archivo que simula el estado del servidor
-        const LOCK_LEASE_MS = 45 * 1000; // 45 segundos. Un bloqueo se considera "huérfano" después de este tiempo.
-        const LOCK_RETRY_DELAY_MS = 3000; // 3 segundos de espera antes de reintentar
-        const LOCK_MAX_RETRIES = 2; // Intentará 1 vez inicial + 2 reintentos
-        // ### FIN: CONFIGURACIÓN DEL SISTEMA DE BLOQUEO ###
+        const AUTH_TIMEOUT = 5 * 60 * 1000; // 5 minutos en milisegundos
+
+        // --- NUEVO: CONFIGURACIÓN DEL SISTEMA DE BLOQUEO ---
+        const LOCK_FILE_PATH = 'lock.json';
+        const LOCK_TIMEOUT = 45 * 1000; // 45 segundos
+        const SESSION_ID = Date.now().toString(36) + Math.random().toString(36).substr(2);
+
 
         const useLocalStorage = (key, initialValue) => {
             const [storedValue, setStoredValue] = useState(() => {
@@ -85,9 +84,6 @@
         };
         
         const App = () => {
-            // ### NUEVO: ID ÚNICO PARA ESTA SESIÓN DE NAVEGADOR ###
-            const [sessionId] = useState(Date.now().toString() + Math.random().toString());
-
             const [allData, setAllData] = useState([]);
             const [notesData, setNotesData] = useState([]);
             const [storedData, setStoredData] = useState(new Set());
@@ -98,6 +94,7 @@
             const [apiToken, setApiToken] = useState(null);
             const [clientList, setClientList] = useState([]);
             const [authTimestamp, setAuthTimestamp] = useState(null);
+
             const [modalState, setModalState] = useState({ isOpen: false, type: null, title: '', message: '', onConfirm: null });
             const [observationModal, setObservationModal] = useState({ isOpen: false, text: '' });
             const [reprintModal, setReprintModal] = useState({ isOpen: false, pdfUrl: null, printablePdfUrl: null, palletId: null });
@@ -107,18 +104,36 @@
             const [activeClientMenu, setActiveClientMenu] = useState({rowId: null, client: null});
             const actionMenuRef = useRef(null);
             const clientMenuRef = useRef(null);
+
             const [isTransferMode, setIsTransferMode] = useState(false);
             const [transferSelection, setTransferSelection] = useState({});
-            const [columnFilters, setColumnFilters] = useLocalStorage('grillaqr_columnFilters_v3', { sku: '', descripcion: '', numeroDePallet: '', lotesProduccion: '', despachado: '', cliente: '' });
+            
+            const [columnFilters, setColumnFilters] = useLocalStorage('grillaqr_columnFilters_v3', {
+                sku: '',
+                descripcion: '',
+                numeroDePallet: '',
+                lotesProduccion: '',
+                despachado: '',
+                cliente: ''
+            });
             const [fechaDesde, setFechaDesde] = useLocalStorage('grillaqr_fechaDesde', '');
             const [fechaHasta, setFechaHasta] = useLocalStorage('grillaqr_fechaHasta', '');
+            
             const [isExportOpen, setIsExportOpen] = useState(false);
             const exportMenuRef = useRef(null);
+            
             const longPressTimer = useRef(null);
             const touchDuration = 500; 
 
-            const handlePressStart = (callback) => { longPressTimer.current = setTimeout(() => { callback(); }, touchDuration); };
-            const handlePressEnd = () => { clearTimeout(longPressTimer.current); };
+            const handlePressStart = (callback) => {
+                longPressTimer.current = setTimeout(() => {
+                    callback();
+                }, touchDuration);
+            };
+
+            const handlePressEnd = () => {
+                clearTimeout(longPressTimer.current);
+            };
 
             const getApiToken = async (file) => {
                 try {
@@ -131,6 +146,102 @@
                     return null;
                 }
             };
+            
+            // --- NUEVO: FUNCIONES DEL SISTEMA DE BLOQUEO ---
+            const acquireLock = async (operationName) => {
+                const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${LOCK_FILE_PATH}`;
+                let currentSha = null;
+                try {
+                    // 1. Intentar leer el archivo de bloqueo
+                    const response = await fetch(`${url}?t=${new Date().getTime()}`, {
+                        headers: { 'Authorization': `token ${apiToken}` }, cache: 'no-store'
+                    });
+
+                    if (response.ok) {
+                        const fileData = await response.json();
+                        currentSha = fileData.sha;
+                        const content = atob(fileData.content);
+
+                        // SOLUCIÓN AL BUG: Manejar archivo vacío
+                        if (!content.trim()) {
+                           // El archivo está vacío, se considera desbloqueado.
+                        } else {
+                            const lock = JSON.parse(content);
+                            const isLockedByOther = lock.sessionId && lock.sessionId !== SESSION_ID;
+                            const isExpired = Date.now() - lock.timestamp > LOCK_TIMEOUT;
+
+                            if (isLockedByOther && !isExpired) {
+                                return { success: false, error: `Sistema bloqueado por otra sesión. Operación en curso: ${lock.operation || 'N/A'}` };
+                            }
+                        }
+                    } else if (response.status !== 404) {
+                        throw new Error(`Error al leer el archivo de bloqueo: ${response.statusText}`);
+                    }
+                    // Si el archivo no existe (404) o está vacío/expirado, procedemos a bloquearlo.
+
+                    // 2. Escribir nuestro bloqueo
+                    const lockContent = { sessionId: SESSION_ID, timestamp: Date.now(), operation: operationName };
+                    const updateResponse = await fetch(url, {
+                        method: 'PUT',
+                        headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            message: `Locking for operation: ${operationName}`,
+                            content: btoa(JSON.stringify(lockContent)),
+                            sha: currentSha,
+                        }),
+                    });
+
+                    if (!updateResponse.ok) throw new Error(`No se pudo adquirir el bloqueo: ${updateResponse.statusText}`);
+                    
+                    return { success: true };
+
+                } catch (error) {
+                    // SOLUCIÓN AL BUG: Si JSON.parse falla, tratar como desbloqueado
+                    if (error instanceof SyntaxError) {
+                        console.warn("lock.json contenía JSON inválido, se procederá a sobreescribir.");
+                        // Se puede reintentar el bloqueo aquí o continuar, la lógica de escritura lo manejará.
+                        return { success: true }; // Se asume que se puede tomar el bloqueo.
+                    }
+                    console.error("Error en acquireLock:", error);
+                    return { success: false, error: error.message };
+                }
+            };
+
+            const releaseLock = async () => {
+                const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${LOCK_FILE_PATH}`;
+                try {
+                    const response = await fetch(`${url}?t=${new Date().getTime()}`, {
+                        headers: { 'Authorization': `token ${apiToken}` }, cache: 'no-store'
+                    });
+            
+                    if (response.ok) {
+                        const fileData = await response.json();
+                        // Opcional: Verificar que somos dueños del bloqueo antes de liberarlo.
+                        const content = atob(fileData.content);
+                        if (content) {
+                            const lock = JSON.parse(content);
+                            if (lock.sessionId && lock.sessionId !== SESSION_ID) {
+                                console.warn("Intento de liberar un bloqueo que no pertenece a esta sesión. Se omite.");
+                                return;
+                            }
+                        }
+
+                        const updateResponse = await fetch(url, {
+                            method: 'PUT',
+                            headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                message: 'Releasing lock',
+                                content: btoa(''), // Dejar el archivo vacío para desbloquear
+                                sha: fileData.sha,
+                            }),
+                        });
+                        if (!updateResponse.ok) console.error("Error al liberar el bloqueo, puede expirar automáticamente.");
+                    }
+                } catch (error) {
+                    console.error("Error en releaseLock:", error);
+                }
+            };
+
 
             const fetchCsvFromGithub = useCallback(async (path) => {
                 const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}?t=${new Date().getTime()}`;
@@ -143,8 +254,6 @@
                     }
                     if (!response.ok) throw new Error(`No se pudo cargar ${path} (Estado: ${response.status})`);
                     const fileData = await response.json();
-                    // ### CORRECCIÓN: Manejar caso de archivo sin contenido ###
-                    if (!fileData.content) return [];
                     return atob(fileData.content).split('\n').filter(Boolean);
                 } catch (error) {
                     console.error(`Error cargando ${path}:`, error);
@@ -160,8 +269,10 @@
                     fetchCsvFromGithub(CSV_PATH_NOTAS),
                     fetchCsvFromGithub(CSV_PATH_ALMACENADO)
                 ]);
+
                 const storedSet = new Set(almacenadoRows);
                 setStoredData(storedSet);
+
                 const notesMap = new Map();
                 const parsedNotes = notasRows.map(row => {
                     const [sku, numeroDePallet, observacion] = row.split(';');
@@ -170,10 +281,13 @@
                     return { sku, numeroDePallet, observacion };
                 });
                 setNotesData(parsedNotes);
+
                 const parsedLotes = lotesRows.map((row, index) => {
                     const [sku, originalDescription, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida, despachado, cliente] = row.split(';');
+                    
                     const articuloInfo = articulosMap.get(sku.trim());
                     const descripcion = (articuloInfo && articuloInfo.larga) ? articuloInfo.larga : originalDescription;
+
                     const noteKey = `${sku};${numeroDePallet}`;
                     const storedKey = `${sku};${numeroDePallet}`;
                     const hasNote = notesMap.has(noteKey);
@@ -181,164 +295,108 @@
                     const isStored = storedSet.has(storedKey);
                     return { id: index, sku, descripcion, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida, despachado, cliente, hasNote, noteText, isStored };
                 });
+                
                 setAllData(parsedLotes);
                 setIsLoading(false);
             }, [fetchCsvFromGithub, articulosMap]);
             
-            // ### INICIO: LÓGICA DE BLOQUEO (CON CORRECCIÓN) ###
-            const acquireLock = async (retries = LOCK_MAX_RETRIES) => {
-                const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${LOCK_FILE_PATH}`;
-                const headers = { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' };
-                let lockData = { isLocked: false, lockedBy: null, timestamp: 0 };
-                let currentSha = null;
-                try {
-                    const response = await fetch(`${url}?t=${new Date().getTime()}`, { headers: { ...headers, 'Accept': 'application/vnd.github.v3+json' }, cache: 'no-store' });
-                    if (response.ok) {
-                        const file = await response.json();
-                        currentSha = file.sha;
-                        // ### CORRECCIÓN: Verificar si el archivo tiene contenido antes de parsear ###
-                        if (file.content) {
-                            lockData = JSON.parse(atob(file.content));
-                        }
-                    } else if (response.status !== 404) {
-                        throw new Error("No se pudo verificar el estado del sistema.");
-                    }
-                } catch (e) {
-                    console.error(e);
-                    alert("Error al verificar el estado del sistema: " + e.message);
-                    return false;
-                }
-                const isExpired = Date.now() - lockData.timestamp > LOCK_LEASE_MS;
-                if (lockData.isLocked && !isExpired) {
-                    if (retries > 0) {
-                        console.warn(`Sistema bloqueado. Reintentando en ${LOCK_RETRY_DELAY_MS / 1000}s...`);
-                        await new Promise(resolve => setTimeout(resolve, LOCK_RETRY_DELAY_MS));
-                        return await acquireLock(retries - 1);
-                    } else {
-                        return false; 
-                    }
-                }
-                const newLock = { isLocked: true, lockedBy: sessionId, timestamp: Date.now() };
-                try {
-                    const updateResponse = await fetch(url, {
-                        method: 'PUT',
-                        headers,
-                        body: JSON.stringify({
-                            message: `Lock acquired by session ${sessionId}`,
-                            content: btoa(JSON.stringify(newLock)),
-                            sha: currentSha,
-                        }),
-                    });
-                    if (!updateResponse.ok) throw new Error("No se pudo tomar el control del sistema.");
-                    console.log("Bloqueo adquirido con éxito.");
-                    return true;
-                } catch (e) {
-                    console.error(e);
-                    alert("Error al intentar tomar control: " + e.message);
-                    return false;
-                }
-            };
-
-            const releaseLock = async () => {
-                const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${LOCK_FILE_PATH}`;
-                const headers = { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' };
-                let currentSha = null;
-                let lockData = null;
-                try {
-                     const response = await fetch(`${url}?t=${new Date().getTime()}`, { headers: { ...headers, 'Accept': 'application/vnd.github.v3+json' }, cache: 'no-store' });
-                    if (response.ok) {
-                        const file = await response.json();
-                        currentSha = file.sha;
-                        if(file.content) {
-                            lockData = JSON.parse(atob(file.content));
-                        }
-                    }
-                } catch(e) { /* No hacer nada */ }
-                if (lockData && lockData.lockedBy !== sessionId) {
-                    console.warn("Intento de liberar un bloqueo que no nos pertenece. Operación omitida.");
-                    return;
-                }
-                const unlockedState = { isLocked: false, lockedBy: null, timestamp: 0 };
-                try {
-                    await fetch(url, {
-                        method: 'PUT',
-                        headers,
-                        body: JSON.stringify({
-                            message: `Lock released by session ${sessionId}`,
-                            content: btoa(JSON.stringify(unlockedState)),
-                            sha: currentSha,
-                        }),
-                    });
-                     console.log("Bloqueo liberado con éxito.");
-                } catch (e) {
-                    console.error("No se pudo liberar el bloqueo, puede que necesite expirar.", e);
-                }
-            };
-            // ### FIN: LÓGICA DE BLOQUEO ###
-
             const saveCsvToGithub = async (path, dataToSave, formatRow) => {
-                 if (!apiToken) return { success: false, error: "El token de API no está disponible." };
+                if (!apiToken) {
+                    alert("Error: El token de API no está disponible.");
+                    return false;
+                }
                 const csvContent = dataToSave.map(formatRow).join('\n');
-                const contentB64 = btoa(unescape(encodeURIComponent(csvContent)));
-                const commitMessage = `Actualización de ${path} desde grilla web`;
                 const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}`;
-                let currentSha = null;
                 try {
-                    const fileResponse = await fetch(`${url}?t=${new Date().getTime()}`, { headers: { 'Authorization': `token ${apiToken}` }, cache: 'no-store' });
-                    if (fileResponse.ok) currentSha = (await fileResponse.json()).sha;
+                    const fileResponse = await fetch(`${url}?t=${new Date().getTime()}`, {
+                        headers: { 'Authorization': `token ${apiToken}` },
+                        cache: 'no-store'
+                    });
+
+                    let currentSha = null;
+                    if (fileResponse.ok) {
+                        const fileData = await fileResponse.json();
+                        currentSha = fileData.sha;
+                    } else if (fileResponse.status !== 404) {
+                        const errorData = await fileResponse.json();
+                        throw new Error(`Error ${fileResponse.status} al obtener SHA: ${errorData.message}`);
+                    }
+
                     const updateResponse = await fetch(url, {
                         method: 'PUT',
                         headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message: commitMessage, content: contentB64, sha: currentSha }),
+                        body: JSON.stringify({
+                            message: `Actualización de ${path} desde grilla web`,
+                            content: btoa(unescape(encodeURIComponent(csvContent))),
+                            sha: currentSha,
+                        }),
                     });
+
                     if (!updateResponse.ok) {
                         const errorData = await updateResponse.json();
-                        throw new Error(`Error ${updateResponse.status}: ${errorData.message}`);
+                        throw new Error(`Error ${updateResponse.status}: ${errorData.message || 'Falló la actualización del archivo.'}`);
                     }
                     return true;
                 } catch (e) {
-                    return e.message;
+                    console.error(e);
+                    return e.message; 
                 }
             };
-            
+
             const appendCsvToGithub = async (path, stringToAppend) => {
-                if (!apiToken) return { success: false, error: "Token no disponible." };
-                if (!stringToAppend) return { success: true };
+                if (!apiToken) {
+                    alert("Error: El token de API no está disponible.");
+                    return { success: false, error: "Token no disponible." };
+                }
+                if (!stringToAppend) {
+                    return { success: true };
+                }
                 const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}`;
                 let currentSha = null;
                 let newContent = stringToAppend;
                 try {
-                    const fileResponse = await fetch(`${url}?t=${new Date().getTime()}`, { headers: { 'Authorization': `token ${apiToken}` }, cache: 'no-store' });
+                    const fileResponse = await fetch(`${url}?t=${new Date().getTime()}`, {
+                        headers: { 'Authorization': `token ${apiToken}` },
+                        cache: 'no-store'
+                    });
                     if (fileResponse.ok) {
                         const fileData = await fileResponse.json();
                         currentSha = fileData.sha;
                         const existingContent = atob(fileData.content).trim();
                         newContent = existingContent ? `${existingContent}\n${stringToAppend}` : stringToAppend;
+                    } else if (fileResponse.status !== 404) {
+                        const errorData = await fileResponse.json();
+                        throw new Error(`Error ${fileResponse.status} al obtener archivo para añadir: ${errorData.message}`);
                     }
                     const updateResponse = await fetch(url, {
                         method: 'PUT',
                         headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message: `Añadir a ${path}`, content: btoa(unescape(encodeURIComponent(newContent))), sha: currentSha }),
+                        body: JSON.stringify({
+                            message: `Añadir a ${path} desde grilla web`,
+                            content: btoa(unescape(encodeURIComponent(newContent))),
+                            sha: currentSha,
+                        }),
                     });
                     if (!updateResponse.ok) {
                         const errorData = await updateResponse.json();
-                        throw new Error(`Error ${updateResponse.status}: ${errorData.message}`);
+                        throw new Error(`Error ${updateResponse.status}: ${errorData.message || 'Falló la actualización del archivo.'}`);
                     }
                     return { success: true };
                 } catch (e) {
+                    console.error(e);
                     return { success: false, error: e.message };
                 }
             };
             
-            // ### MODIFICADO: saveData ahora usa el sistema de bloqueo ###
+            // --- MODIFICADO: Integración del sistema de bloqueo ---
             const saveData = async (updatedLotes, updatedNotes) => {
-                setIsSaving(true);
-                const hasLock = await acquireLock();
-                if (!hasLock) {
-                    alert("El sistema está ocupado por otro usuario. Por favor, intente de nuevo en unos momentos.");
-                    setIsSaving(false);
+                const lock = await acquireLock('saveData');
+                if (!lock.success) {
+                    alert(`No se pudo guardar. ${lock.error}. Por favor, intente de nuevo en unos momentos.`);
                     return;
                 }
+
+                setIsSaving(true);
                 try {
                     const [lotesResult, notesResult] = await Promise.all([
                         saveCsvToGithub(CSV_PATH_LOTES, updatedLotes, item => 
@@ -348,20 +406,19 @@
                             [item.sku, item.numeroDePallet, item.observacion].join(';')
                         )
                     ]);
+                    
                     const success = lotesResult === true && notesResult === true;
+
                     if (success) {
                         alert("¡Operación exitosa! Los datos se han guardado correctamente.");
                     } else {
                         const errorMessage = `Ocurrió un error al guardar:\n- Lotes: ${lotesResult === true ? 'OK' : lotesResult}\n- Notas: ${notesResult === true ? 'OK' : notesResult}\n\nSe recargarán los datos para asegurar la consistencia.`;
                         alert(errorMessage);
                     }
-                    await loadData();
-                } catch (error) {
-                    console.error("Error durante el guardado:", error);
-                    alert("Un error inesperado ocurrió durante el guardado.");
                 } finally {
                     await releaseLock();
                     setIsSaving(false);
+                    await loadData();
                 }
             };
 
@@ -648,19 +705,20 @@
                     }
                 });
             };
-            
-            // ### MODIFICADO: processTransfer ahora usa el sistema de bloqueo ###
+
+            // --- MODIFICADO: Integración del sistema de bloqueo ---
             const processTransfer = async (itemsToTransfer) => {
-                setIsSaving(true);
-                const hasLock = await acquireLock();
-                if (!hasLock) {
-                    alert("El sistema está ocupado por otro usuario. Por favor, intente de nuevo en unos momentos.");
-                    setIsSaving(false);
+                const lock = await acquireLock('processTransfer');
+                if (!lock.success) {
+                    alert(`No se pudo transferir. ${lock.error}. Por favor, intente de nuevo en unos momentos.`);
                     return;
                 }
+
+                setIsSaving(true);
                 try {
                     const newStoredEntries = itemsToTransfer.map(item => `${item.sku};${item.numeroDePallet}`).join('\n');
                     const result = await appendCsvToGithub(CSV_PATH_ALMACENADO, newStoredEntries);
+                    
                     if (result.success) {
                         generateTransferPDF(itemsToTransfer);
                         alert("Transferencia registrada y PDF generado correctamente.");
@@ -668,16 +726,14 @@
                     } else {
                         alert(`Ocurrió un error al registrar la transferencia: ${result.error}`);
                     }
-                    await loadData();
-                } catch(error) {
-                    console.error("Error durante la transferencia:", error);
-                    alert("Un error inesperado ocurrió durante la transferencia.");
                 } finally {
                     await releaseLock();
                     setIsSaving(false);
+                    await loadData();
                 }
             };
 
+            // CORRECCIÓN: PDF de transferencia en horizontal
             const generateTransferPDF = (transferredItems) => {
                 const doc = new jsPDF({ orientation: 'landscape' });
                 const now = new Date();
@@ -699,11 +755,14 @@
                     headStyles: { fillColor: [41, 128, 185], textColor: 255 },
                     alternateRowStyles: { fillColor: [245, 245, 245] }
                 });
+
+                // El resumen podría necesitar una nueva página si hay muchos detalles
                 let finalY = doc.lastAutoTable.finalY;
-                if (finalY > 150) { 
+                if (finalY > 150) { // Umbral para decidir si añadir nueva página
                     doc.addPage();
-                    finalY = 0;
+                    finalY = 0; // Reset Y position
                 }
+
                 doc.setFontSize(16);
                 doc.text("Resumen por SKU", 14, finalY + 15);
                 const summary = transferredItems.reduce((acc, item) => {
@@ -715,6 +774,7 @@
                     acc[key].total += isNaN(qty) ? 0 : qty;
                     return acc;
                 }, {});
+                
                 const summaryColumns = ["SKU", "Cantidad Total", "Unidad de Medida"];
                 const summaryRows = Object.values(summary).map(s => [
                     s.sku,
@@ -800,11 +860,14 @@
                 doc.text(new Date(year, month - 1, day).toLocaleDateString('es-ES'), pageW - margin, currentY + 22, { align: "right" });
             };
 
+            // CORRECCIÓN: Usar descripción corta (4ta columna) para la etiqueta
             const handleReprint = async (item) => {
                 const cantidadParaQR = item.cantidad.replace(',', '.');
                 const qrString = [ item.sku, item.descripcion, item.numeroDePallet, item.lotesProduccion, item.fechaProduccion, cantidadParaQR, item.unidadMedida ].join(';');
+                
                 const articuloInfo = articulosMap.get(item.sku);
                 const descripcionParaEtiqueta = (articuloInfo && articuloInfo.corta) ? articuloInfo.corta : item.descripcion;
+
                 const data = { sku: item.sku, descripcion: descripcionParaEtiqueta, lotes: item.lotesProduccion.split('#').filter(Boolean), cantidad: item.cantidad, uom: item.unidadMedida, fechaProd: item.fechaProduccion, palletId: item.numeroDePallet, qrString: qrString, hasNote: item.hasNote };
                 const previewDoc = new jsPDF('p', 'mm', 'a4'); await drawLabelOnDoc(previewDoc, data);
                 const printDoc = new jsPDF('p', 'mm', 'a4'); await drawLabelOnDoc(printDoc, data);
