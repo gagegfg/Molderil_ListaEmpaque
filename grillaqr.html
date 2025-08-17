@@ -54,7 +54,7 @@
         const CSV_PATH_ALMACENADO = 'nropalletalmacenado.csv';
         const AUTH_TIMEOUT = 5 * 60 * 1000; // 5 minutos en milisegundos
 
-        // --- NUEVO: CONFIGURACIÓN DEL SISTEMA DE BLOQUEO ---
+        // --- CONFIGURACIÓN DEL SISTEMA DE BLOQUEO ---
         const LOCK_FILE_PATH = 'lock.json';
         const LOCK_TIMEOUT = 45 * 1000; // 45 segundos
         const SESSION_ID = Date.now().toString(36) + Math.random().toString(36).substr(2);
@@ -147,12 +147,11 @@
                 }
             };
             
-            // --- NUEVO: FUNCIONES DEL SISTEMA DE BLOQUEO ---
+            // --- FUNCIONES DEL SISTEMA DE BLOQUEO ---
             const acquireLock = async (operationName) => {
                 const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${LOCK_FILE_PATH}`;
                 let currentSha = null;
                 try {
-                    // 1. Intentar leer el archivo de bloqueo
                     const response = await fetch(`${url}?t=${new Date().getTime()}`, {
                         headers: { 'Authorization': `token ${apiToken}` }, cache: 'no-store'
                     });
@@ -162,7 +161,6 @@
                         currentSha = fileData.sha;
                         const content = atob(fileData.content);
 
-                        // SOLUCIÓN AL BUG: Manejar archivo vacío
                         if (!content.trim()) {
                            // El archivo está vacío, se considera desbloqueado.
                         } else {
@@ -177,9 +175,7 @@
                     } else if (response.status !== 404) {
                         throw new Error(`Error al leer el archivo de bloqueo: ${response.statusText}`);
                     }
-                    // Si el archivo no existe (404) o está vacío/expirado, procedemos a bloquearlo.
 
-                    // 2. Escribir nuestro bloqueo
                     const lockContent = { sessionId: SESSION_ID, timestamp: Date.now(), operation: operationName };
                     const updateResponse = await fetch(url, {
                         method: 'PUT',
@@ -196,11 +192,9 @@
                     return { success: true };
 
                 } catch (error) {
-                    // SOLUCIÓN AL BUG: Si JSON.parse falla, tratar como desbloqueado
                     if (error instanceof SyntaxError) {
                         console.warn("lock.json contenía JSON inválido, se procederá a sobreescribir.");
-                        // Se puede reintentar el bloqueo aquí o continuar, la lógica de escritura lo manejará.
-                        return { success: true }; // Se asume que se puede tomar el bloqueo.
+                        return { success: true };
                     }
                     console.error("Error en acquireLock:", error);
                     return { success: false, error: error.message };
@@ -216,7 +210,6 @@
             
                     if (response.ok) {
                         const fileData = await response.json();
-                        // Opcional: Verificar que somos dueños del bloqueo antes de liberarlo.
                         const content = atob(fileData.content);
                         if (content) {
                             const lock = JSON.parse(content);
@@ -231,7 +224,7 @@
                             headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 message: 'Releasing lock',
-                                content: btoa(''), // Dejar el archivo vacío para desbloquear
+                                content: btoa(''),
                                 sha: fileData.sha,
                             }),
                         });
@@ -388,7 +381,7 @@
                 }
             };
             
-            // --- MODIFICADO: Integración del sistema de bloqueo ---
+            // --- CORREGIDO: Guardado secuencial para evitar error 409 ---
             const saveData = async (updatedLotes, updatedNotes) => {
                 const lock = await acquireLock('saveData');
                 if (!lock.success) {
@@ -397,15 +390,20 @@
                 }
 
                 setIsSaving(true);
+                let lotesResult = false;
+                let notesResult = false;
                 try {
-                    const [lotesResult, notesResult] = await Promise.all([
-                        saveCsvToGithub(CSV_PATH_LOTES, updatedLotes, item => 
-                            [item.sku, item.descripcion, item.numeroDePallet, item.lotesProduccion, item.fechaProduccion, item.cantidad, item.unidadMedida, item.despachado || 'FALSE', item.cliente || ''].join(';')
-                        ),
-                        saveCsvToGithub(CSV_PATH_NOTAS, updatedNotes, item => 
+                    // 1. Guardar Lotes primero y esperar a que termine
+                    lotesResult = await saveCsvToGithub(CSV_PATH_LOTES, updatedLotes, item => 
+                        [item.sku, item.descripcion, item.numeroDePallet, item.lotesProduccion, item.fechaProduccion, item.cantidad, item.unidadMedida, item.despachado || 'FALSE', item.cliente || ''].join(';')
+                    );
+
+                    // 2. Si el primer guardado fue exitoso, proceder con el segundo
+                    if (lotesResult === true) {
+                        notesResult = await saveCsvToGithub(CSV_PATH_NOTAS, updatedNotes, item => 
                             [item.sku, item.numeroDePallet, item.observacion].join(';')
-                        )
-                    ]);
+                        );
+                    }
                     
                     const success = lotesResult === true && notesResult === true;
 
@@ -706,7 +704,6 @@
                 });
             };
 
-            // --- MODIFICADO: Integración del sistema de bloqueo ---
             const processTransfer = async (itemsToTransfer) => {
                 const lock = await acquireLock('processTransfer');
                 if (!lock.success) {
@@ -733,7 +730,6 @@
                 }
             };
 
-            // CORRECCIÓN: PDF de transferencia en horizontal
             const generateTransferPDF = (transferredItems) => {
                 const doc = new jsPDF({ orientation: 'landscape' });
                 const now = new Date();
@@ -756,11 +752,10 @@
                     alternateRowStyles: { fillColor: [245, 245, 245] }
                 });
 
-                // El resumen podría necesitar una nueva página si hay muchos detalles
                 let finalY = doc.lastAutoTable.finalY;
-                if (finalY > 150) { // Umbral para decidir si añadir nueva página
+                if (finalY > 150) {
                     doc.addPage();
-                    finalY = 0; // Reset Y position
+                    finalY = 0;
                 }
 
                 doc.setFontSize(16);
@@ -860,7 +855,6 @@
                 doc.text(new Date(year, month - 1, day).toLocaleDateString('es-ES'), pageW - margin, currentY + 22, { align: "right" });
             };
 
-            // CORRECCIÓN: Usar descripción corta (4ta columna) para la etiqueta
             const handleReprint = async (item) => {
                 const cantidadParaQR = item.cantidad.replace(',', '.');
                 const qrString = [ item.sku, item.descripcion, item.numeroDePallet, item.lotesProduccion, item.fechaProduccion, cantidadParaQR, item.unidadMedida ].join(';');
