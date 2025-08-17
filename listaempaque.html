@@ -11,7 +11,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-  <!-- Estilo de fondo para coincidir con index.html -->
   <style>
     body {
       background-image: url('fondo.jpg');
@@ -28,10 +27,9 @@
 </head>
 <body class="bg-gray-100 font-sans">
 
-  <!-- Cargador inicial con nueva estética -->
   <div id="static-loader" class="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 p-4 font-sans z-50">
     <div class="relative bg-[#D2B48C]/20 backdrop-blur-lg border border-[#D2B48C]/30 p-8 rounded-xl shadow-2xl w-full max-w-md text-center">
-      <img src="logo.jpg" alt="Logo Molderil" class="mx-auto mb-6 h-32 [filter:drop-shadow(2px_2px_4px_rgba(0,0,0,0.4))_drop-shadow(-2px_-2px_4px_rgba(255,255,255,0.6))]"/>
+      <img src="logo.jpg" alt="Logo Molderil" class="mx-auto mb-6 h-32 [filter:drop-shadow(2px_2px_4px_rgba(0,0,0,0.4))_drop_shadow(-2px_-2px_4px_rgba(255,255,255,0.6))]"/>
       <p id="loader-status" class="text-xl text-white mb-4 [text-shadow:_1px_1px_2px_rgba(0,0,0,0.5)]">Cargando aplicación...</p>
       <div class="w-full bg-white/20 rounded-full h-4 border border-white/30">
         <div id="loader-progress" class="bg-amber-400 h-full rounded-full transition-all duration-500" style="width: 10%"></div>
@@ -52,6 +50,12 @@
     const USUARIO_GITHUB = 'gagegfg';
     const REPO_NOMBRE = 'Molderil_ListaEmpaque';
     const RUTA_HISTORICO_CSV = 'detallelotes.csv';
+    const RUTA_CLS_TXT = 'cls.txt'; // Añadido para obtener token
+    
+    // --- NUEVO: CONFIGURACIÓN DEL SISTEMA DE BLOQUEO ---
+    const LOCK_FILE_PATH = 'lock.json';
+    const LOCK_TIMEOUT = 45 * 1000; // 45 segundos
+    const SESSION_ID = Date.now().toString(36) + Math.random().toString(36).substr(2);
     // =================================================================
 
 
@@ -207,9 +211,10 @@
 
       async function getApiToken() {
         try {
-            const response = await fetch('cls.txt');
+            const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_CLS_TXT}`;
+            const response = await fetch(url, { cache: "no-store" });
             if (!response.ok) {
-                console.warn('Advertencia: No se pudo cargar el archivo de clave. La función de guardado estará deshabilitada.');
+                console.warn(`Advertencia: No se pudo cargar ${RUTA_CLS_TXT}. La función de guardado estará deshabilitada.`);
                 return null;
             }
             let rawToken = await response.text();
@@ -343,7 +348,93 @@
         }
       }, [highlightedIndex]);
 
-      // --- GITHUB UPDATE FUNCTION ---
+        // --- NUEVO: FUNCIONES DEL SISTEMA DE BLOQUEO ---
+        const acquireLock = async (operationName) => {
+            const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${LOCK_FILE_PATH}`;
+            let currentSha = null;
+            try {
+                const response = await fetch(`${url}?t=${new Date().getTime()}`, {
+                    headers: { 'Authorization': `token ${apiToken}` }, cache: 'no-store'
+                });
+
+                if (response.ok) {
+                    const fileData = await response.json();
+                    currentSha = fileData.sha;
+                    const content = atob(fileData.content);
+
+                    if (content && content.trim()) {
+                        const lock = JSON.parse(content);
+                        const isLockedByOther = lock.sessionId && lock.sessionId !== SESSION_ID;
+                        const isExpired = Date.now() - lock.timestamp > LOCK_TIMEOUT;
+
+                        if (isLockedByOther && !isExpired) {
+                            return { success: false, error: `Sistema bloqueado por otra sesión. Operación en curso: ${lock.operation || 'N/A'}` };
+                        }
+                    }
+                } else if (response.status !== 404) {
+                    throw new Error(`Error al leer el archivo de bloqueo: ${response.statusText}`);
+                }
+
+                const lockContent = { sessionId: SESSION_ID, timestamp: Date.now(), operation: operationName };
+                const updateResponse = await fetch(url, {
+                    method: 'PUT',
+                    headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: `Locking for operation: ${operationName}`,
+                        content: btoa(JSON.stringify(lockContent)),
+                        sha: currentSha,
+                    }),
+                });
+
+                if (!updateResponse.ok) throw new Error(`No se pudo adquirir el bloqueo: ${updateResponse.statusText}`);
+                
+                return { success: true };
+
+            } catch (error) {
+                if (error instanceof SyntaxError) {
+                    console.warn("lock.json contenía JSON inválido, se procederá a sobreescribir.");
+                    return { success: true };
+                }
+                console.error("Error en acquireLock:", error);
+                return { success: false, error: error.message };
+            }
+        };
+
+        const releaseLock = async () => {
+            const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${LOCK_FILE_PATH}`;
+            try {
+                const response = await fetch(`${url}?t=${new Date().getTime()}`, {
+                    headers: { 'Authorization': `token ${apiToken}` }, cache: 'no-store'
+                });
+        
+                if (response.ok) {
+                    const fileData = await response.json();
+                    const content = atob(fileData.content);
+                    if (content) {
+                        const lock = JSON.parse(content);
+                        if (lock.sessionId && lock.sessionId !== SESSION_ID) {
+                            console.warn("Intento de liberar un bloqueo que no pertenece a esta sesión. Se omite.");
+                            return;
+                        }
+                    }
+
+                    const updateResponse = await fetch(url, {
+                        method: 'PUT',
+                        headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            message: 'Releasing lock',
+                            content: btoa(''),
+                            sha: fileData.sha,
+                        }),
+                    });
+                    if (!updateResponse.ok) console.error("Error al liberar el bloqueo, puede expirar automáticamente.");
+                }
+            } catch (error) {
+                console.error("Error en releaseLock:", error);
+            }
+        };
+
+      // --- GITHUB UPDATE FUNCTION (MODIFICADA CON BLOQUEO) ---
       const registrarDespachoEnGitHub = async (itemsScaneados, clienteNombre) => {
         if (!apiToken) {
             console.warn("No hay token de API. La actualización en GitHub se omite.");
@@ -352,6 +443,11 @@
         if (itemsScaneados.length === 0) {
             console.log("No hay items para actualizar.");
             return true;
+        }
+
+        const lock = await acquireLock('registrarDespacho');
+        if (!lock.success) {
+            throw new Error(`No se pudo registrar. ${lock.error}. Intente de nuevo.`);
         }
 
         setIsGenerating(true);
@@ -377,18 +473,22 @@
             itemsScaneados.forEach(item => {
                 const indiceLinea = lineas.findIndex(linea => {
                     const columnas = linea.split(';');
+                    // Búsqueda más robusta: SKU y Nro Pallet
                     return columnas.length > 2 && columnas[0] === item.sku && columnas[2] === item.numeroDePallet;
                 });
 
                 if (indiceLinea !== -1) {
                     let columnas = lineas[indiceLinea].split(';');
 
+                    // Asegurar que hay suficientes columnas para evitar errores
                     while (columnas.length < 9) {
                         columnas.push('');
                     }
                     
+                    // Columna 8 (índice 7) es 'despachado'
                     columnas[7] = 'TRUE';
 
+                    // Columna 9 (índice 8) es 'cliente'
                     const clientesExistentes = columnas[8] ? columnas[8].trim().split('#').filter(Boolean) : [];
                     if (!clientesExistentes.includes(clienteNombre.toUpperCase())) {
                         clientesExistentes.push(clienteNombre.toUpperCase());
@@ -403,7 +503,7 @@
             if (cambiosRealizados === 0) {
                 console.log("No se encontraron pallets que necesiten actualización o el cliente ya estaba asignado.");
                 showFeedback('Sincronización OK (sin cambios).');
-                return true;
+                return true; // No es un error, simplemente no hubo nada que cambiar
             }
 
             const nuevoContenidoCsv = lineas.join('\n');
@@ -437,6 +537,7 @@
             setShowInfoModal(true);
             return false;
         } finally {
+            await releaseLock();
             setIsGenerating(false);
         }
       };
@@ -571,7 +672,6 @@
             tieneNota: false,
         };
         
-        // --- NEW: Check for notes ---
         const notaEncontrada = notesList.find(n => n.sku === sku && n.nroPallet === numeroDePallet);
         if (notaEncontrada) {
             setConfirmationModalContent({
@@ -648,7 +748,6 @@
       };
 
       const handleDeleteLote = (itemId, loteToDelete) => {
-        // Using a custom confirmation modal instead of window.confirm
         setConfirmationModalContent({
             title: 'Confirmar Eliminación',
             message: `¿Estás seguro de que deseas eliminar el lote "${loteToDelete}" de este pallet? Esta acción no se puede deshacer.`,
@@ -1070,7 +1169,7 @@
               <button onClick={() => setShowHelpModal(true)} title="Ayuda" className="absolute top-4 right-4 text-white/40 hover:text-white transition-colors">
                   <i className="fas fa-question-circle text-2xl"></i>
               </button>
-              <img src="logo.jpg" alt="Logo Molderil" className="mx-auto mb-6 h-32 [filter:drop-shadow(2px_2px_4px_rgba(0,0,0,0.4))_drop-shadow(-2px_-2px_4px_rgba(255,255,255,0.6))]"/>
+              <img src="logo.jpg" alt="Logo Molderil" className="mx-auto mb-6 h-32 [filter:drop-shadow(2px_2px_4px_rgba(0,0,0,0.4))_drop_shadow(-2px_-2px_4px_rgba(255,255,255,0.6))]"/>
               <h2 className="text-3xl font-bold text-white mb-6 [text-shadow:_1px_1px_4px_rgba(0,0,0,0.7)]">Lista de Empaque</h2>
               <div className="space-y-4 text-left">
                 <div>
