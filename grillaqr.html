@@ -53,6 +53,7 @@
         const CSV_PATH_NOTAS = 'notasskulote.csv';
         const CSV_PATH_ALMACENADO = 'nropalletalmacenado.csv';
         const AUTH_TIMEOUT = 5 * 60 * 1000; // 5 minutos en milisegundos
+        const MAX_SAVE_RETRIES = 3; // Número máximo de reintentos en caso de conflicto
 
         const useLocalStorage = (key, initialValue) => {
             const [storedValue, setStoredValue] = useState(() => {
@@ -198,65 +199,76 @@
                 setIsLoading(false);
             }, [fetchCsvFromGithub, articulosMap]);
             
-            const saveCsvToGithub = async (path, dataToSave, formatRow) => {
-                if (!apiToken) {
-                    alert("Error: El token de API no está disponible.");
-                    return false;
-                }
-                const csvContent = dataToSave.map(formatRow).join('\n');
+            // ### INICIO DE LA SOLUCIÓN ###
+            // Función robusta para actualizar un archivo en GitHub con manejo de reintentos.
+            // Esta función implementa la estrategia "el último guardado gana" (last-write-wins).
+            const updateGithubFile = async (path, contentB64, commitMessage, retries = MAX_SAVE_RETRIES) => {
                 const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}`;
-                try {
-                    const fileResponse = await fetch(`${url}?t=${new Date().getTime()}`, {
-                        headers: { 'Authorization': `token ${apiToken}` },
-                        cache: 'no-store'
-                    });
+                const headers = { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' };
 
+                try {
+                    // 1. Obtener el SHA más reciente del archivo justo antes de escribir.
+                    const fileResponse = await fetch(`${url}?t=${new Date().getTime()}`, { headers, cache: 'no-store' });
                     let currentSha = null;
                     if (fileResponse.ok) {
-                        const fileData = await fileResponse.json();
-                        currentSha = fileData.sha;
+                        currentSha = (await fileResponse.json()).sha;
                     } else if (fileResponse.status !== 404) {
                         const errorData = await fileResponse.json();
                         throw new Error(`Error ${fileResponse.status} al obtener SHA: ${errorData.message}`);
                     }
 
+                    // 2. Intentar actualizar el archivo con el SHA obtenido.
                     const updateResponse = await fetch(url, {
                         method: 'PUT',
-                        headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            message: `Actualización de ${path} desde grilla web`,
-                            content: btoa(unescape(encodeURIComponent(csvContent))),
-                            sha: currentSha,
-                        }),
+                        headers: headers,
+                        body: JSON.stringify({ message: commitMessage, content: contentB64, sha: currentSha }),
                     });
 
+                    // 3. Si hay un conflicto (409) y quedan reintentos, volver a intentar.
+                    if (updateResponse.status === 409 && retries > 0) {
+                        console.warn(`Conflicto al guardar ${path}. Reintentando... (${retries - 1} restantes)`);
+                        // Espera un instante antes de reintentar para evitar colisiones rápidas.
+                        await new Promise(resolve => setTimeout(resolve, 500)); 
+                        return await updateGithubFile(path, contentB64, commitMessage, retries - 1);
+                    }
+                    
                     if (!updateResponse.ok) {
                         const errorData = await updateResponse.json();
                         throw new Error(`Error ${updateResponse.status}: ${errorData.message || 'Falló la actualización del archivo.'}`);
                     }
-                    return true;
+
+                    return { success: true, error: null };
                 } catch (e) {
-                    console.error(e);
-                    return e.message; 
+                    console.error(`Error final al actualizar ${path}:`, e);
+                    return { success: false, error: e.message };
                 }
             };
+            
+            // Función original refactorizada para usar el nuevo actualizador robusto.
+            const saveCsvToGithub = async (path, dataToSave, formatRow) => {
+                 if (!apiToken) return { success: false, error: "El token de API no está disponible." };
+                 
+                const csvContent = dataToSave.map(formatRow).join('\n');
+                const contentB64 = btoa(unescape(encodeURIComponent(csvContent)));
+                const commitMessage = `Actualización de ${path} desde grilla web`;
 
-            const appendCsvToGithub = async (path, stringToAppend) => {
-                if (!apiToken) {
-                    alert("Error: El token de API no está disponible.");
-                    return { success: false, error: "Token no disponible." };
-                }
-                if (!stringToAppend) {
-                    return { success: true };
-                }
+                const result = await updateGithubFile(path, contentB64, commitMessage);
+                return result.success ? true : result.error;
+            };
+            
+            // Función para añadir contenido, ahora también con reintentos.
+            const appendCsvToGithub = async (path, stringToAppend, retries = MAX_SAVE_RETRIES) => {
+                if (!apiToken) return { success: false, error: "Token no disponible." };
+                if (!stringToAppend) return { success: true };
+
                 const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}`;
-                let currentSha = null;
-                let newContent = stringToAppend;
+                const headers = { 'Authorization': `token ${apiToken}` };
+
                 try {
-                    const fileResponse = await fetch(`${url}?t=${new Date().getTime()}`, {
-                        headers: { 'Authorization': `token ${apiToken}` },
-                        cache: 'no-store'
-                    });
+                    // 1. Obtener el contenido y SHA actuales.
+                    let currentSha = null;
+                    let newContent = stringToAppend;
+                    const fileResponse = await fetch(`${url}?t=${new Date().getTime()}`, { headers, cache: 'no-store' });
                     if (fileResponse.ok) {
                         const fileData = await fileResponse.json();
                         currentSha = fileData.sha;
@@ -266,25 +278,37 @@
                         const errorData = await fileResponse.json();
                         throw new Error(`Error ${fileResponse.status} al obtener archivo para añadir: ${errorData.message}`);
                     }
+
+                    // 2. Preparar el contenido y el commit.
+                    const contentB64 = btoa(unescape(encodeURIComponent(newContent)));
+                    const commitMessage = `Añadir a ${path} desde grilla web`;
+                    
+                    // 3. Intentar la actualización.
                     const updateResponse = await fetch(url, {
                         method: 'PUT',
-                        headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            message: `Añadir a ${path} desde grilla web`,
-                            content: btoa(unescape(encodeURIComponent(newContent))),
-                            sha: currentSha,
-                        }),
+                        headers: { ...headers, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: commitMessage, content: contentB64, sha: currentSha }),
                     });
+
+                    // 4. Si hay conflicto, reintentar toda la operación (leer, modificar, escribir).
+                    if (updateResponse.status === 409 && retries > 0) {
+                        console.warn(`Conflicto al añadir en ${path}. Reintentando... (${retries - 1} restantes)`);
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        return await appendCsvToGithub(path, stringToAppend, retries - 1);
+                    }
+
                     if (!updateResponse.ok) {
                         const errorData = await updateResponse.json();
                         throw new Error(`Error ${updateResponse.status}: ${errorData.message || 'Falló la actualización del archivo.'}`);
                     }
                     return { success: true };
+
                 } catch (e) {
                     console.error(e);
                     return { success: false, error: e.message };
                 }
             };
+            // ### FIN DE LA SOLUCIÓN ###
 
             const saveData = async (updatedLotes, updatedNotes) => {
                 setIsSaving(true);
