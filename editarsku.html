@@ -27,7 +27,7 @@
 
     <div id="static-loader" class="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 p-4 font-sans z-50">
         <div class="relative bg-[#D2B48C]/20 backdrop-blur-lg border border-[#D2B48C]/30 p-8 rounded-xl shadow-2xl w-full max-w-md text-center">
-          <img src="logo.jpg" alt="Logo Molderil" class="mx-auto mb-6 h-32 [filter:drop-shadow(2px_2px_4px_rgba(0,0,0,0.4))_drop-shadow(-2px_-2px_4px_rgba(255,255,255,0.6))]"/>
+          <img src="logo.jpg" alt="Logo Molderil" class="mx-auto mb-6 h-32 [filter:drop-shadow(2px_2px_4px_rgba(0,0,0,0.4))_drop_shadow(-2px_-2px_4px_rgba(255,255,255,0.6))]"/>
           <p id="loader-status" class="text-xl text-white mb-4 [text-shadow:_1px_1px_2px_rgba(0,0,0,0.5)]">Cargando aplicación...</p>
           <div class="w-full bg-white/20 rounded-full h-4 border border-white/30">
             <div id="loader-progress" class="bg-amber-400 h-full rounded-full transition-all duration-500" style="width: 10%"></div>
@@ -40,6 +40,17 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, useRef } = React;
         const { createRoot } = ReactDOM;
+
+        // =================================================================
+        // ### CONFIGURACIÓN Y SISTEMA DE BLOQUEO ###
+        // =================================================================
+        const USUARIO_GITHUB = 'gagegfg';
+        const REPO_NOMBRE = 'Molderil_ListaEmpaque';
+        const RUTA_ARTICULOS_CSV = 'articulos.csv';
+        const LOCK_FILE_PATH = 'lock.json';
+        const LOCK_TIMEOUT = 45 * 1000; // 45 segundos
+        const SESSION_ID = Date.now().toString(36) + Math.random().toString(36).substr(2);
+        // =================================================================
 
         // Hook personalizado para manejar el estado con localStorage
         const useLocalStorage = (key, initialValue) => {
@@ -77,14 +88,12 @@
             const [filteredData, setFilteredData] = useState([]);
             const [hasChanges, setHasChanges] = useState(false);
 
-            // Filtros de columna
             const [columnFilters, setColumnFilters] = useLocalStorage('editarsku_columnFilters', {
                 tipo: '',
                 sku: '',
                 descLarga: ''
             });
 
-            // Modal
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [editingArticle, setEditingArticle] = useState(null);
 
@@ -145,13 +154,14 @@
             const fetchData = async () => {
                 setIsLoading(true);
                 try {
-                    const response = await fetch('https://raw.githubusercontent.com/gagegfg/Molderil_ListaEmpaque/main/articulos.csv?timestamp=' + new Date().getTime());
+                    const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_ARTICULOS_CSV}?timestamp=${new Date().getTime()}`;
+                    const response = await fetch(url);
                     if (!response.ok) throw new Error('No se pudo cargar el archivo de artículos.');
                     const text = await response.text();
                     const rows = text.split('\n').filter(Boolean);
                     const parsedData = rows.map((row, index) => {
                         const [tipo, sku, descLarga, descCorta] = row.split(';');
-                        return { id: sku || `temp-${index}`, tipo, sku, descLarga, descCorta };
+                        return { id: sku || `temp-${index}`, tipo, sku, descLarga, descCorta: descCorta || '' };
                     });
                     setAllData(parsedData);
                     setHasChanges(false);
@@ -201,6 +211,92 @@
                 setEditingArticle(null);
             };
 
+            // --- FUNCIONES DEL SISTEMA DE BLOQUEO ---
+            const acquireLock = async (operationName) => {
+                const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${LOCK_FILE_PATH}`;
+                let currentSha = null;
+                try {
+                    const response = await fetch(`${url}?t=${new Date().getTime()}`, {
+                        headers: { 'Authorization': `token ${apiToken}` }, cache: 'no-store'
+                    });
+
+                    if (response.ok) {
+                        const fileData = await response.json();
+                        currentSha = fileData.sha;
+                        const content = atob(fileData.content);
+
+                        if (content && content.trim()) {
+                            const lock = JSON.parse(content);
+                            const isLockedByOther = lock.sessionId && lock.sessionId !== SESSION_ID;
+                            const isExpired = Date.now() - lock.timestamp > LOCK_TIMEOUT;
+
+                            if (isLockedByOther && !isExpired) {
+                                return { success: false, error: `Sistema bloqueado por otra sesión. Operación en curso: ${lock.operation || 'N/A'}` };
+                            }
+                        }
+                    } else if (response.status !== 404) {
+                        throw new Error(`Error al leer el archivo de bloqueo: ${response.statusText}`);
+                    }
+
+                    const lockContent = { sessionId: SESSION_ID, timestamp: Date.now(), operation: operationName };
+                    const updateResponse = await fetch(url, {
+                        method: 'PUT',
+                        headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            message: `Locking for operation: ${operationName}`,
+                            content: btoa(JSON.stringify(lockContent)),
+                            sha: currentSha,
+                        }),
+                    });
+
+                    if (!updateResponse.ok) throw new Error(`No se pudo adquirir el bloqueo: ${updateResponse.statusText}`);
+                    
+                    return { success: true };
+
+                } catch (error) {
+                    if (error instanceof SyntaxError) {
+                        console.warn("lock.json contenía JSON inválido, se procederá a sobreescribir.");
+                        return { success: true };
+                    }
+                    console.error("Error en acquireLock:", error);
+                    return { success: false, error: error.message };
+                }
+            };
+
+            const releaseLock = async () => {
+                const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${LOCK_FILE_PATH}`;
+                try {
+                    const response = await fetch(`${url}?t=${new Date().getTime()}`, {
+                        headers: { 'Authorization': `token ${apiToken}` }, cache: 'no-store'
+                    });
+            
+                    if (response.ok) {
+                        const fileData = await response.json();
+                        const content = atob(fileData.content);
+                        if (content) {
+                            const lock = JSON.parse(content);
+                            if (lock.sessionId && lock.sessionId !== SESSION_ID) {
+                                console.warn("Intento de liberar un bloqueo que no pertenece a esta sesión. Se omite.");
+                                return;
+                            }
+                        }
+
+                        const updateResponse = await fetch(url, {
+                            method: 'PUT',
+                            headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                message: 'Releasing lock',
+                                content: btoa(''),
+                                sha: fileData.sha,
+                            }),
+                        });
+                        if (!updateResponse.ok) console.error("Error al liberar el bloqueo, puede expirar automáticamente.");
+                    }
+                } catch (error) {
+                    console.error("Error en releaseLock:", error);
+                }
+            };
+
             const saveToGitHub = async () => {
                 if (!apiToken) {
                     alert("Error: El token de API no está disponible. No se puede guardar.");
@@ -214,11 +310,18 @@
                     return;
                 }
 
-                const csvContent = allData.map(item => `${item.tipo};${item.sku};${item.descLarga};${item.descCorta || ''}`).join('\n');
-                const url = `https://api.github.com/repos/gagegfg/Molderil_ListaEmpaque/contents/articulos.csv`;
-
+                const lock = await acquireLock('updateArticles');
+                if (!lock.success) {
+                    alert(`No se pudo guardar. ${lock.error}. Intente de nuevo.`);
+                    return;
+                }
+                
+                setIsLoading(true);
                 try {
-                    const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${apiToken}` } });
+                    const csvContent = allData.map(item => `${item.tipo};${item.sku};${item.descLarga};${item.descCorta || ''}`).join('\n');
+                    const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${RUTA_ARTICULOS_CSV}`;
+                    
+                    const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${apiToken}` }, cache: 'no-store' });
                     if (!fileResponse.ok) throw new Error(`Error ${fileResponse.status}: No se pudo obtener info del archivo.`);
                     const fileData = await fileResponse.json();
 
@@ -237,6 +340,9 @@
                     setHasChanges(false);
                 } catch (e) {
                     alert(`ERROR al guardar en GitHub: ${e.message}`);
+                } finally {
+                    await releaseLock();
+                    setIsLoading(false);
                 }
             };
             
@@ -293,7 +399,7 @@
                 return (
                     <div className="min-h-screen flex items-center justify-center bg-black bg-opacity-50 p-4">
                         <div className="relative bg-[#D2B48C]/20 backdrop-blur-lg border border-[#D2B48C]/30 p-8 rounded-xl shadow-2xl w-full max-w-sm text-center">
-                            <img src="logo.jpg" alt="Logo Molderil" className="mx-auto mb-6 h-32 [filter:drop-shadow(2px_2px_4px_rgba(0,0,0,0.4))_drop-shadow(-2px_-2px_4px_rgba(255,255,255,0.6))]"/>
+                            <img src="logo.jpg" alt="Logo Molderil" className="mx-auto mb-6 h-32 [filter:drop-shadow(2px_2px_4px_rgba(0,0,0,0.4))_drop_shadow(-2px_-2px_4px_rgba(255,255,255,0.6))]"/>
                             <h2 className="text-3xl font-bold text-white mb-6 [text-shadow:_1px_1px_4px_rgba(0,0,0,0.7)]">Acceso Restringido</h2>
                             <div className="space-y-4 text-left">
                                 <div>
@@ -345,8 +451,9 @@
                                     <button onClick={() => { setEditingArticle(null); setIsModalOpen(true); }} className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-green-700 flex items-center">
                                         <i className="fas fa-plus mr-2"></i>Añadir
                                     </button>
-                                    <button onClick={saveToGitHub} className={`font-semibold py-2 px-4 rounded-lg shadow-md flex items-center ${hasChanges ? 'bg-orange-500 hover:bg-orange-600 text-white' : 'bg-gray-600 text-white'}`}>
-                                        <i className="fab fa-github mr-2"></i>Guardar
+                                    <button onClick={saveToGitHub} disabled={isLoading} className={`font-semibold py-2 px-4 rounded-lg shadow-md flex items-center ${hasChanges ? 'bg-orange-500 hover:bg-orange-600 text-white' : 'bg-gray-600 text-white'} disabled:opacity-50 disabled:cursor-wait`}>
+                                        {isLoading && hasChanges ? <i className="fas fa-spinner animate-spin mr-2"></i> : <i className="fab fa-github mr-2"></i>}
+                                        {isLoading && hasChanges ? 'Guardando...' : 'Guardar'}
                                     </button>
                                 </div>
                             </div>
@@ -371,28 +478,17 @@
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
-                                    {isLoading ? (
+                                    {isLoading && !filteredData.length ? (
                                         <tr><td colSpan="5" className="p-8 text-center text-gray-500">Cargando datos...</td></tr>
                                     ) : (
                                         filteredData.map((item, index) => (
-                                            <tr key={item.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{item.tipo}</td>
-                                                <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">{item.sku}</td>
-                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{item.descLarga}</td>
-                                                <td className="px-4 py-2 text-sm text-gray-600">
-                                                    <input 
-                                                        type="text"
-                                                        value={item.descCorta || ''}
-                                                        onChange={(e) => handleDescriptionChange(item.sku, e.target.value)}
-                                                        className="w-full p-1 border border-gray-300 rounded"
-                                                    />
-                                                </td>
-                                                <td className="px-4 py-2 text-center">
-                                                    <button onClick={() => { setEditingArticle(item); setIsModalOpen(true); }} className="text-blue-600 hover:text-blue-900">
-                                                        <i className="fas fa-pencil-alt"></i>
-                                                    </button>
-                                                </td>
-                                            </tr>
+                                            <ArticleRow
+                                                key={item.id}
+                                                item={item}
+                                                isEven={index % 2 === 0}
+                                                onDescriptionChange={handleDescriptionChange}
+                                                onEditClick={() => { setEditingArticle(item); setIsModalOpen(true); }}
+                                            />
                                         ))
                                     )}
                                 </tbody>
@@ -400,6 +496,47 @@
                         </div>
                     </div>
                 </div>
+            );
+        };
+        
+        // --- NUEVO: Componente de Fila para solucionar problema de cursor ---
+        const ArticleRow = ({ item, isEven, onDescriptionChange, onEditClick }) => {
+            const [descCorta, setDescCorta] = useState(item.descCorta || '');
+
+            useEffect(() => {
+                setDescCorta(item.descCorta || '');
+            }, [item.descCorta]);
+
+            const handleLocalChange = (e) => {
+                setDescCorta(e.target.value);
+            };
+
+            const handleBlur = () => {
+                if (descCorta !== item.descCorta) {
+                    onDescriptionChange(item.sku, descCorta);
+                }
+            };
+            
+            return (
+                <tr className={isEven ? 'bg-white' : 'bg-gray-50'}>
+                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{item.tipo}</td>
+                    <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">{item.sku}</td>
+                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{item.descLarga}</td>
+                    <td className="px-4 py-2 text-sm text-gray-600">
+                        <input 
+                            type="text"
+                            value={descCorta}
+                            onChange={handleLocalChange}
+                            onBlur={handleBlur}
+                            className="w-full p-1 border border-gray-300 rounded"
+                        />
+                    </td>
+                    <td className="px-4 py-2 text-center">
+                        <button onClick={onEditClick} className="text-blue-600 hover:text-blue-900">
+                            <i className="fas fa-pencil-alt"></i>
+                        </button>
+                    </td>
+                </tr>
             );
         };
 
