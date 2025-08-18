@@ -462,14 +462,14 @@
                         loaderStatus.textContent = "Cargando lista de clientes...";
                         loaderProgress.style.width = '40%';
                         try {
-                            const clientResponse = await fetch('clientes.txt?t=' + new Date().getTime());
+                            const clientResponse = await fetch('clientes.txt?t=' + new Date().getTime(), { cache: 'no-store' });
                             const clientText = await clientResponse.text();
                             setClientList(clientText.split('\n').map(c => c.trim().toUpperCase()).filter(Boolean));
                         } catch (e) { console.error("No se pudo cargar la lista de clientes."); }
                         loaderStatus.textContent = "Cargando descripciones de artículos...";
                         loaderProgress.style.width = '60%';
                         try {
-                            const articulosResponse = await fetch('articulos.csv?t=' + new Date().getTime());
+                            const articulosResponse = await fetch('articulos.csv?t=' + new Date().getTime(), { cache: 'no-store' });
                             const articulosText = await articulosResponse.text();
                             const newArticulosMap = new Map();
                             articulosText.split('\n').slice(1).forEach(row => {
