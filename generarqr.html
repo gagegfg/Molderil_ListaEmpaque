@@ -12,7 +12,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
         body {
-          /* Ruta original a tu imagen de fondo local */
           background-image: url('fondo.jpg');
           background-size: cover;
           background-position: center;
@@ -72,7 +71,7 @@
         }
     </style>
 </head>
-<body class="font-sans">
+<body class="bg-gray-100 font-sans">
 
 <div id="static-loader" class="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 p-4 font-sans z-50 transition-opacity duration-500">
     <div class="relative bg-[#D2B48C]/20 backdrop-blur-lg border border-[#D2B48C]/30 p-8 rounded-xl shadow-2xl w-full max-w-md text-center">
@@ -702,9 +701,7 @@
 
         return (
             <Fragment>
-                {/* DIV CONTENEDOR PRINCIPAL SIN FONDO PROPIO */}
                 <div className="min-h-screen p-4 flex flex-col">
-                    {/* ESTE DIV SÍ TIENE EL EFECTO VIDRIO */}
                     <div className="bg-[#D2B48C]/20 backdrop-blur-lg border border-[#D2B48C]/30 p-6 rounded-xl shadow-lg flex-grow">
                         <div className="flex justify-between items-center mb-6">
                             <h1 className="text-5xl text-white font-normal [text-shadow:_1px_1px_2px_rgba(0,0,0,0.5)]">Generar Etiqueta de Pallet</h1>
@@ -794,7 +791,7 @@
                                 {previewPdfUrl && (
                                     <button onClick={handleGenerateAndPrintPDF} disabled={isSaving} className="w-full mt-4 bg-green-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-green-700 text-xl flex items-center justify-center disabled:opacity-60 disabled:cursor-wait">
                                         {isSaving && <span className="spinner"></span>}
-                                        {isSaving ? 'Guardando...' : '🖨️ Imprimir y Guardar'}
+                                        {isSaving ? 'Guardando...' : '" alt="Printer icon" /> Imprimir y Guardar'}
                                     </button>
                                 )}
                             </div>
