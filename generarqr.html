@@ -692,7 +692,7 @@
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="space-y-4">
                                 <div className="relative">
-                                    <label className="block text-sm font-bold text-black [text-shadow:1px_1px_2px_rgba(0,0,0,0.6)]">Artículo (Buscar por SKU o Descripción)</label>
+                                    <label className="block text-base font-bold text-black">Artículo (Buscar por SKU o Descripción)</label>
                                     <input type="text" ref={articuloInputRef} value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setSelectedArticulo(null); setPreviewPdfUrl(null); }} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
                                     {searchTerm && filteredArticulos.length > 0 && (
                                         <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">
@@ -705,7 +705,7 @@
                                     )}
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-bold text-black [text-shadow:1px_1px_2px_rgba(0,0,0,0.6)]">Lotes de Producción</label>
+                                    <label className="block text-base font-bold text-black">Lotes de Producción</label>
                                     {lotesProduccion.map((lote, index) => (
                                         <input 
                                             key={index}
@@ -723,30 +723,30 @@
                                     )}
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-bold text-black [text-shadow:1px_1px_2px_rgba(0,0,0,0.6)]">Número de Pallet (Automático)</label>
+                                    <label className="block text-base font-bold text-black">Número de Pallet (Automático)</label>
                                     <input type="number" value={numeroDePallet} readOnly={!isPalletNumEditable} onChange={e => setNumeroDePallet(e.target.value)} className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border ${!isPalletNumEditable ? 'bg-gray-100' : ''}`} />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-bold text-black [text-shadow:1px_1px_2px_rgba(0,0,0,0.6)]">Cantidad de Copias</label>
+                                    <label className="block text-base font-bold text-black">Cantidad de Copias</label>
                                     <input type="number" min="1" value={cantidadCopias} onChange={e => setCantidadCopias(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-bold text-black [text-shadow:1px_1px_2px_rgba(0,0,0,0.6)]">Fecha de Producción</label>
+                                    <label className="block text-base font-bold text-black">Fecha de Producción</label>
                                     <input type="date" value={fechaProd} onChange={e => setFechaProd(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-bold text-black [text-shadow:1px_1px_2px_rgba(0,0,0,0.6)]">Cantidad (por etiqueta)</label>
+                                    <label className="block text-base font-bold text-black">Cantidad (por etiqueta)</label>
                                     <input type="text" value={cantidad} onChange={handleCantidadChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" placeholder="Ej: 1234,56"/>
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-bold text-black [text-shadow:1px_1px_2px_rgba(0,0,0,0.6)]">Unidad de Medida</label>
+                                    <label className="block text-base font-bold text-black">Unidad de Medida</label>
                                     <select value={uom} onChange={e => setUom(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border">
                                         <option>Unidad</option>
                                         <option>Millar</option>
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-bold text-black [text-shadow:1px_1px_2px_rgba(0,0,0,0.6)]">Observaciones (Opcional)</label>
+                                    <label className="block text-base font-bold text-black">Observaciones (Opcional)</label>
                                     <textarea
                                         value={observacion}
                                         onChange={e => setObservacion(e.target.value)}
