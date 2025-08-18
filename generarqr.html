@@ -12,11 +12,11 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
         body {
-          /* MODIFICADO: Se usa una URL directa para asegurar la carga de la imagen */
-          background-image: url('https://www.toptal.com/designers/subtlepatterns/uploads/kraft.png');
+          /* Ruta original a tu imagen de fondo local */
+          background-image: url('fondo.jpg');
           background-size: cover;
           background-position: center;
-          background-repeat: repeat; /* Repeat es mejor para texturas */
+          background-repeat: no-repeat;
           background-attachment: fixed;
         }
         .backdrop-blur-lg {
@@ -702,8 +702,9 @@
 
         return (
             <Fragment>
-                {/* MODIFICADO: Se eliminó el 'style' que ponía un fondo blanco */}
+                {/* DIV CONTENEDOR PRINCIPAL SIN FONDO PROPIO */}
                 <div className="min-h-screen p-4 flex flex-col">
+                    {/* ESTE DIV SÍ TIENE EL EFECTO VIDRIO */}
                     <div className="bg-[#D2B48C]/20 backdrop-blur-lg border border-[#D2B48C]/30 p-6 rounded-xl shadow-lg flex-grow">
                         <div className="flex justify-between items-center mb-6">
                             <h1 className="text-5xl text-white font-normal [text-shadow:_1px_1px_2px_rgba(0,0,0,0.5)]">Generar Etiqueta de Pallet</h1>
