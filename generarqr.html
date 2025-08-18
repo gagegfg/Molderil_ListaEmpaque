@@ -185,7 +185,16 @@
         const [numeroDePallet, setNumeroDePallet] = useState('');
         const [isPalletNumEditable, setIsPalletNumEditable] = useState(false);
         const [cantidadCopias, setCantidadCopias] = useState(2);
-        const [fechaProd, setFechaProd] = useState(new Date().toISOString().split('T')[0]);
+        
+        const getTodayDateString = () => {
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = String(today.getMonth() + 1).padStart(2, '0');
+            const day = String(today.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+        const [fechaProd, setFechaProd] = useState(getTodayDateString());
+
         const [cantidad, setCantidad] = useState('');
         const [uom, setUom] = useState('Unidad');
         const [previewPdfUrl, setPreviewPdfUrl] = useState(null);
@@ -194,7 +203,6 @@
         const articuloInputRef = useRef(null);
         const loteInputRefs = useRef([]);
         
-        // --- NUEVO: FUNCIONES DEL SISTEMA DE BLOQUEO ---
         const acquireLock = async (operationName) => {
             const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${LOCK_FILE_PATH}`;
             let currentSha = null;
@@ -279,6 +287,27 @@
                 console.error("Error en releaseLock:", error);
             }
         };
+
+        // --- MODIFICACIÓN: SINCRONIZAR HORA CON INTERNET ---
+        useEffect(() => {
+            const fetchInternetTime = async () => {
+                try {
+                    const response = await fetch('https://worldtimeapi.org/api/timezone/America/Argentina/Buenos_Aires', { cache: "no-store" });
+                    if (!response.ok) throw new Error('No se pudo conectar al servidor de tiempo.');
+                    
+                    const data = await response.json();
+                    const internetDate = data.datetime.substring(0, 10); // Extrae 'YYYY-MM-DD'
+                    setFechaProd(internetDate);
+                    showToast('Fecha sincronizada con hora de internet.', 'info');
+                } catch (error) {
+                    console.error("Error al obtener la hora de internet:", error);
+                    showToast('Fallo al sincronizar fecha. Usando hora local.', 'error');
+                    // El estado ya tiene la fecha local como respaldo, no es necesario hacer nada más.
+                }
+            };
+            fetchInternetTime();
+        }, []); // El array vacío asegura que esto se ejecute solo una vez cuando carga la app.
+        // --- FIN DE LA MODIFICACIÓN ---
 
 
         useEffect(() => {
@@ -611,7 +640,6 @@
             setPreviewPdfUrl(pdfDataUrl);
         };
         
-        // --- MODIFICADO: Integración del sistema de bloqueo ---
         const handleGenerateAndPrintPDF = async () => {
             if (isSaving) return;
             const numCopias = parseInt(cantidadCopias, 10);
@@ -660,7 +688,6 @@
                 doc.autoPrint();
                 doc.save(`etiqueta_pallet_${palletNum}.pdf`);
 
-                // Resetear el formulario solo si todo fue exitoso
                 setNumeroDePallet(palletNum + 1);
                 setSelectedArticulo(null);
                 setSearchTerm('');
