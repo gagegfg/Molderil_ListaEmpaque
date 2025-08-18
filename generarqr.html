@@ -12,10 +12,11 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
         body {
-          background-image: url('fondo.jpg');
+          /* MODIFICADO: Se usa una URL directa para asegurar la carga de la imagen */
+          background-image: url('https://www.toptal.com/designers/subtlepatterns/uploads/kraft.png');
           background-size: cover;
           background-position: center;
-          background-repeat: no-repeat;
+          background-repeat: repeat; /* Repeat es mejor para texturas */
           background-attachment: fixed;
         }
         .backdrop-blur-lg {
@@ -71,7 +72,7 @@
         }
     </style>
 </head>
-<body class="bg-gray-100 font-sans">
+<body class="font-sans">
 
 <div id="static-loader" class="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 p-4 font-sans z-50 transition-opacity duration-500">
     <div class="relative bg-[#D2B48C]/20 backdrop-blur-lg border border-[#D2B48C]/30 p-8 rounded-xl shadow-2xl w-full max-w-md text-center">
@@ -288,7 +289,6 @@
             }
         };
 
-        // --- MODIFICACIÓN: SINCRONIZAR HORA CON INTERNET ---
         useEffect(() => {
             const fetchInternetTime = async () => {
                 try {
@@ -296,18 +296,16 @@
                     if (!response.ok) throw new Error('No se pudo conectar al servidor de tiempo.');
                     
                     const data = await response.json();
-                    const internetDate = data.datetime.substring(0, 10); // Extrae 'YYYY-MM-DD'
+                    const internetDate = data.datetime.substring(0, 10);
                     setFechaProd(internetDate);
                     showToast('Fecha sincronizada con hora de internet.', 'info');
                 } catch (error) {
                     console.error("Error al obtener la hora de internet:", error);
                     showToast('Fallo al sincronizar fecha. Usando hora local.', 'error');
-                    // El estado ya tiene la fecha local como respaldo, no es necesario hacer nada más.
                 }
             };
             fetchInternetTime();
-        }, []); // El array vacío asegura que esto se ejecute solo una vez cuando carga la app.
-        // --- FIN DE LA MODIFICACIÓN ---
+        }, []);
 
 
         useEffect(() => {
@@ -423,10 +421,8 @@
                     }),
                 });
                 if (!putResponse.ok) throw new Error(`Error ${putResponse.status} al guardar el número de pallet.`);
-                console.log(`Número de Pallet ${nuevoContenido} guardado correctamente en GitHub.`);
                 return true;
             } catch (error) {
-                console.error("Error en updateLoteFile:", error);
                 showToast(`ERROR: No se pudo guardar el número de pallet.\n${error.message}`, 'error');
                 return false;
             }
@@ -457,10 +453,8 @@
                     }),
                 });
                 if (!putResponse.ok) throw new Error(`Error ${putResponse.status} al guardar en el histórico.`);
-                console.log("Registro añadido al histórico correctamente.");
                 return true;
             } catch (error) {
-                console.error("Error en appendToHistoryFile:", error);
                 showToast(`ERROR: No se pudo guardar el registro en el histórico.\n${error.message}`, 'error');
                 return false;
             }
@@ -491,10 +485,8 @@
                     }),
                 });
                 if (!putResponse.ok) throw new Error(`Error ${putResponse.status} al guardar en el archivo de notas.`);
-                console.log("Nota añadida al histórico correctamente.");
                 return true;
             } catch (error) {
-                console.error("Error en appendToNotesFile:", error);
                 showToast(`ERROR: No se pudo guardar la nota.\n${error.message}`, 'error');
                 return false;
             }
@@ -710,7 +702,8 @@
 
         return (
             <Fragment>
-                <div className="min-h-screen p-4 flex flex-col" style={{background: 'rgba(243, 244, 246, 0.8)'}}>
+                {/* MODIFICADO: Se eliminó el 'style' que ponía un fondo blanco */}
+                <div className="min-h-screen p-4 flex flex-col">
                     <div className="bg-[#D2B48C]/20 backdrop-blur-lg border border-[#D2B48C]/30 p-6 rounded-xl shadow-lg flex-grow">
                         <div className="flex justify-between items-center mb-6">
                             <h1 className="text-5xl text-white font-normal [text-shadow:_1px_1px_2px_rgba(0,0,0,0.5)]">Generar Etiqueta de Pallet</h1>
