@@ -334,7 +334,8 @@
 
             const fetchArticulos = async () => {
                 try {
-                    const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_ARTICULOS_CSV}`;
+                    // MODIFICADO: Se añade un parámetro de tiempo para evitar la caché
+                    const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_ARTICULOS_CSV}?t=${new Date().getTime()}`;
                     const response = await fetch(url, { cache: "no-store" });
                     if (!response.ok) throw new Error(`No se pudo cargar ${RUTA_ARTICULOS_CSV}`);
                     const text = await response.text();
@@ -546,11 +547,27 @@
             currentY += 15;
             doc.line(margin, currentY, pageW - margin, currentY);
             currentY += 10;
-            doc.setFontSize(84);
+            
+            // --- MODIFICADO: Lógica para ajustar tamaño de fuente de la descripción ---
             doc.setFont("helvetica", "bold");
-            const descLines = doc.splitTextToSize(data.descripcion, contentW);
-            doc.text(descLines, pageW / 2, currentY + 28, { align: "center", lineHeightFactor: 1 });
-            currentY += (descLines.length * 28) + 10;
+            const baseFontSize = 84;
+            doc.setFontSize(baseFontSize); // Set to base size to calculate initial line count
+            
+            let descLines = doc.splitTextToSize(data.descripcion, contentW);
+            let finalFontSize = baseFontSize;
+
+            // Si la descripción ocupa más de 3 líneas con el tamaño base, se reduce la fuente.
+            if (descLines.length > 3) {
+                finalFontSize = 60; // Usar un tamaño de fuente más pequeño y fijo
+            }
+            
+            doc.setFontSize(finalFontSize); // Establecer el tamaño de fuente final para el renderizado
+            const lineHeight = finalFontSize / 3; // Calcular la altura de la línea en función del tamaño de fuente final
+
+            doc.text(descLines, pageW / 2, currentY + lineHeight, { align: "center", lineHeightFactor: 1 });
+            currentY += (descLines.length * lineHeight) + 10;
+            // --- FIN DE LA MODIFICACIÓN ---
+
             doc.line(margin, currentY, pageW - margin, currentY);
             currentY += 2;
             doc.setFontSize(20);
