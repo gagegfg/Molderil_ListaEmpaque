@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale-1.0">
     <title>MOLDERIL - Histórico de Listas de Empaque</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -376,9 +376,21 @@
                                         sortedData.length > 0 ? sortedData.map((item) => (
                                             <tr key={item.id} className="hover:bg-gray-50">
                                                 {headers.map(header => (
-                                                    <td key={`${item.id}-${header}`} className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">
-                                                        {item[header]}
+                                                    // --- INICIO DE LA MODIFICACIÓN ---
+                                                    <td key={`${item.id}-${header}`} className="px-4 py-2 text-sm text-gray-600 align-middle">
+                                                        {header === 'lotes de produccion' && item[header] ? (
+                                                            <div className="flex flex-wrap gap-1">
+                                                                {item[header].split('#').filter(lote => lote.trim() !== '').map((lote, i) => (
+                                                                    <span key={`${lote}-${i}`} className="px-2.5 py-0.5 text-xs font-semibold bg-blue-100 text-blue-800 rounded-full">
+                                                                        {lote}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        ) : (
+                                                            item[header]
+                                                        )}
                                                     </td>
+                                                    // --- FIN DE LA MODIFICACIÓN ---
                                                 ))}
                                             </tr>
                                         )) : (
