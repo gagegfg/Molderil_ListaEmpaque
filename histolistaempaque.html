@@ -32,9 +32,6 @@
         th:hover .sort-icon {
             opacity: 1;
         }
-        .zebra-stripes tbody tr:nth-child(even) {
-            background-color: #f9fafb; /* bg-gray-50 */
-        }
     </style>
 </head>
 <body class="bg-gray-100 font-sans">
@@ -349,7 +346,8 @@
                         </div>
 
                         <div className="overflow-x-auto rounded-lg shadow-md border" style={{ maxHeight: '65vh' }}>
-                            <table className="min-w-full divide-y divide-gray-200 table-auto zebra-stripes">
+                            {/* AQUÍ SE QUITÓ LA CLASE 'zebra-stripes' */}
+                            <table className="min-w-full divide-y divide-gray-200 table-auto">
                                 <thead className="bg-gray-800 text-white sticky top-0 z-10">
                                     <tr>{displayHeaders.map(header => (<th key={header} className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider" onClick={() => handleSort(header)}>
                                         <div className="flex items-center">{header}<i className={`fas ${sortConfig.key === header ? (sortConfig.direction === 'ascending' ? 'fa-sort-up' : 'fa-sort-down') : 'fa-sort'} ml-2 sort-icon`}></i></div>
@@ -366,25 +364,31 @@
                                             {displayHeaders.map(header => {
                                                 const content = item[header];
                                                 
-                                                // --- ESTA ES LA LÓGICA CLAVE PARA LAS CÁPSULAS ---
+                                                // --- LÓGICA CORREGIDA Y OPTIMIZADA PARA LAS CÁPSULAS ---
                                                 const isLotesColumn = header === 'lotes de produccion';
                                                 const isClienteColumn = header === 'cliente';
 
-                                                return (
-                                                    <td key={`${item.id}-${header}`} className={getColumnClasses(header)}>
-                                                        {(isLotesColumn || isClienteColumn) && content ? (
+                                                if ((isLotesColumn || isClienteColumn) && content) {
+                                                    return (
+                                                        <td key={`${item.id}-${header}`} className={getColumnClasses(header)}>
                                                             <div className="flex flex-wrap gap-1">
                                                                 {content.split('#').filter(value => value.trim() !== '').map((value, i) => (
-                                                                    <span key={`${value}-${i}`} className={`px-2 py-0.5 text-xs font-semibold rounded-full ${
+                                                                    <span key={`${item.id}-${header}-${i}`} className={`px-2 py-0.5 text-xs font-semibold rounded-full ${
                                                                         isLotesColumn 
                                                                         ? 'bg-gray-200 text-gray-800' 
                                                                         : 'bg-indigo-100 text-indigo-800'
                                                                     }`}>
-                                                                        {value}
+                                                                        {value.trim()}
                                                                     </span>
                                                                 ))}
                                                             </div>
-                                                        ) : (content)}
+                                                        </td>
+                                                    );
+                                                }
+                                                
+                                                return (
+                                                    <td key={`${item.id}-${header}`} className={getColumnClasses(header)}>
+                                                        {content}
                                                     </td>
                                                 );
                                             })}
