@@ -312,7 +312,6 @@
                             </div>
                         </div>
                         
-                        {/* --- INICIO: MODIFICACIÓN DE LA BARRA DE FILTROS --- */}
                         <div className="mb-6 p-4 border rounded-lg bg-gray-50">
                             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                <div>
@@ -332,7 +331,6 @@
                                 </div>
                             </div>
                         </div>
-                        {/* --- FIN: MODIFICACIÓN DE LA BARRA DE FILTROS --- */}
 
                         <div className="flex flex-col sm:flex-row justify-between items-center mb-4">
                             <p className="text-gray-600 font-semibold">{sortedData.length} registro(s) encontrado(s)</p>
@@ -367,7 +365,8 @@
                                         <tr key={item.id} className="hover:bg-blue-50">
                                             {displayHeaders.map(header => {
                                                 const content = item[header];
-                                                // --- INICIO: LÓGICA PARA CÁPSULAS VISUALES ---
+                                                
+                                                {/* --- ESTA ES LA LÓGICA CLAVE PARA LAS CÁPSULAS --- */}
                                                 const isLotesColumn = header === 'lotes de produccion';
                                                 const isClienteColumn = header === 'cliente';
 
@@ -388,7 +387,6 @@
                                                         ) : (content)}
                                                     </td>
                                                 );
-                                                // --- FIN: LÓGICA PARA CÁPSULAS VISUALES ---
                                             })}
                                         </tr>
                                     )) : (<tr><td colSpan={displayHeaders.length} className="p-8 text-center text-gray-500">No se encontraron registros.</td></tr>)
