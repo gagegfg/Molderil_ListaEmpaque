@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MOLDERIL - Histórico de Listas de Empaque</title>
+    <title>MOLDERIL - Histórico de Listas de Empaque (Debug Mode)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.js"></script>
@@ -43,6 +43,7 @@
           <div class="w-full bg-white/20 rounded-full h-4 border border-white/30">
             <div id="loader-progress" class="bg-amber-400 h-full rounded-full transition-all duration-500" style="width: 10%"></div>
           </div>
+          <pre id="loader-log" class="mt-4 text-xs text-white/80 text-left h-28 overflow-y-auto bg-black/30 p-2 rounded-md border border-white/20 font-mono"></pre>
         </div>
     </div>
 
@@ -58,6 +59,16 @@
         const GITHUB_REPO = 'Molderil_ListaEmpaque';
         const CSV_PATH = 'listaempaque.csv';
         const AUTH_TIMEOUT = 5 * 60 * 1000; // 5 minutos
+
+        // --- FUNCIÓN DE LOG PARA DEPURACIÓN ---
+        const logToScreen = (message) => {
+            const logEl = document.getElementById('loader-log');
+            if (logEl) {
+                const timestamp = new Date().toLocaleTimeString();
+                logEl.innerHTML += `[${timestamp}] ${message}\n`;
+                logEl.scrollTop = logEl.scrollHeight; // Auto-scroll
+            }
+        };
 
         const useLocalStorage = (key, initialValue) => {
             const [storedValue, setStoredValue] = useState(() => {
@@ -109,18 +120,20 @@
             const exportMenuRef = useRef(null);
 
             const getApiToken = async (file) => {
+                logToScreen(`Intentando obtener token de '${file}'...`);
                 try {
                     const response = await fetch(file + '?t=' + new Date().getTime());
-                    if (!response.ok) throw new Error(`No se pudo cargar ${file}.`);
+                    if (!response.ok) throw new Error(`Respuesta de red no fue OK (status: ${response.status})`);
                     let rawText = await response.text();
                     const token = rawText.replace(/aaaa/g, '').replace(/bbbb/g, '').replace(/cccc/g, '').trim();
                     if (token) {
-                        setApiToken(token); // Guardamos el token en el estado
+                        logToScreen('Token obtenido y verificado.');
+                        setApiToken(token);
                     } else {
-                        throw new Error("Token inválido o vacío.");
+                        throw new Error("El archivo de token está vacío o es inválido.");
                     }
                 } catch (error) {
-                    console.error(`Error al obtener ${file}:`, error);
+                    logToScreen(`ERROR al obtener token: ${error.message}`);
                     const loaderStatus = document.getElementById('loader-status');
                     const loaderProgress = document.getElementById('loader-progress');
                     if(loaderStatus) loaderStatus.textContent = "Error de autenticación.";
@@ -128,35 +141,46 @@
                         loaderProgress.style.width = '100%';
                         loaderProgress.classList.add('bg-red-500');
                     }
+                    throw error; // Detiene la secuencia de carga
                 }
             };
 
             const fetchCsvFromGithub = async (path) => {
                 if (!apiToken) {
-                    console.error("fetchCsvFromGithub fue llamado sin un token de API.");
+                    logToScreen("fetchCsvFromGithub fue llamado sin un token de API. Abortando.");
                     return [];
                 }
+                logToScreen("Token disponible. Solicitando datos CSV a GitHub...");
                 const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}?t=${new Date().getTime()}`;
                 try {
                     const headers = { 'Authorization': `token ${apiToken}` };
                     const response = await fetch(url, { headers, cache: 'no-store' });
-                    if (response.status === 404) return [];
+                    if (response.status === 404) {
+                        logToScreen("Archivo CSV no encontrado (404). Se devolverá un array vacío.");
+                        return [];
+                    }
                     if (!response.ok) throw new Error(`No se pudo cargar ${path} (Estado: ${response.status})`);
                     const fileData = await response.json();
                     const decodedContent = atob(fileData.content);
                     const utf8Content = new TextDecoder('utf-8').decode(Uint8Array.from(decodedContent, c => c.charCodeAt(0)));
+                    logToScreen("Datos CSV decodificados correctamente.");
                     return utf8Content.split('\n').filter(Boolean);
                 } catch (error) {
-                    console.error(`Error cargando ${path}:`, error);
+                    logToScreen(`Error cargando CSV: ${error.message}`);
                     alert(`Error al cargar datos desde GitHub: ${error.message}`);
                     return [];
                 }
             };
 
             const loadData = async () => {
-                if (!apiToken) return; // No intentar cargar datos sin token
+                logToScreen("Iniciando función loadData...");
+                if (!apiToken) {
+                    logToScreen("No hay token, la carga de datos no puede continuar.");
+                    return;
+                }
                 setIsLoading(true);
                 const rows = await fetchCsvFromGithub(CSV_PATH);
+                logToScreen(`${rows.length} filas de datos encontradas.`);
                 if (rows.length > 0) {
                     const headers = rows[0].split(';');
                     const parsedData = rows.slice(1).map((row, index) => {
@@ -168,12 +192,13 @@
                         return obj;
                     });
                     setAllData(parsedData);
+                    logToScreen("Datos parseados y guardados en el estado.");
                 }
                 setIsLoading(false);
             };
-
+            
             // =============================================================================
-            // ### NUEVA LÓGICA DE CARGA ###
+            // ### LÓGICA DE CARGA SECUENCIAL Y CON DEPURACIÓN ###
             // =============================================================================
             useEffect(() => {
                 const staticLoader = document.getElementById('static-loader');
@@ -181,53 +206,49 @@
                 const loaderProgress = document.getElementById('loader-progress');
 
                 const loadingTasks = [
-                    { status: "Inicializando aplicación...", duration: 300, progress: 20 },
-                    { status: "Verificando acceso y credenciales...", duration: 800, progress: 40, action: () => getApiToken('cls.txt') },
-                    { status: "Cargando histórico de empaque...", duration: 1000, progress: 80, action: loadData },
-                    { status: "¡Listo!", duration: 500, progress: 100 }
+                    { status: "Inicializando aplicación...", duration: 250, progress: 20 },
+                    { status: "Verificando acceso...", duration: 500, progress: 40, action: () => getApiToken('cls.txt') },
+                    { status: "Cargando histórico de empaque...", duration: 750, progress: 80, action: loadData },
+                    { status: "¡Listo!", duration: 400, progress: 100 }
                 ];
+                
+                const runLoadingSequence = async () => {
+                    logToScreen("Iniciando secuencia de carga...");
+                    for (const task of loadingTasks) {
+                        logToScreen(`Tarea actual: ${task.status}`);
+                        if (loaderStatus) loaderStatus.textContent = task.status;
+                        if (loaderProgress) loaderProgress.style.width = `${task.progress}%`;
 
-                let currentTaskIndex = 0;
-                const runLoadingTask = () => {
-                    if (currentTaskIndex >= loadingTasks.length) {
-                        // Secuencia finalizada
-                        if (staticLoader) {
-                            staticLoader.classList.add('opacity-0');
-                            setTimeout(() => {
-                                staticLoader.remove();
-                                setIsLoading(false); // Marcar la carga inicial como completada
-                            }, 500);
+                        if (task.action) {
+                            try {
+                                await task.action();
+                            } catch (error) {
+                                logToScreen(`La secuencia de carga se detuvo debido a un error.`);
+                                return; // Detiene la secuencia si una acción falla
+                            }
                         }
-                        return;
+                        // Espera la duración definida antes de pasar a la siguiente tarea
+                        await new Promise(resolve => setTimeout(resolve, task.duration));
                     }
                     
-                    const task = loadingTasks[currentTaskIndex];
-
-                    if (loaderStatus) loaderStatus.textContent = task.status;
-                    if (loaderProgress) loaderProgress.style.width = `${task.progress}%`;
-                    
-                    // Si la tarea tiene una acción, la ejecutamos.
-                    // Esperamos un breve instante para que la UI se actualice antes de ejecutar la acción
-                    setTimeout(() => {
-                        if (task.action) {
-                           task.action();
-                        }
-                    }, 100);
-
-                    // Pasamos a la siguiente tarea después de la duración especificada
-                    setTimeout(() => {
-                        currentTaskIndex++;
-                        runLoadingTask();
-                    }, task.duration);
+                    logToScreen("Secuencia de carga finalizada.");
+                    if (staticLoader) {
+                        staticLoader.classList.add('opacity-0');
+                        setTimeout(() => {
+                            staticLoader.remove();
+                            setIsLoading(false);
+                        }, 500);
+                    }
                 };
 
-                runLoadingTask();
-            }, [apiToken]); // Dependemos de apiToken para que loadData funcione correctamente en su turno.
+                runLoadingSequence();
+            }, []); // Se ejecuta solo una vez
             // =============================================================================
-            // ### FIN DE LA NUEVA LÓGICA DE CARGA ###
+            // ### FIN DE LA LÓGICA DE CARGA ###
             // =============================================================================
 
             const saveData = async (updatedData) => {
+                // ... (el resto de las funciones no necesitan cambios)
                 setIsSaving(true);
                 if (!apiToken) {
                     alert("Error: El token de API no está disponible.");
@@ -275,15 +296,14 @@
                     await loadData();
                 }
             };
-
             const verifyPasswordAndExecute = async (actionCallback, password) => {
                 if (!password) {
                     alert("Por favor, ingrese la contraseña.");
                     return;
                 }
-                // Usamos getApiToken para verificar la contraseña también
-                const correctPassword = await getApiToken('pswsku.txt'); 
-                if (password.trim() === correctPassword) {
+                const response = await fetch('pswsku.txt?t=' + new Date().getTime());
+                const correctPassword = await response.text();
+                if (password.trim() === correctPassword.trim()) {
                     setAuthTimestamp(Date.now());
                     setModalState({ isOpen: false });
                     actionCallback();
@@ -291,7 +311,6 @@
                     alert("Contraseña incorrecta.");
                 }
             };
-
             const executeActionWithAuth = (actionCallback) => {
                 const now = Date.now();
                 if (authTimestamp && (now - authTimestamp < AUTH_TIMEOUT)) {
@@ -306,7 +325,6 @@
                     });
                 }
             };
-            
             useEffect(() => {
                 let data = [...allData];
                 Object.keys(columnFilters).forEach(key => {
@@ -344,7 +362,6 @@
                 }
                 setFilteredData(data);
             }, [columnFilters, fechaDesde, fechaHasta, allData, sortConfig]);
-            
             useEffect(() => {
                 const handleClickOutside = (event) => {
                     if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) setIsExportOpen(false);
@@ -353,14 +370,12 @@
                 document.addEventListener("mousedown", handleClickOutside);
                 return () => document.removeEventListener("mousedown", handleClickOutside);
             }, []);
-
             const handleColumnFilterChange = (columnId, value) => setColumnFilters(prev => ({ ...prev, [columnId]: value }));
             const clearFilters = () => {
                 setColumnFilters(initialFilters);
                 setFechaDesde('');
                 setFechaHasta('');
             };
-
             const requestSort = (key) => {
                 let direction = 'ascending';
                 if (sortConfig.key === key && sortConfig.direction === 'ascending') {
@@ -368,7 +383,6 @@
                 }
                 setSortConfig({ key, direction });
             };
-
             const handleDeleteRow = (rowIdToDelete) => {
                 setModalState({ 
                     isOpen: true, type: 'confirm', title: `Confirmar Eliminación`,
@@ -382,7 +396,6 @@
                     }
                 });
             };
-
             const exportToPDF = () => {
                 const doc = new jsPDF({ orientation: 'landscape' });
                 doc.setFontSize(18);
@@ -397,7 +410,6 @@
                 doc.save("historico_listas_empaque.pdf");
                 setIsExportOpen(false);
             };
-
             const exportToExcel = () => {
                 const worksheet = XLSX.utils.json_to_sheet(filteredData);
                 const workbook = XLSX.utils.book_new();
@@ -405,7 +417,6 @@
                 XLSX.writeFile(workbook, "historico_listas_empaque.xlsx");
                 setIsExportOpen(false);
             };
-
             const ActionModal = ({ isOpen, type, title, message, onConfirm, onClose }) => {
                 if (!isOpen) return null;
                 const [inputValue, setInputValue] = useState('');
@@ -428,7 +439,6 @@
                     </div>
                 );
             };
-            
             const tableHeaders = [
                 { key: 'idlista', label: 'ID Lista' }, { key: 'Cliente', label: 'Cliente' }, 
                 { key: 'Legajo', label: 'Legajo' }, { key: 'Sku', label: 'SKU' },
@@ -438,7 +448,6 @@
                 { key: 'Fecha Creacion lista', label: 'F. Creación' }
             ];
             
-            // Si la aplicación aún está en su fase de carga inicial, no renderizamos el resto.
             if (isLoading) {
                 return null;
             }
@@ -480,7 +489,7 @@
                         <div className="flex flex-col sm:flex-row justify-between items-center mb-4">
                             <p className="text-gray-600 font-semibold">{filteredData.length} registro(s) encontrado(s)</p>
                             <div className="flex space-x-2 mt-4 sm:mt-0">
-                                <button onClick={loadData} disabled={isLoading || isSaving} className="bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-gray-700 disabled:opacity-50 flex items-center"><i className={`fas fa-sync-alt ${isLoading ? 'animate-spin' : ''} mr-2`}></i>Refrescar</button>
+                                <button onClick={loadData} disabled={isSaving} className="bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-gray-700 disabled:opacity-50 flex items-center"><i className={`fas fa-sync-alt ${isSaving ? 'animate-spin' : ''} mr-2`}></i>Refrescar</button>
                                 <div className="relative" ref={exportMenuRef}>
                                     <button onClick={() => setIsExportOpen(prev => !prev)} disabled={filteredData.length === 0} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-blue-700 disabled:opacity-50 flex items-center"><i className="fas fa-download mr-2"></i>Exportar<i className={`fas fa-chevron-down ml-2 transition-transform ${isExportOpen ? 'rotate-180' : ''}`}></i></button>
                                     {isExportOpen && (
