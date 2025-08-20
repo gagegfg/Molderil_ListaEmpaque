@@ -14,11 +14,11 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
         body {
-          background-image: url('fondo.jpg');
-          background-size: cover;
-          background-position: center;
-          background-repeat: no-repeat;
-          background-attachment: fixed;
+            background-image: url('fondo.jpg');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
         }
         .backdrop-blur-lg {
             -webkit-backdrop-filter: blur(12px);
@@ -41,11 +41,11 @@
 
     <div id="static-loader" class="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 p-4 font-sans z-50">
         <div class="relative bg-[#D2B48C]/20 backdrop-blur-lg border border-[#D2B48C]/30 p-8 rounded-xl shadow-2xl w-full max-w-md text-center">
-          <img src="logo.jpg" alt="Logo Molderil" class="mx-auto mb-6 h-32 [filter:drop-shadow(2px_2px_4px_rgba(0,0,0,0.4))_drop_shadow(-2px_-2px_4px_rgba(255,255,255,0.6))]"/>
-          <p id="loader-status" class="text-xl text-white mb-4 [text-shadow:_1px_1px_2px_rgba(0,0,0,0.5)]">Cargando aplicación...</p>
-          <div class="w-full bg-white/20 rounded-full h-4 border border-white/30">
-            <div id="loader-progress" class="bg-amber-400 h-full rounded-full transition-all duration-500" style="width: 10%"></div>
-          </div>
+            <img src="logo.jpg" alt="Logo Molderil" class="mx-auto mb-6 h-32 [filter:drop-shadow(2px_2px_4px_rgba(0,0,0,0.4))_drop_shadow(-2px_-2px_4px_rgba(255,255,255,0.6))]"/>
+            <p id="loader-status" class="text-xl text-white mb-4 [text-shadow:_1px_1px_2px_rgba(0,0,0,0.5)]">Cargando aplicación...</p>
+            <div class="w-full bg-white/20 rounded-full h-4 border border-white/30">
+                <div id="loader-progress" class="bg-amber-400 h-full rounded-full transition-all duration-500" style="width: 10%"></div>
+            </div>
         </div>
     </div>
 
@@ -170,7 +170,7 @@
 
             useEffect(() => {
                 if(apiToken) {
-                     const loadInitialData = async () => {
+                    const loadInitialData = async () => {
                         const loader = document.getElementById('static-loader');
                         document.getElementById('loader-status').textContent = "Cargando histórico...";
                         document.getElementById('loader-progress').style.width = '66%';
@@ -305,8 +305,8 @@
                 <div className="min-h-screen p-4 sm:p-6 bg-black bg-opacity-50">
                     <div className="bg-white p-6 rounded-2xl shadow-xl">
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b pb-4 border-gray-200">
-                             <h1 className="text-3xl font-extrabold text-gray-800">Histórico de Listas de Empaque</h1>
-                             <div className="flex items-center space-x-3 mt-4 sm:mt-0">
+                            <h1 className="text-3xl font-extrabold text-gray-800">Histórico de Listas de Empaque</h1>
+                            <div className="flex items-center space-x-3 mt-4 sm:mt-0">
                                 <a href="grillaqr.html" className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 transition-colors shadow-sm flex items-center"><i className="fas fa-qrcode mr-2"></i>Trazabilidad Lotes</a>
                                 <a href="index.html" className="bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">Menú Principal</a>
                             </div>
@@ -314,7 +314,7 @@
                         
                         <div className="mb-6 p-4 border rounded-lg bg-gray-50">
                             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                               <div>
+                                <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Búsqueda Global</label>
                                     <input type="text" placeholder="Buscar en toda la tabla..." value={globalFilter} onChange={e => setGlobalFilter(e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm p-2 border"/>
                                 </div>
@@ -366,7 +366,7 @@
                                             {displayHeaders.map(header => {
                                                 const content = item[header];
                                                 
-                                                {/* --- ESTA ES LA LÓGICA CLAVE PARA LAS CÁPSULAS --- */}
+                                                // --- ESTA ES LA LÓGICA CLAVE PARA LAS CÁPSULAS ---
                                                 const isLotesColumn = header === 'lotes de produccion';
                                                 const isClienteColumn = header === 'cliente';
 
