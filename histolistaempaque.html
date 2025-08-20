@@ -30,7 +30,7 @@
         }
         .sort-icon.active {
             opacity: 1;
-            color: #6366f1; /* Indigo color for active sort */
+            color: #6366f1;
         }
     </style>
 </head>
@@ -53,11 +53,10 @@
         const { createRoot } = ReactDOM;
         const { jsPDF } = window.jspdf;
 
-        // --- CONFIGURACIÓN DE GITHUB ---
         const GITHUB_USER = 'gagegfg';
         const GITHUB_REPO = 'Molderil_ListaEmpaque';
         const CSV_PATH = 'listaempaque.csv';
-        const AUTH_TIMEOUT = 5 * 60 * 1000; // 5 minutos
+        const AUTH_TIMEOUT = 5 * 60 * 1000;
 
         const useLocalStorage = (key, initialValue) => {
             const [storedValue, setStoredValue] = useState(() => {
@@ -128,9 +127,7 @@
                     if (response.status === 404) return [];
                     if (!response.ok) throw new Error(`No se pudo cargar ${path} (Estado: ${response.status})`);
                     const fileData = await response.json();
-                    const decodedContent = atob(fileData.content);
-                    const utf8Content = new TextDecoder('utf-8').decode(Uint8Array.from(decodedContent, c => c.charCodeAt(0)));
-                    return utf8Content.split('\n').filter(Boolean);
+                    return atob(fileData.content).split('\n').filter(Boolean);
                 } catch (error) {
                     console.error(`Error cargando ${path}:`, error);
                     alert(`Error al cargar datos desde GitHub: ${error.message}`);
@@ -145,7 +142,7 @@
                     const headers = rows[0].split(';').map(h => h.trim());
                     const parsedData = rows.slice(1).map((row, index) => {
                         const values = row.split(';');
-                        let obj = { id: index }; // 'id' único para React
+                        let obj = { id: index };
                         headers.forEach((header, i) => {
                             obj[header] = values[i] ? values[i].trim() : '';
                         });
@@ -160,8 +157,7 @@
                 setIsSaving(true);
                 if (!apiToken) {
                     alert("Error: El token de API no está disponible.");
-                    setIsSaving(false);
-                    return;
+                    setIsSaving(false); return;
                 }
 
                 const headers = "idlista;Cliente;Legajo;Sku;descripcion sku;nro de pallet;Lotes de produccion;Fecha de produccion;cantidad;unnidad de medida;Fecha Creacion lista";
@@ -175,17 +171,10 @@
                 
                 const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${CSV_PATH}`;
                 try {
-                    const fileResponse = await fetch(`${url}?t=${new Date().getTime()}`, {
-                        headers: { 'Authorization': `token ${apiToken}` },
-                        cache: 'no-store'
-                    });
-
+                    const fileResponse = await fetch(`${url}?t=${new Date().getTime()}`, { headers: { 'Authorization': `token ${apiToken}` }, cache: 'no-store' });
                     let currentSha = null;
-                    if (fileResponse.ok) {
-                        currentSha = (await fileResponse.json()).sha;
-                    } else if (fileResponse.status !== 404) {
-                        throw new Error(`Error al obtener SHA: ${fileResponse.statusText}`);
-                    }
+                    if (fileResponse.ok) currentSha = (await fileResponse.json()).sha;
+                    else if (fileResponse.status !== 404) throw new Error(`Error al obtener SHA: ${fileResponse.statusText}`);
 
                     const updateResponse = await fetch(url, {
                         method: 'PUT',
@@ -197,11 +186,8 @@
                         }),
                     });
 
-                    if (!updateResponse.ok) {
-                        throw new Error(`Error al guardar: ${(await updateResponse.json()).message}`);
-                    }
+                    if (!updateResponse.ok) throw new Error(`Error al guardar: ${(await updateResponse.json()).message}`);
                     alert("¡Operación exitosa! Los datos se han guardado correctamente.");
-
                 } catch (e) {
                     alert(`Ocurrió un error al guardar: ${e.message}`);
                 } finally {
@@ -211,10 +197,7 @@
             };
 
             const verifyPasswordAndExecute = async (actionCallback, password) => {
-                if (!password) {
-                    alert("Por favor, ingrese la contraseña.");
-                    return;
-                }
+                if (!password) { alert("Por favor, ingrese la contraseña."); return; }
                 const correctPassword = await getApiToken('pswsku.txt');
                 if (password.trim() === correctPassword) {
                     setAuthTimestamp(Date.now());
@@ -231,9 +214,7 @@
                     actionCallback();
                 } else {
                     setModalState({
-                        isOpen: true,
-                        type: 'password',
-                        title: 'Autorización Requerida',
+                        isOpen: true, type: 'password', title: 'Autorización Requerida',
                         message: 'Por seguridad, ingrese la contraseña de administrador para continuar.',
                         onConfirm: (password) => verifyPasswordAndExecute(actionCallback, password)
                     });
@@ -285,17 +266,11 @@
             useEffect(() => {
                 let data = [...allData];
 
-                // Filtrado por columnas
                 Object.keys(columnFilters).forEach(key => {
                     const filterValue = columnFilters[key].toLowerCase();
-                    if (filterValue) {
-                        data = data.filter(item => 
-                            item[key] && item[key].toString().toLowerCase().includes(filterValue)
-                        );
-                    }
+                    if (filterValue) data = data.filter(item => item[key] && item[key].toString().toLowerCase().includes(filterValue));
                 });
 
-                // Filtrado por fecha de creación
                 if (fechaDesde || fechaHasta) {
                     const desde = fechaDesde ? new Date(fechaDesde) : null;
                     const hasta = fechaHasta ? new Date(fechaHasta) : null;
@@ -311,7 +286,6 @@
                     });
                 }
                 
-                // Ordenación
                 if (sortConfig.key) {
                     data.sort((a, b) => {
                         const valA = a[sortConfig.key] || '';
@@ -321,7 +295,6 @@
                         return 0;
                     });
                 }
-
                 setFilteredData(data);
             }, [columnFilters, fechaDesde, fechaHasta, allData, sortConfig]);
             
@@ -335,17 +308,11 @@
             }, []);
 
             const handleColumnFilterChange = (columnId, value) => setColumnFilters(prev => ({ ...prev, [columnId]: value }));
-            const clearFilters = () => {
-                setColumnFilters(initialFilters);
-                setFechaDesde('');
-                setFechaHasta('');
-            };
+            const clearFilters = () => { setColumnFilters(initialFilters); setFechaDesde(''); setFechaHasta(''); };
 
             const requestSort = (key) => {
                 let direction = 'ascending';
-                if (sortConfig.key === key && sortConfig.direction === 'ascending') {
-                    direction = 'descending';
-                }
+                if (sortConfig.key === key && sortConfig.direction === 'ascending') direction = 'descending';
                 setSortConfig({ key, direction });
             };
 
@@ -368,11 +335,7 @@
                 doc.setFontSize(18);
                 doc.text("Histórico de Listas de Empaque", 14, 16);
                 const tableColumn = Object.keys(initialFilters);
-                const tableRows = [];
-                filteredData.forEach(item => {
-                    const rowData = tableColumn.map(col => item[col] || '');
-                    tableRows.push(rowData);
-                });
+                const tableRows = filteredData.map(item => tableColumn.map(col => item[col] || ''));
                 doc.autoTable({ head: [tableColumn], body: tableRows, startY: 22, theme: 'grid', headStyles: { fillColor: [22, 160, 133] } });
                 doc.save("historico_listas_empaque.pdf");
                 setIsExportOpen(false);
@@ -381,9 +344,7 @@
             const exportToExcel = () => {
                 const excelData = filteredData.map(item => {
                     const orderedItem = {};
-                    Object.keys(initialFilters).forEach(key => {
-                        orderedItem[key] = item[key];
-                    });
+                    Object.keys(initialFilters).forEach(key => { orderedItem[key] = item[key]; });
                     return orderedItem;
                 });
                 const worksheet = XLSX.utils.json_to_sheet(excelData);
@@ -404,9 +365,7 @@
                         <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-sm">
                             <h3 className="text-lg font-bold text-gray-800 mb-4">{title}</h3>
                             <p className="text-sm text-gray-600 mb-4">{message}</p>
-                            {type === 'password' && (
-                                <input ref={inputRef} type="password" value={inputValue} onChange={e => setInputValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleConfirm()} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
-                            )}
+                            {type === 'password' && ( <input ref={inputRef} type="password" value={inputValue} onChange={e => setInputValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleConfirm()} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" /> )}
                             <div className="flex justify-end space-x-3 mt-6">
                                 <button onClick={onClose} className="bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300">Cancelar</button>
                                 <button onClick={handleConfirm} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Aceptar</button>
@@ -417,21 +376,15 @@
             };
             
             const tableHeaders = [
-                { key: 'idlista', label: 'ID Lista' }, { key: 'Cliente', label: 'Cliente' }, 
-                { key: 'Legajo', label: 'Legajo' }, { key: 'Sku', label: 'SKU' },
-                { key: 'descripcion sku', label: 'Descripción SKU' }, { key: 'nro de pallet', label: 'Nº Pallet' },
+                { key: 'idlista', label: 'ID Lista' }, { key: 'Cliente', label: 'Cliente' }, { key: 'Legajo', label: 'Legajo' }, 
+                { key: 'Sku', label: 'SKU' }, { key: 'descripcion sku', label: 'Descripción SKU' }, { key: 'nro de pallet', label: 'Nº Pallet' },
                 { key: 'Lotes de produccion', label: 'Lotes Prod.' }, { key: 'Fecha de produccion', label: 'F. Prod.' },
-                { key: 'cantidad', label: 'Cantidad' }, { key: 'unnidad de medida', label: 'U.M.' },
-                { key: 'Fecha Creacion lista', label: 'F. Creación' }
+                { key: 'cantidad', label: 'Cantidad' }, { key: 'unnidad de medida', label: 'U.M.' }, { key: 'Fecha Creacion lista', label: 'F. Creación' }
             ];
 
             return (
                 <div className="min-h-screen p-4 sm:p-6 bg-black bg-opacity-50">
-                    {isSaving && (
-                        <div className="fixed inset-0 bg-white bg-opacity-80 flex items-center justify-center z-50">
-                            <div className="flex items-center space-x-3 text-xl font-semibold text-gray-700"><i className="fas fa-sync-alt animate-spin"></i><span>Guardando en GitHub...</span></div>
-                        </div>
-                    )}
+                    {isSaving && ( <div className="fixed inset-0 bg-white bg-opacity-80 flex items-center justify-center z-50"><div className="flex items-center space-x-3 text-xl font-semibold text-gray-700"><i className="fas fa-sync-alt animate-spin"></i><span>Guardando en GitHub...</span></div></div> )}
                     <ActionModal isOpen={modalState.isOpen} type={modalState.type} title={modalState.title} message={modalState.message} onClose={() => setModalState({ isOpen: false })} onConfirm={modalState.onConfirm} />
                     
                     <div className="bg-white p-6 rounded-2xl shadow-xl">
@@ -445,17 +398,9 @@
                         
                         <div className="mb-6 p-4 border rounded-lg bg-gray-50 space-y-4">
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Fecha Creación Desde</label>
-                                    <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm p-2 border"/>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Fecha Creación Hasta</label>
-                                    <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm p-2 border"/>
-                                </div>
-                                <div className="flex items-end">
-                                    <button onClick={clearFilters} className="w-full bg-white text-gray-700 border border-gray-300 font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-gray-50 flex items-center justify-center"><i className="fas fa-times-circle mr-2"></i>Limpiar Filtros</button>
-                                </div>
+                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Fecha Creación Desde</label><input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm p-2 border"/></div>
+                                <div><label className="block text-sm font-medium text-gray-700 mb-1">Fecha Creación Hasta</label><input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm p-2 border"/></div>
+                                <div className="flex items-end"><button onClick={clearFilters} className="w-full bg-white text-gray-700 border border-gray-300 font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-gray-50 flex items-center justify-center"><i className="fas fa-times-circle mr-2"></i>Limpiar Filtros</button></div>
                             </div>
                         </div>
 
@@ -465,14 +410,10 @@
                                 <button onClick={loadData} disabled={isLoading || isSaving} className="bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-gray-700 disabled:opacity-50 flex items-center"><i className={`fas fa-sync-alt ${isLoading ? 'animate-spin' : ''} mr-2`}></i>Refrescar</button>
                                 <div className="relative" ref={exportMenuRef}>
                                     <button onClick={() => setIsExportOpen(prev => !prev)} disabled={filteredData.length === 0} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-blue-700 disabled:opacity-50 flex items-center"><i className="fas fa-download mr-2"></i>Exportar<i className={`fas fa-chevron-down ml-2 transition-transform ${isExportOpen ? 'rotate-180' : ''}`}></i></button>
-                                    {isExportOpen && (
-                                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border z-20">
-                                            <ul className="text-gray-700">
-                                                <li><button onClick={exportToPDF} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-file-pdf w-6 mr-2 text-red-500"></i>Exportar a PDF</button></li>
-                                                <li><button onClick={exportToExcel} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-file-excel w-6 mr-2 text-green-500"></i>Exportar a Excel</button></li>
-                                            </ul>
-                                        </div>
-                                    )}
+                                    {isExportOpen && ( <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border z-20"><ul className="text-gray-700">
+                                        <li><button onClick={exportToPDF} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-file-pdf w-6 mr-2 text-red-500"></i>Exportar a PDF</button></li>
+                                        <li><button onClick={exportToExcel} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-file-excel w-6 mr-2 text-green-500"></i>Exportar a Excel</button></li>
+                                    </ul></div> )}
                                 </div>
                             </div>
                         </div>
@@ -481,58 +422,31 @@
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-800 text-white sticky top-0 z-10">
                                     <tr>
-                                        {tableHeaders.map(header => (
-                                            <th key={header.key} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-gray-700" onClick={() => requestSort(header.key)}>
-                                                {header.label}
-                                                <span className={`sort-icon ${sortConfig.key === header.key ? 'active' : ''}`}>
-                                                    {sortConfig.direction === 'ascending' ? '▲' : '▼'}
-                                                </span>
-                                            </th>
-                                        ))}
+                                        {tableHeaders.map(header => ( <th key={header.key} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-gray-700" onClick={() => requestSort(header.key)}>{header.label}<span className={`sort-icon ${sortConfig.key === header.key ? 'active' : ''}`}>{sortConfig.direction === 'ascending' ? '▲' : '▼'}</span></th> ))}
                                         <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Acciones</th>
                                     </tr>
                                     <tr className="bg-gray-200">
-                                        {tableHeaders.map(header => (
-                                          <th key={header.key} className="p-1">
-                                            <input type="text" placeholder="Filtrar..." value={columnFilters[header.key]} onChange={e => handleColumnFilterChange(header.key, e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/>
-                                          </th>
-                                        ))}
+                                        {tableHeaders.map(header => ( <th key={header.key} className="p-1"><input type="text" placeholder="Filtrar..." value={columnFilters[header.key]} onChange={e => handleColumnFilterChange(header.key, e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th> ))}
                                         <th className="p-1"></th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
-                                    {isLoading ? (
-                                        <tr><td colSpan={tableHeaders.length + 1} className="p-8 text-center text-gray-500">Cargando datos...</td></tr>
-                                    ) : (
+                                    {isLoading ? ( <tr><td colSpan={tableHeaders.length + 1} className="p-8 text-center text-gray-500">Cargando datos...</td></tr> ) : (
                                         filteredData.length > 0 ? filteredData.map((item) => (
                                             <tr key={item.id} className="hover:bg-gray-50">
-                                                {tableHeaders.map(header => (
-                                                    <td key={`${item.id}-${header.key}`} className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">
-                                                        {item[header.key]}
-                                                    </td>
-                                                ))}
+                                                {tableHeaders.map(header => ( <td key={`${item.id}-${header.key}`} className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{item[header.key]}</td> ))}
                                                 <td className="px-4 py-2 text-center">
                                                     <div className="relative" ref={activeActionMenu === item.id ? actionMenuRef : null}>
-                                                        <button 
-                                                            onClick={() => setActiveActionMenu(activeActionMenu === item.id ? null : item.id)} 
-                                                            disabled={isSaving}
-                                                            className="text-gray-500 hover:text-blue-600 p-2 rounded-full disabled:opacity-50"
-                                                        >
-                                                            <i className="fas fa-ellipsis-v"></i>
-                                                        </button>
+                                                        <button onClick={() => setActiveActionMenu(activeActionMenu === item.id ? null : item.id)} disabled={isSaving} className="text-gray-500 hover:text-blue-600 p-2 rounded-full disabled:opacity-50"><i className="fas fa-ellipsis-v"></i></button>
                                                         {activeActionMenu === item.id && (
-                                                            <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border z-30">
-                                                                <ul className="text-gray-700 text-left">
-                                                                    <li><button onClick={() => { handleDeleteRow(item.id); setActiveActionMenu(null); }} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-trash-alt w-6 mr-2 text-red-500"></i>Eliminar Fila</button></li>
-                                                                </ul>
-                                                            </div>
+                                                            <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border z-30"><ul className="text-gray-700 text-left">
+                                                                <li><button onClick={() => { handleDeleteRow(item.id); setActiveActionMenu(null); }} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-trash-alt w-6 mr-2 text-red-500"></i>Eliminar Fila</button></li>
+                                                            </ul></div>
                                                         )}
                                                     </div>
                                                 </td>
                                             </tr>
-                                        )) : (
-                                            <tr><td colSpan={tableHeaders.length + 1} className="px-4 py-8 text-center text-sm text-gray-500">No se encontraron registros con los filtros aplicados.</td></tr>
-                                        )
+                                        )) : ( <tr><td colSpan={tableHeaders.length + 1} className="px-4 py-8 text-center text-sm text-gray-500">No se encontraron registros con los filtros aplicados.</td></tr> )
                                     )}
                                 </tbody>
                             </table>
