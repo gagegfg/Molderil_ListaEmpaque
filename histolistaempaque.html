@@ -1,1 +1,546 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MOLDERIL - Histórico de Listas de Empaque</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body {
+          background-image: url('fondo.jpg');
+          background-size: cover;
+          background-position: center;
+          background-repeat: no-repeat;
+          background-attachment: fixed;
+        }
+        .backdrop-blur-lg {
+            -webkit-backdrop-filter: blur(12px);
+            backdrop-filter: blur(12px);
+        }
+        .sort-icon {
+            opacity: 0.4;
+            margin-left: 5px;
+        }
+        .sort-icon.active {
+            opacity: 1;
+            color: #6366f1; /* Indigo color for active sort */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans">
 
+    <div id="static-loader" class="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 p-4 font-sans z-50">
+        <div class="relative bg-[#D2B48C]/20 backdrop-blur-lg border border-[#D2B48C]/30 p-8 rounded-xl shadow-2xl w-full max-w-md text-center">
+          <img src="logo.jpg" alt="Logo Molderil" class="mx-auto mb-6 h-32 [filter:drop-shadow(2px_2px_4px_rgba(0,0,0,0.4))_drop_shadow(-2px_-2px_4px_rgba(255,255,255,0.6))]"/>
+          <p id="loader-status" class="text-xl text-white mb-4 [text-shadow:_1px_1px_2px_rgba(0,0,0,0.5)]">Cargando aplicación...</p>
+          <div class="w-full bg-white/20 rounded-full h-4 border border-white/30">
+            <div id="loader-progress" class="bg-amber-400 h-full rounded-full transition-all duration-500" style="width: 10%"></div>
+          </div>
+        </div>
+    </div>
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+        const { createRoot } = ReactDOM;
+        const { jsPDF } = window.jspdf;
+
+        // --- CONFIGURACIÓN DE GITHUB ---
+        const GITHUB_USER = 'gagegfg';
+        const GITHUB_REPO = 'Molderil_ListaEmpaque';
+        const CSV_PATH = 'listaempaque.csv';
+        const AUTH_TIMEOUT = 5 * 60 * 1000; // 5 minutos
+
+        const useLocalStorage = (key, initialValue) => {
+            const [storedValue, setStoredValue] = useState(() => {
+                try {
+                    const item = window.localStorage.getItem(key);
+                    return item ? JSON.parse(item) : initialValue;
+                } catch (error) {
+                    console.error(error);
+                    return initialValue;
+                }
+            });
+
+            const setValue = (value) => {
+                try {
+                    const valueToStore = value instanceof Function ? value(storedValue) : value;
+                    setStoredValue(valueToStore);
+                    window.localStorage.setItem(key, JSON.stringify(valueToStore));
+                } catch (error) {
+                    console.error(error);
+                }
+            };
+            return [storedValue, setValue];
+        };
+        
+        const App = () => {
+            const [allData, setAllData] = useState([]);
+            const [filteredData, setFilteredData] = useState([]);
+            const [isLoading, setIsLoading] = useState(true);
+            const [isSaving, setIsSaving] = useState(false);
+            const [apiToken, setApiToken] = useState(null);
+            const [authTimestamp, setAuthTimestamp] = useState(null);
+
+            const [modalState, setModalState] = useState({ isOpen: false, type: null, title: '', message: '', onConfirm: null });
+            const [activeActionMenu, setActiveActionMenu] = useState(null);
+            const actionMenuRef = useRef(null);
+            
+            const initialFilters = {
+                idlista: '', Cliente: '', Legajo: '', Sku: '', 'descripcion sku': '',
+                'nro de pallet': '', 'Lotes de produccion': '', 'Fecha de produccion': '',
+                cantidad: '', 'unnidad de medida': '', 'Fecha Creacion lista': ''
+            };
+
+            const [columnFilters, setColumnFilters] = useLocalStorage('grilla_listaempaque_filters', initialFilters);
+            const [fechaDesde, setFechaDesde] = useLocalStorage('grilla_listaempaque_fechaDesde', '');
+            const [fechaHasta, setFechaHasta] = useLocalStorage('grilla_listaempaque_fechaHasta', '');
+            const [sortConfig, setSortConfig] = useState({ key: 'Fecha Creacion lista', direction: 'descending' });
+            
+            const [isExportOpen, setIsExportOpen] = useState(false);
+            const exportMenuRef = useRef(null);
+
+            const getApiToken = async (file) => {
+                try {
+                    const response = await fetch(file + '?t=' + new Date().getTime());
+                    if (!response.ok) throw new Error(`No se pudo cargar ${file}.`);
+                    let rawText = await response.text();
+                    return rawText.replace(/aaaa/g, '').replace(/bbbb/g, '').replace(/cccc/g, '').trim();
+                } catch (error) {
+                    console.error(`Error al obtener ${file}:`, error);
+                    return null;
+                }
+            };
+
+            const fetchCsvFromGithub = async (path) => {
+                const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}?t=${new Date().getTime()}`;
+                try {
+                    const headers = apiToken ? { 'Authorization': `token ${apiToken}` } : {};
+                    const response = await fetch(url, { headers, cache: 'no-store' });
+                    if (response.status === 404) return [];
+                    if (!response.ok) throw new Error(`No se pudo cargar ${path} (Estado: ${response.status})`);
+                    const fileData = await response.json();
+                    const decodedContent = atob(fileData.content);
+                    // Decodificar correctamente caracteres especiales como 'ñ' o tildes
+                    const utf8Content = new TextDecoder('utf-8').decode(Uint8Array.from(decodedContent, c => c.charCodeAt(0)));
+                    return utf8Content.split('\n').filter(Boolean);
+                } catch (error) {
+                    console.error(`Error cargando ${path}:`, error);
+                    alert(`Error al cargar datos desde GitHub: ${error.message}`);
+                    return [];
+                }
+            };
+
+            const loadData = async () => {
+                setIsLoading(true);
+                const rows = await fetchCsvFromGithub(CSV_PATH);
+                if (rows.length > 0) {
+                    const headers = rows[0].split(';');
+                    const parsedData = rows.slice(1).map((row, index) => {
+                        const values = row.split(';');
+                        let obj = { id: index }; // 'id' único para React
+                        headers.forEach((header, i) => {
+                            obj[header.trim()] = values[i] ? values[i].trim() : '';
+                        });
+                        return obj;
+                    });
+                    setAllData(parsedData);
+                }
+                setIsLoading(false);
+            };
+
+            const saveData = async (updatedData) => {
+                setIsSaving(true);
+                if (!apiToken) {
+                    alert("Error: El token de API no está disponible.");
+                    setIsSaving(false);
+                    return;
+                }
+
+                // Obtener cabeceras del CSV original o definirlas
+                const headers = "idlista;Cliente;Legajo;Sku;descripcion sku;nro de pallet;Lotes de produccion;Fecha de produccion;cantidad;unnidad de medida;Fecha Creacion lista";
+                const csvContent = headers + '\n' + updatedData.map(item => 
+                    [
+                        item.idlista, item.Cliente, item.Legajo, item.Sku, item['descripcion sku'],
+                        item['nro de pallet'], item['Lotes de produccion'], item['Fecha de produccion'],
+                        item.cantidad, item['unnidad de medida'], item['Fecha Creacion lista']
+                    ].join(';')
+                ).join('\n');
+                
+                const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${CSV_PATH}`;
+                try {
+                    const fileResponse = await fetch(`${url}?t=${new Date().getTime()}`, {
+                        headers: { 'Authorization': `token ${apiToken}` },
+                        cache: 'no-store'
+                    });
+
+                    let currentSha = null;
+                    if (fileResponse.ok) {
+                        currentSha = (await fileResponse.json()).sha;
+                    } else if (fileResponse.status !== 404) {
+                        throw new Error(`Error al obtener SHA: ${fileResponse.statusText}`);
+                    }
+
+                    const updateResponse = await fetch(url, {
+                        method: 'PUT',
+                        headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            message: `Actualización de ${CSV_PATH} desde grilla`,
+                            content: btoa(unescape(encodeURIComponent(csvContent))),
+                            sha: currentSha,
+                        }),
+                    });
+
+                    if (!updateResponse.ok) {
+                        throw new Error(`Error al guardar: ${(await updateResponse.json()).message}`);
+                    }
+                    alert("¡Operación exitosa! Los datos se han guardado correctamente.");
+
+                } catch (e) {
+                    alert(`Ocurrió un error al guardar: ${e.message}`);
+                } finally {
+                    setIsSaving(false);
+                    await loadData();
+                }
+            };
+
+            const verifyPasswordAndExecute = async (actionCallback, password) => {
+                if (!password) {
+                    alert("Por favor, ingrese la contraseña.");
+                    return;
+                }
+                const correctPassword = await getApiToken('pswsku.txt');
+                if (password.trim() === correctPassword) {
+                    setAuthTimestamp(Date.now());
+                    setModalState({ isOpen: false });
+                    actionCallback();
+                } else {
+                    alert("Contraseña incorrecta.");
+                }
+            };
+
+            const executeActionWithAuth = (actionCallback) => {
+                const now = Date.now();
+                if (authTimestamp && (now - authTimestamp < AUTH_TIMEOUT)) {
+                    actionCallback();
+                } else {
+                    setModalState({
+                        isOpen: true,
+                        type: 'password',
+                        title: 'Autorización Requerida',
+                        message: 'Por seguridad, ingrese la contraseña de administrador para continuar.',
+                        onConfirm: (password) => verifyPasswordAndExecute(actionCallback, password)
+                    });
+                }
+            };
+            
+            useEffect(() => {
+                const initializeApp = async () => {
+                    document.getElementById('loader-status').textContent = "Verificando acceso...";
+                    document.getElementById('loader-progress').style.width = '30%';
+                    const token = await getApiToken('cls.txt');
+                    if (token) {
+                        setApiToken(token);
+                    } else {
+                        document.getElementById('loader-status').textContent = "Error de autenticación.";
+                        document.getElementById('loader-progress').style.width = '100%';
+                        document.getElementById('loader-progress').classList.add('bg-red-500');
+                    }
+                };
+                initializeApp();
+            }, []);
+
+            useEffect(() => {
+                if(apiToken) {
+                    const loadInitialData = async () => {
+                        const loaderStatus = document.getElementById('loader-status');
+                        const loaderProgress = document.getElementById('loader-progress');
+                        const staticLoader = document.getElementById('static-loader');
+                        
+                        if (loaderStatus) loaderStatus.textContent = "Cargando histórico de empaque...";
+                        if (loaderProgress) loaderProgress.style.width = '80%';
+                        
+                        await loadData();
+                        
+                        if (loaderStatus) loaderStatus.textContent = "¡Listo!";
+                        if (loaderProgress) loaderProgress.style.width = '100%';
+                        
+                        setTimeout(() => {
+                             if (staticLoader) {
+                                staticLoader.classList.add('opacity-0');
+                                setTimeout(() => staticLoader.remove(), 500);
+                            }
+                        }, 500);
+                    };
+                    loadInitialData();
+                }
+            }, [apiToken]);
+
+            useEffect(() => {
+                let data = [...allData];
+
+                // Filtrado por columnas
+                Object.keys(columnFilters).forEach(key => {
+                    const filterValue = columnFilters[key].toLowerCase();
+                    if (filterValue) {
+                        data = data.filter(item => 
+                            item[key] && item[key].toString().toLowerCase().includes(filterValue)
+                        );
+                    }
+                });
+
+                // Filtrado por fecha de creación
+                if (fechaDesde || fechaHasta) {
+                    const desde = fechaDesde ? new Date(fechaDesde) : null;
+                    const hasta = fechaHasta ? new Date(fechaHasta) : null;
+                    if(desde) desde.setMinutes(desde.getMinutes() + desde.getTimezoneOffset());
+                    if(hasta) hasta.setMinutes(hasta.getMinutes() + hasta.getTimezoneOffset());
+                    
+                    data = data.filter(item => {
+                        if (!item['Fecha Creacion lista']) return false;
+                        const [day, month, year] = item['Fecha Creacion lista'].split('/');
+                        if (!day || !month || !year) return false;
+                        const itemDate = new Date(year, month - 1, day);
+                        return (!desde || itemDate >= desde) && (!hasta || itemDate <= hasta);
+                    });
+                }
+                
+                // Ordenación
+                if (sortConfig.key) {
+                    data.sort((a, b) => {
+                        if (a[sortConfig.key] < b[sortConfig.key]) {
+                            return sortConfig.direction === 'ascending' ? -1 : 1;
+                        }
+                        if (a[sortConfig.key] > b[sortConfig.key]) {
+                            return sortConfig.direction === 'ascending' ? 1 : -1;
+                        }
+                        return 0;
+                    });
+                }
+
+                setFilteredData(data);
+            }, [columnFilters, fechaDesde, fechaHasta, allData, sortConfig]);
+            
+            useEffect(() => {
+                const handleClickOutside = (event) => {
+                    if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) setIsExportOpen(false);
+                    if (actionMenuRef.current && !actionMenuRef.current.parentElement.contains(event.target)) setActiveActionMenu(null);
+                };
+                document.addEventListener("mousedown", handleClickOutside);
+                return () => document.removeEventListener("mousedown", handleClickOutside);
+            }, []);
+
+            const handleColumnFilterChange = (columnId, value) => setColumnFilters(prev => ({ ...prev, [columnId]: value }));
+            const clearFilters = () => {
+                setColumnFilters(initialFilters);
+                setFechaDesde('');
+                setFechaHasta('');
+            };
+
+            const requestSort = (key) => {
+                let direction = 'ascending';
+                if (sortConfig.key === key && sortConfig.direction === 'ascending') {
+                    direction = 'descending';
+                }
+                setSortConfig({ key, direction });
+            };
+
+            const handleDeleteRow = (rowIdToDelete) => {
+                setModalState({ 
+                    isOpen: true, type: 'confirm', title: `Confirmar Eliminación`,
+                    message: `¿Seguro que quieres eliminar esta fila de la lista de empaque? La acción es irreversible.`,
+                    onConfirm: () => {
+                        setModalState({ isOpen: false });
+                        executeActionWithAuth(() => {
+                            const newData = allData.filter(item => item.id !== rowIdToDelete);
+                            saveData(newData);
+                        });
+                    }
+                });
+            };
+
+            const exportToPDF = () => {
+                const doc = new jsPDF({ orientation: 'landscape' });
+                doc.setFontSize(18);
+                doc.text("Histórico de Listas de Empaque", 14, 16);
+                const tableColumn = Object.keys(initialFilters);
+                const tableRows = [];
+                filteredData.forEach(item => {
+                    const rowData = tableColumn.map(col => item[col] || '');
+                    tableRows.push(rowData);
+                });
+                doc.autoTable({ head: [tableColumn], body: tableRows, startY: 22, theme: 'grid', headStyles: { fillColor: [22, 160, 133] } });
+                doc.save("historico_listas_empaque.pdf");
+                setIsExportOpen(false);
+            };
+
+            const exportToExcel = () => {
+                const worksheet = XLSX.utils.json_to_sheet(filteredData);
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, "Histórico");
+                XLSX.writeFile(workbook, "historico_listas_empaque.xlsx");
+                setIsExportOpen(false);
+            };
+
+            const ActionModal = ({ isOpen, type, title, message, onConfirm, onClose }) => {
+                if (!isOpen) return null;
+                const [inputValue, setInputValue] = useState('');
+                const inputRef = useRef(null);
+                useEffect(() => { if (isOpen) setTimeout(() => inputRef.current?.focus(), 100); }, [isOpen]);
+                const handleConfirm = () => onConfirm(inputValue);
+                return (
+                    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-sm">
+                            <h3 className="text-lg font-bold text-gray-800 mb-4">{title}</h3>
+                            <p className="text-sm text-gray-600 mb-4">{message}</p>
+                            {type === 'password' && (
+                                <input ref={inputRef} type="password" value={inputValue} onChange={e => setInputValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleConfirm()} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
+                            )}
+                            <div className="flex justify-end space-x-3 mt-6">
+                                <button onClick={onClose} className="bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300">Cancelar</button>
+                                <button onClick={handleConfirm} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Aceptar</button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+            
+            const tableHeaders = [
+                { key: 'idlista', label: 'ID Lista' }, { key: 'Cliente', label: 'Cliente' }, 
+                { key: 'Legajo', label: 'Legajo' }, { key: 'Sku', label: 'SKU' },
+                { key: 'descripcion sku', label: 'Descripción SKU' }, { key: 'nro de pallet', label: 'Nº Pallet' },
+                { key: 'Lotes de produccion', label: 'Lotes Prod.' }, { key: 'Fecha de produccion', label: 'F. Prod.' },
+                { key: 'cantidad', label: 'Cantidad' }, { key: 'unnidad de medida', label: 'U.M.' },
+                { key: 'Fecha Creacion lista', label: 'F. Creación' }
+            ];
+
+            return (
+                <div className="min-h-screen p-4 sm:p-6 bg-black bg-opacity-50">
+                    {isSaving && (
+                        <div className="fixed inset-0 bg-white bg-opacity-80 flex items-center justify-center z-50">
+                            <div className="flex items-center space-x-3 text-xl font-semibold text-gray-700"><i className="fas fa-sync-alt animate-spin"></i><span>Guardando en GitHub...</span></div>
+                        </div>
+                    )}
+                    <ActionModal isOpen={modalState.isOpen} type={modalState.type} title={modalState.title} message={modalState.message} onClose={() => setModalState({ isOpen: false })} onConfirm={modalState.onConfirm} />
+                    
+                    <div className="bg-white p-6 rounded-2xl shadow-xl">
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b pb-4 border-gray-200">
+                             <h1 className="text-3xl font-extrabold text-gray-800">Histórico de Listas de Empaque</h1>
+                            <div className="flex items-center space-x-3 mt-4 sm:mt-0">
+                                <a href="grillaqr.html" className="bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm flex items-center"><i className="fas fa-qrcode mr-2"></i>Volver a Grilla QR</a>
+                                <a href="index.html" className="bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">Volver al Menú Principal</a>
+                            </div>
+                        </div>
+                        
+                        <div className="mb-6 p-4 border rounded-lg bg-gray-50 space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Fecha Creación Desde</label>
+                                    <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm p-2 border"/>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Fecha Creación Hasta</label>
+                                    <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm p-2 border"/>
+                                </div>
+                                <div className="flex items-end">
+                                    <button onClick={clearFilters} className="w-full bg-white text-gray-700 border border-gray-300 font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-gray-50 flex items-center justify-center"><i className="fas fa-times-circle mr-2"></i>Limpiar Filtros</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row justify-between items-center mb-4">
+                            <p className="text-gray-600 font-semibold">{filteredData.length} registro(s) encontrado(s)</p>
+                            <div className="flex space-x-2 mt-4 sm:mt-0">
+                                <button onClick={loadData} disabled={isLoading || isSaving} className="bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-gray-700 disabled:opacity-50 flex items-center"><i className={`fas fa-sync-alt ${isLoading ? 'animate-spin' : ''} mr-2`}></i>Refrescar</button>
+                                <div className="relative" ref={exportMenuRef}>
+                                    <button onClick={() => setIsExportOpen(prev => !prev)} disabled={filteredData.length === 0} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-blue-700 disabled:opacity-50 flex items-center"><i className="fas fa-download mr-2"></i>Exportar<i className={`fas fa-chevron-down ml-2 transition-transform ${isExportOpen ? 'rotate-180' : ''}`}></i></button>
+                                    {isExportOpen && (
+                                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border z-20">
+                                            <ul className="text-gray-700">
+                                                <li><button onClick={exportToPDF} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-file-pdf w-6 mr-2 text-red-500"></i>Exportar a PDF</button></li>
+                                                <li><button onClick={exportToExcel} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-file-excel w-6 mr-2 text-green-500"></i>Exportar a Excel</button></li>
+                                            </ul>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="overflow-x-auto rounded-lg shadow-md border" style={{ maxHeight: '65vh' }}>
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-800 text-white sticky top-0 z-10">
+                                    <tr>
+                                        {tableHeaders.map(header => (
+                                            <th key={header.key} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider cursor-pointer hover:bg-gray-700" onClick={() => requestSort(header.key)}>
+                                                {header.label}
+                                                <span className={`sort-icon ${sortConfig.key === header.key ? 'active' : ''}`}>
+                                                    {sortConfig.direction === 'ascending' ? '▲' : '▼'}
+                                                </span>
+                                            </th>
+                                        ))}
+                                        <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Acciones</th>
+                                    </tr>
+                                    <tr className="bg-gray-200">
+                                        {tableHeaders.map(header => (
+                                          <th key={header.key} className="p-1">
+                                            <input type="text" placeholder="Filtrar..." value={columnFilters[header.key]} onChange={e => handleColumnFilterChange(header.key, e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/>
+                                          </th>
+                                        ))}
+                                        <th className="p-1"></th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {isLoading ? (
+                                        <tr><td colSpan={tableHeaders.length + 1} className="p-8 text-center text-gray-500">Cargando datos...</td></tr>
+                                    ) : (
+                                        filteredData.length > 0 ? filteredData.map((item) => (
+                                            <tr key={item.id} className="hover:bg-gray-50">
+                                                {tableHeaders.map(header => (
+                                                    <td key={`${item.id}-${header.key}`} className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">
+                                                        {item[header.key]}
+                                                    </td>
+                                                ))}
+                                                <td className="px-4 py-2 text-center">
+                                                    <div className="relative" ref={activeActionMenu === item.id ? actionMenuRef : null}>
+                                                        <button 
+                                                            onClick={() => setActiveActionMenu(activeActionMenu === item.id ? null : item.id)} 
+                                                            disabled={isSaving}
+                                                            className="text-gray-500 hover:text-blue-600 p-2 rounded-full disabled:opacity-50"
+                                                        >
+                                                            <i className="fas fa-ellipsis-v"></i>
+                                                        </button>
+                                                        {activeActionMenu === item.id && (
+                                                            <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border z-30">
+                                                                <ul className="text-gray-700 text-left">
+                                                                    <li><button onClick={() => { handleDeleteRow(item.id); setActiveActionMenu(null); }} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-trash-alt w-6 mr-2 text-red-500"></i>Eliminar Fila</button></li>
+                                                                </ul>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )) : (
+                                            <tr><td colSpan={tableHeaders.length + 1} className="px-4 py-8 text-center text-sm text-gray-500">No se encontraron registros con los filtros aplicados.</td></tr>
+                                        )
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
