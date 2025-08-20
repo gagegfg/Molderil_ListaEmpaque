@@ -49,7 +49,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useMemo, useRef } = React;
+        const { useState, useEffect, useCallback, useRef } = React;
         const { createRoot } = ReactDOM;
         const { jsPDF } = window.jspdf;
 
@@ -120,7 +120,7 @@
                 }
             };
 
-            const fetchCsvFromGithub = async (path) => {
+            const fetchCsvFromGithub = useCallback(async (path) => {
                 const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}?t=${new Date().getTime()}`;
                 try {
                     const headers = apiToken ? { 'Authorization': `token ${apiToken}` } : {};
@@ -129,7 +129,6 @@
                     if (!response.ok) throw new Error(`No se pudo cargar ${path} (Estado: ${response.status})`);
                     const fileData = await response.json();
                     const decodedContent = atob(fileData.content);
-                    // Decodificar correctamente caracteres especiales como 'ñ' o tildes
                     const utf8Content = new TextDecoder('utf-8').decode(Uint8Array.from(decodedContent, c => c.charCodeAt(0)));
                     return utf8Content.split('\n').filter(Boolean);
                 } catch (error) {
@@ -137,25 +136,25 @@
                     alert(`Error al cargar datos desde GitHub: ${error.message}`);
                     return [];
                 }
-            };
+            }, [apiToken]);
 
-            const loadData = async () => {
+            const loadData = useCallback(async () => {
                 setIsLoading(true);
                 const rows = await fetchCsvFromGithub(CSV_PATH);
                 if (rows.length > 0) {
-                    const headers = rows[0].split(';');
+                    const headers = rows[0].split(';').map(h => h.trim());
                     const parsedData = rows.slice(1).map((row, index) => {
                         const values = row.split(';');
                         let obj = { id: index }; // 'id' único para React
                         headers.forEach((header, i) => {
-                            obj[header.trim()] = values[i] ? values[i].trim() : '';
+                            obj[header] = values[i] ? values[i].trim() : '';
                         });
                         return obj;
                     });
                     setAllData(parsedData);
                 }
                 setIsLoading(false);
-            };
+            }, [fetchCsvFromGithub]);
 
             const saveData = async (updatedData) => {
                 setIsSaving(true);
@@ -165,7 +164,6 @@
                     return;
                 }
 
-                // Obtener cabeceras del CSV original o definirlas
                 const headers = "idlista;Cliente;Legajo;Sku;descripcion sku;nro de pallet;Lotes de produccion;Fecha de produccion;cantidad;unnidad de medida;Fecha Creacion lista";
                 const csvContent = headers + '\n' + updatedData.map(item => 
                     [
@@ -282,7 +280,7 @@
                     };
                     loadInitialData();
                 }
-            }, [apiToken]);
+            }, [apiToken, loadData]);
 
             useEffect(() => {
                 let data = [...allData];
@@ -316,12 +314,10 @@
                 // Ordenación
                 if (sortConfig.key) {
                     data.sort((a, b) => {
-                        if (a[sortConfig.key] < b[sortConfig.key]) {
-                            return sortConfig.direction === 'ascending' ? -1 : 1;
-                        }
-                        if (a[sortConfig.key] > b[sortConfig.key]) {
-                            return sortConfig.direction === 'ascending' ? 1 : -1;
-                        }
+                        const valA = a[sortConfig.key] || '';
+                        const valB = b[sortConfig.key] || '';
+                        if (valA < valB) return sortConfig.direction === 'ascending' ? -1 : 1;
+                        if (valA > valB) return sortConfig.direction === 'ascending' ? 1 : -1;
                         return 0;
                     });
                 }
@@ -383,7 +379,14 @@
             };
 
             const exportToExcel = () => {
-                const worksheet = XLSX.utils.json_to_sheet(filteredData);
+                const excelData = filteredData.map(item => {
+                    const orderedItem = {};
+                    Object.keys(initialFilters).forEach(key => {
+                        orderedItem[key] = item[key];
+                    });
+                    return orderedItem;
+                });
+                const worksheet = XLSX.utils.json_to_sheet(excelData);
                 const workbook = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(workbook, worksheet, "Histórico");
                 XLSX.writeFile(workbook, "historico_listas_empaque.xlsx");
