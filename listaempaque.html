@@ -50,9 +50,10 @@
     const USUARIO_GITHUB = 'gagegfg';
     const REPO_NOMBRE = 'Molderil_ListaEmpaque';
     const RUTA_HISTORICO_CSV = 'detallelotes.csv';
-    const RUTA_CLS_TXT = 'cls.txt'; // Añadido para obtener token
+    const RUTA_LISTAEMPAQUE_CSV = 'listaempaque.csv'; // <-- NUEVA RUTA
+    const RUTA_CLS_TXT = 'cls.txt';
     
-    // --- NUEVO: CONFIGURACIÓN DEL SISTEMA DE BLOQUEO ---
+    // --- CONFIGURACIÓN DEL SISTEMA DE BLOQUEO ---
     const LOCK_FILE_PATH = 'lock.json';
     const LOCK_TIMEOUT = 45 * 1000; // 45 segundos
     const SESSION_ID = Date.now().toString(36) + Math.random().toString(36).substr(2);
@@ -348,7 +349,7 @@
         }
       }, [highlightedIndex]);
 
-        // --- NUEVO: FUNCIONES DEL SISTEMA DE BLOQUEO ---
+        // --- FUNCIONES DEL SISTEMA DE BLOQUEO ---
         const acquireLock = async (operationName) => {
             const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${LOCK_FILE_PATH}`;
             let currentSha = null;
@@ -434,106 +435,146 @@
             }
         };
 
-      // --- GITHUB UPDATE FUNCTION (MODIFICADA CON BLOQUEO) ---
-      const registrarDespachoEnGitHub = async (itemsScaneados, clienteNombre) => {
-        if (!apiToken) {
-            console.warn("No hay token de API. La actualización en GitHub se omite.");
-            throw new Error("No hay token de API para conectar con GitHub.");
-        }
+      // =================================================================
+      // ### INICIO: LÓGICA DE GUARDADO ATÓMICO EN GITHUB ###
+      // =================================================================
+      const ejecutarProcesoDeGuardado = async (itemsScaneados, cliente, legajo) => {
+        if (!apiToken) throw new Error("No hay token de API para conectar con GitHub.");
         if (itemsScaneados.length === 0) {
             console.log("No hay items para actualizar.");
             return true;
         }
 
-        const lock = await acquireLock('registrarDespacho');
+        const lock = await acquireLock('guardadoListaEmpaque');
         if (!lock.success) {
             throw new Error(`No se pudo registrar. ${lock.error}. Intente de nuevo.`);
         }
 
         setIsGenerating(true);
-        const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${RUTA_HISTORICO_CSV}`;
-
+        
         try {
-            const fileResponse = await fetch(url, {
-                headers: { 'Authorization': `token ${apiToken}` },
-                cache: 'no-store'
-            });
-
-            if (!fileResponse.ok) {
-                throw new Error(`Error ${fileResponse.status}: No se pudo obtener el archivo ${RUTA_HISTORICO_CSV} de GitHub.`);
-            }
-            const fileData = await fileResponse.json();
-            const sha = fileData.sha;
-            const contenidoBase64 = fileData.content;
-
-            let contenidoCsv = atob(contenidoBase64);
-            let lineas = contenidoCsv.split('\n');
+            // --- TAREA 1: Actualizar detallelotes.csv ---
+            const urlDetalle = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${RUTA_HISTORICO_CSV}`;
+            const fileResponseDetalle = await fetch(urlDetalle, { headers: { 'Authorization': `token ${apiToken}` }, cache: 'no-store' });
+            if (!fileResponseDetalle.ok) throw new Error(`Error ${fileResponseDetalle.status}: No se pudo obtener ${RUTA_HISTORICO_CSV}.`);
+            
+            const fileDataDetalle = await fileResponseDetalle.json();
+            let contenidoCsvDetalle = atob(fileDataDetalle.content);
+            let lineasDetalle = contenidoCsvDetalle.split('\n');
             let cambiosRealizados = 0;
 
             itemsScaneados.forEach(item => {
-                const indiceLinea = lineas.findIndex(linea => {
+                const indiceLinea = lineasDetalle.findIndex(linea => {
                     const columnas = linea.split(';');
-                    // Búsqueda más robusta: SKU y Nro Pallet
                     return columnas.length > 2 && columnas[0] === item.sku && columnas[2] === item.numeroDePallet;
                 });
-
                 if (indiceLinea !== -1) {
-                    let columnas = lineas[indiceLinea].split(';');
-
-                    // Asegurar que hay suficientes columnas para evitar errores
-                    while (columnas.length < 9) {
-                        columnas.push('');
-                    }
-                    
-                    // Columna 8 (índice 7) es 'despachado'
+                    let columnas = lineasDetalle[indiceLinea].split(';');
+                    while (columnas.length < 9) columnas.push('');
                     columnas[7] = 'TRUE';
-
-                    // Columna 9 (índice 8) es 'cliente'
                     const clientesExistentes = columnas[8] ? columnas[8].trim().split('#').filter(Boolean) : [];
-                    if (!clientesExistentes.includes(clienteNombre.toUpperCase())) {
-                        clientesExistentes.push(clienteNombre.toUpperCase());
+                    if (!clientesExistentes.includes(cliente.toUpperCase())) {
+                        clientesExistentes.push(cliente.toUpperCase());
                         columnas[8] = clientesExistentes.join('#');
                     }
-                    
-                    lineas[indiceLinea] = columnas.join(';');
+                    lineasDetalle[indiceLinea] = columnas.join(';');
                     cambiosRealizados++;
                 }
             });
 
-            if (cambiosRealizados === 0) {
-                console.log("No se encontraron pallets que necesiten actualización o el cliente ya estaba asignado.");
-                showFeedback('Sincronización OK (sin cambios).');
-                return true; // No es un error, simplemente no hubo nada que cambiar
+            if (cambiosRealizados > 0) {
+                const nuevoContenidoCsvDetalle = lineasDetalle.join('\n');
+                const nuevoContenidoBase64Detalle = btoa(unescape(encodeURIComponent(nuevoContenidoCsvDetalle)));
+                const updateResponseDetalle = await fetch(urlDetalle, {
+                    method: 'PUT',
+                    headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: `Registro de despacho para ${cambiosRealizados} pallet(s) al cliente ${cliente}`,
+                        content: nuevoContenidoBase64Detalle,
+                        sha: fileDataDetalle.sha,
+                    }),
+                });
+                if (!updateResponseDetalle.ok) {
+                  const errorData = await updateResponseDetalle.json();
+                  throw new Error(`Error al actualizar ${RUTA_HISTORICO_CSV}: ${errorData.message}`);
+                }
             }
 
-            const nuevoContenidoCsv = lineas.join('\n');
-            const nuevoContenidoBase64 = btoa(unescape(encodeURIComponent(nuevoContenidoCsv)));
+            // --- TAREA 2: Actualizar listaempaque.csv ---
+            const urlLista = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${RUTA_LISTAEMPAQUE_CSV}`;
+            let shaLista = null;
+            let contenidoCsvLista = "";
+            let maxId = 0;
+            
+            try {
+                const fileResponseLista = await fetch(urlLista, { headers: { 'Authorization': `token ${apiToken}` }, cache: 'no-store' });
+                if (fileResponseLista.ok) {
+                    const fileDataLista = await fileResponseLista.json();
+                    shaLista = fileDataLista.sha;
+                    contenidoCsvLista = atob(fileDataLista.content);
+                    const lineasLista = contenidoCsvLista.split('\n').filter(Boolean);
+                    if (lineasLista.length > 1) { // Ignorar cabecera
+                        maxId = Math.max(...lineasLista.slice(1).map(line => parseInt(line.split(';')[0], 10) || 0));
+                    }
+                } else if (fileResponseLista.status !== 404) {
+                    throw new Error(`Error ${fileResponseLista.status}: No se pudo obtener ${RUTA_LISTAEMPAQUE_CSV}.`);
+                }
+            } catch (error) {
+                console.warn("No se pudo leer listaempaque.csv, se creará uno nuevo.", error);
+            }
 
-            const updateResponse = await fetch(url, {
+            const newIdLista = maxId + 1;
+            const now = new Date();
+            const fechaCreacion = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`;
+            
+            let nuevasLineas = itemsScaneados.map(item => {
+                const campos = [
+                    newIdLista,
+                    cliente,
+                    legajo,
+                    item.sku,
+                    item.descripcion,
+                    item.numeroDePallet,
+                    item.lotesProduccion.join('#'),
+                    item.fechaProduccion,
+                    item.cantidad.replace(/\./g, '').replace(',', '.'), // Formato numérico consistente
+                    item.unidadMedida,
+                    fechaCreacion
+                ];
+                return campos.join(';');
+            });
+
+            let nuevoContenidoCsvLista;
+            if (contenidoCsvLista.trim() === "") {
+                const cabecera = "idlista;Cliente;Legajo;Sku;descripcion sku;nro de pallet;Lotes de produccion;Fecha de produccion;cantidad;unnidad de medida;Fecha Creacion lista";
+                nuevoContenidoCsvLista = cabecera + '\n' + nuevasLineas.join('\n');
+            } else {
+                nuevoContenidoCsvLista = contenidoCsvLista.trim() + '\n' + nuevasLineas.join('\n');
+            }
+
+            const nuevoContenidoBase64Lista = btoa(unescape(encodeURIComponent(nuevoContenidoCsvLista)));
+            const updateResponseLista = await fetch(urlLista, {
                 method: 'PUT',
-                headers: {
-                    'Authorization': `token ${apiToken}`,
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    message: `Registro de despacho para ${cambiosRealizados} pallet(s) al cliente ${clienteNombre}`,
-                    content: nuevoContenidoBase64,
-                    sha: sha,
+                    message: `Agrega lista de empaque ID ${newIdLista} para cliente ${cliente}`,
+                    content: nuevoContenidoBase64Lista,
+                    sha: shaLista, // Será null si el archivo es nuevo
                 }),
             });
 
-            if (!updateResponse.ok) {
-                const errorData = await updateResponse.json();
-                throw new Error(`Error ${updateResponse.status}: No se pudo actualizar el archivo en GitHub. ${errorData.message}`);
+            if (!updateResponseLista.ok) {
+                const errorData = await updateResponseLista.json();
+                throw new Error(`Error al actualizar ${RUTA_LISTAEMPAQUE_CSV}: ${errorData.message}`);
             }
 
-            console.log(`¡Éxito! Se registraron ${cambiosRealizados} pallets como despachados.`);
+            console.log(`¡Éxito! Se guardaron todos los registros.`);
             showFeedback('¡Despacho registrado en GitHub!');
             return true;
 
         } catch (error) {
-            console.error("FALLO el registro de despacho en GitHub:", error);
-            setModalContent({ title: 'Error de Sincronización', message: `No se pudo registrar el despacho en GitHub.\n\nDetalle: ${error.message}` });
+            console.error("FALLO el proceso de guardado en GitHub:", error);
+            setModalContent({ title: 'Error de Sincronización', message: `No se pudo registrar la operación en GitHub.\n\nDetalle: ${error.message}` });
             setShowInfoModal(true);
             return false;
         } finally {
@@ -541,6 +582,9 @@
             setIsGenerating(false);
         }
       };
+      // =================================================================
+      // ### FIN: LÓGICA DE GUARDADO ATÓMICO EN GITHUB ###
+      // =================================================================
 
 
       const parseSpanishNumber = (str) => {
@@ -747,10 +791,6 @@
         setEditingQuantity('');
       };
 
-      // =================================================================
-      // ### INICIO: CÓDIGO NUEVO AÑADIDO ###
-      // Esta es la nueva función para manejar la eliminación de lotes.
-      // =================================================================
       const handleDeleteLote = (itemId, loteToDelete) => {
         setConfirmationModalContent({
             title: 'Confirmar Eliminación',
@@ -774,9 +814,6 @@
         });
         setShowConfirmationModal(true);
       };
-      // =================================================================
-      // ### FIN: CÓDIGO NUEVO AÑADIDO ###
-      // =================================================================
 
       const handleManualSubmit = (e) => {
         e.preventDefault();
@@ -941,8 +978,8 @@
           setShowInfoModal(true);
           return null;
         } finally {
-          setIsGenerating(false);
-          setIsActionsOpen(false);
+          // La generación del PDF no debe cambiar el estado de `isGenerating` aquí,
+          // ya que la función principal de guardado lo controla.
         }
       };
 
@@ -988,15 +1025,17 @@
 
         setConfirmationModalContent({
             title: 'Confirmar Despacho',
-            message: `Está a punto de registrar el despacho de ${items.length} pallet(s) para el cliente ${clienteNombre}.\n\nEsta acción marcará los lotes como despachados en el sistema y no se puede deshacer.\n\n¿Desea continuar?`,
+            message: `Está a punto de registrar el despacho de ${items.length} pallet(s) para el cliente ${clienteNombre}.\n\nEsta acción marcará los lotes como despachados y guardará la lista en el sistema. No se puede deshacer.\n\n¿Desea continuar?`,
             onConfirm: async () => {
                 setShowConfirmationModal(false);
-                const success = await registrarDespachoEnGitHub(items, clienteNombre);
+                // Llamada a la nueva función de guardado atómico
+                const success = await ejecutarProcesoDeGuardado(items, clienteNombre, operarioLegajo);
                 if (success) {
-                    showFeedback('¡Despacho registrado! Generando PDF...');
+                    showFeedback('¡Operación registrada! Generando PDF...');
                     await finalAction();
                 } else {
-                    showFeedback('Fallo el registro del despacho. La operación fue cancelada.');
+                    // El error ya se muestra en la función de guardado
+                    showFeedback('Fallo el registro de la operación.');
                 }
             },
             onCancel: () => {
@@ -1011,7 +1050,10 @@
       const handleDownloadPdf = () => {
         handleDispatchAndExecuteAction(async () => {
             const pdf = await createPdfDocument();
-            if (pdf) pdf.save(getPdfFilename());
+            if (pdf) {
+                pdf.save(getPdfFilename());
+                setIsGenerating(false); // Asegurarse de resetear el estado
+            }
         });
       };
 
@@ -1024,6 +1066,7 @@
                 iframe.src = pdf.output('bloburl');
                 document.body.appendChild(iframe);
                 iframe.contentWindow.print();
+                setIsGenerating(false);
             }
         });
       };
@@ -1040,6 +1083,7 @@
                 document.body.appendChild(iframe);
                 iframe.src = mailtoLink;
                 setTimeout(() => document.body.removeChild(iframe), 500);
+                setIsGenerating(false);
             }
         });
       };
@@ -1052,6 +1096,7 @@
                 pdf.save(pdfName);
                 setModalContent({ title: 'Enviar por WhatsApp', message: `El archivo "${pdfName}" se ha descargado. Ahora se abrirá WhatsApp Web para que lo adjuntes.` });
                 setShowInfoModal(true);
+                setIsGenerating(false);
             }
         });
       };
@@ -1059,7 +1104,10 @@
       const handleShare = () => {
         handleDispatchAndExecuteAction(async () => {
             const pdf = await createPdfDocument();
-            if (!pdf) return;
+            if (!pdf) {
+                setIsGenerating(false);
+                return;
+            }
 
             const pdfBlob = pdf.output('blob');
             const pdfFile = new File([pdfBlob], getPdfFilename(), { type: 'application/pdf' });
@@ -1080,9 +1128,10 @@
                     }
                 }
             } else {
-                setModalContent({ title: 'No se puede compartir', message: `Tu navegador no soporta compartir este tipo de archivo. Por favor, descarga el PDF y compártelo manualmente.` });
+                setModalContent({ title: 'No se puede compartir', message: `Tu navegador no soporta compartir este tipo de archivo. Por favor, descarga el PDF y compártelo manually.` });
                 setShowInfoModal(true);
             }
+            setIsGenerating(false);
         });
       };
 
@@ -1343,10 +1392,6 @@
                         <tr><td colSpan="9" className="px-2 py-4 text-center text-sm text-gray-500 italic">Aún no hay registros.</td></tr>
                       ) : (
                         items.map((item) => (
-                          // =================================================================
-                          // ### INICIO: CÓDIGO MODIFICADO ###
-                          // Esta es la sección de la tabla que ha sido actualizada.
-                          // =================================================================
                           <tr 
                             key={item.id} 
                             className={`group ${item.tieneNota ? 'bg-yellow-100 hover:bg-yellow-200' : 'hover:bg-gray-50'}`}
@@ -1406,9 +1451,6 @@
                             <td className="px-2 py-4 text-center"><input type="checkbox" checked={item.controlado} onChange={() => handleControlCheck(item.id)} className="h-4 w-4"/></td>
                             <td className="px-2 py-4 text-center"><button onClick={() => handleDelete(item.id)} className="text-red-600 hover:text-red-900"><i className="fas fa-trash"></i></button></td>
                           </tr>
-                          // =================================================================
-                          // ### FIN: CÓDIGO MODIFICADO ###
-                          // =================================================================
                         ))
                       )}
                       <tr className="bg-gray-100 font-bold">
