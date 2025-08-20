@@ -747,6 +747,10 @@
         setEditingQuantity('');
       };
 
+      // =================================================================
+      // ### INICIO: CÓDIGO NUEVO AÑADIDO ###
+      // Esta es la nueva función para manejar la eliminación de lotes.
+      // =================================================================
       const handleDeleteLote = (itemId, loteToDelete) => {
         setConfirmationModalContent({
             title: 'Confirmar Eliminación',
@@ -770,6 +774,9 @@
         });
         setShowConfirmationModal(true);
       };
+      // =================================================================
+      // ### FIN: CÓDIGO NUEVO AÑADIDO ###
+      // =================================================================
 
       const handleManualSubmit = (e) => {
         e.preventDefault();
@@ -1336,6 +1343,10 @@
                         <tr><td colSpan="9" className="px-2 py-4 text-center text-sm text-gray-500 italic">Aún no hay registros.</td></tr>
                       ) : (
                         items.map((item) => (
+                          // =================================================================
+                          // ### INICIO: CÓDIGO MODIFICADO ###
+                          // Esta es la sección de la tabla que ha sido actualizada.
+                          // =================================================================
                           <tr 
                             key={item.id} 
                             className={`group ${item.tieneNota ? 'bg-yellow-100 hover:bg-yellow-200' : 'hover:bg-gray-50'}`}
@@ -1395,6 +1406,9 @@
                             <td className="px-2 py-4 text-center"><input type="checkbox" checked={item.controlado} onChange={() => handleControlCheck(item.id)} className="h-4 w-4"/></td>
                             <td className="px-2 py-4 text-center"><button onClick={() => handleDelete(item.id)} className="text-red-600 hover:text-red-900"><i className="fas fa-trash"></i></button></td>
                           </tr>
+                          // =================================================================
+                          // ### FIN: CÓDIGO MODIFICADO ###
+                          // =================================================================
                         ))
                       )}
                       <tr className="bg-gray-100 font-bold">
