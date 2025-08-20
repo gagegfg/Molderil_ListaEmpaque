@@ -32,6 +32,9 @@
         th:hover .sort-icon {
             opacity: 1;
         }
+        .zebra-stripes tbody tr:nth-child(even) {
+            background-color: #f9fafb; /* bg-gray-50 */
+        }
     </style>
 </head>
 <body class="bg-gray-100 font-sans">
@@ -73,6 +76,25 @@
             
             const [isExportOpen, setIsExportOpen] = useState(false);
             const exportMenuRef = useRef(null);
+            
+            const displayHeaders = useMemo(() => {
+                if (headers.length === 0) return [];
+                
+                const preferredOrder = [
+                    'idlista', 'legajo', 'fecha lista de empaque', 'cliente', 
+                    'transporte', 'lotes de produccion', 'bultos', 'remito', 
+                    'orden de compra'
+                ];
+                
+                return [...headers].sort((a, b) => {
+                    const indexA = preferredOrder.indexOf(a);
+                    const indexB = preferredOrder.indexOf(b);
+                    if (indexA === -1 && indexB === -1) return 0;
+                    if (indexA === -1) return 1;
+                    if (indexB === -1) return -1;
+                    return indexA - indexB;
+                });
+            }, [headers]);
 
             const getApiToken = async (file) => {
                 try {
@@ -112,7 +134,7 @@
 
                 if (csvRows.length > 0) {
                     const headerRow = csvRows.shift();
-                    const parsedHeaders = headerRow.split(';').map(h => h.trim());
+                    const parsedHeaders = headerRow.split(';').map(h => h.trim().replace(/\r/g, ''));
                     setHeaders(parsedHeaders);
 
                     const initialFilters = {};
@@ -123,7 +145,7 @@
                         const values = row.split(';');
                         const rowData = { id: `row-${index}` };
                         parsedHeaders.forEach((header, i) => {
-                            rowData[header] = values[i] || '';
+                            rowData[header] = (values[i] || '').trim().replace(/\r/g, '');
                         });
                         return rowData;
                     });
@@ -132,17 +154,14 @@
                 setIsLoading(false);
             }, [fetchCsvFromGithub, apiToken]);
 
-            // --- INICIALIZACIÓN DE LA APP ---
             useEffect(() => {
                 const initializeApp = async () => {
                     document.getElementById('loader-status').textContent = "Verificando acceso...";
                     document.getElementById('loader-progress').style.width = '33%';
                     const token = await getApiToken('cls.txt');
-                    if (token) {
-                        setApiToken(token);
-                    } else {
-                        document.getElementById('loader-status').textContent = "Error de autenticación. No se pudo iniciar.";
-                        document.getElementById('loader-progress').style.width = '100%';
+                    if (token) setApiToken(token);
+                    else {
+                        document.getElementById('loader-status').textContent = "Error de autenticación.";
                         document.getElementById('loader-progress').classList.add('bg-red-500');
                     }
                 };
@@ -150,29 +169,27 @@
             }, []);
 
             useEffect(() => {
-                const loadInitialData = async () => {
-                    const loaderStatus = document.getElementById('loader-status');
-                    const loaderProgress = document.getElementById('loader-progress');
-                    const staticLoader = document.getElementById('static-loader');
-                    loaderStatus.textContent = "Cargando histórico...";
-                    loaderProgress.style.width = '66%';
-                    await loadData();
-                    loaderStatus.textContent = "¡Listo!";
-                    loaderProgress.style.width = '100%';
-                    setTimeout(() => {
-                        if (staticLoader) {
-                            staticLoader.classList.add('opacity-0');
-                            setTimeout(() => staticLoader.remove(), 500);
-                        }
-                    }, 500);
-                };
-                if(apiToken) loadInitialData();
+                if(apiToken) {
+                     const loadInitialData = async () => {
+                        const loader = document.getElementById('static-loader');
+                        document.getElementById('loader-status').textContent = "Cargando histórico...";
+                        document.getElementById('loader-progress').style.width = '66%';
+                        await loadData();
+                        document.getElementById('loader-status').textContent = "¡Listo!";
+                        document.getElementById('loader-progress').style.width = '100%';
+                        setTimeout(() => {
+                            if (loader) {
+                                loader.classList.add('opacity-0');
+                                setTimeout(() => loader.remove(), 500);
+                            }
+                        }, 500);
+                    };
+                    loadInitialData();
+                }
             }, [apiToken, loadData]);
 
-            // --- LÓGICA DE FILTRADO Y ORDENAMIENTO ---
             useEffect(() => {
                 let data = [...allData];
-
                 if (globalFilter) {
                     const lowercasedFilter = globalFilter.toLowerCase();
                     data = data.filter(item => 
@@ -213,19 +230,14 @@
                 let sortableItems = [...filteredData];
                 if (sortConfig.key) {
                     sortableItems.sort((a, b) => {
-                        if (a[sortConfig.key] < b[sortConfig.key]) {
-                            return sortConfig.direction === 'ascending' ? -1 : 1;
-                        }
-                        if (a[sortConfig.key] > b[sortConfig.key]) {
-                            return sortConfig.direction === 'ascending' ? 1 : -1;
-                        }
+                        if (a[sortConfig.key] < b[sortConfig.key]) return sortConfig.direction === 'ascending' ? -1 : 1;
+                        if (a[sortConfig.key] > b[sortConfig.key]) return sortConfig.direction === 'ascending' ? 1 : -1;
                         return 0;
                     });
                 }
                 return sortableItems;
             }, [filteredData, sortConfig]);
 
-            // --- MANEJADORES DE EVENTOS ---
             useEffect(() => {
                 const handleClickOutside = (event) => {
                     if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) setIsExportOpen(false);
@@ -253,17 +265,10 @@
                 setFechaHasta('');
             };
 
-            // --- FUNCIONES DE EXPORTACIÓN ---
             const exportToPDF = () => {
                 const doc = new jsPDF({ orientation: 'landscape' });
-                doc.setFontSize(18);
                 doc.text("Histórico de Listas de Empaque", 14, 16);
-                const tableRows = [];
-                sortedData.forEach(item => {
-                    const rowData = headers.map(header => item[header] || '');
-                    tableRows.push(rowData);
-                });
-                doc.autoTable({ head: [headers], body: tableRows, startY: 22, theme: 'grid', headStyles: { fillColor: [22, 160, 133] } });
+                doc.autoTable({ head: [displayHeaders], body: sortedData.map(item => displayHeaders.map(header => item[header] || '')), startY: 22 });
                 doc.save("historico_listas_empaque.pdf");
                 setIsExportOpen(false);
             };
@@ -271,9 +276,7 @@
             const exportToExcel = () => {
                 const excelData = sortedData.map(item => {
                     const rowObject = {};
-                    headers.forEach(header => {
-                        rowObject[header] = item[header];
-                    });
+                    displayHeaders.forEach(header => { rowObject[header] = item[header]; });
                     return rowObject;
                 });
                 const worksheet = XLSX.utils.json_to_sheet(excelData);
@@ -282,6 +285,23 @@
                 XLSX.writeFile(workbook, "historico_listas_empaque.xlsx");
                 setIsExportOpen(false);
             };
+            
+            const getColumnClasses = (header) => {
+                let classes = 'px-3 py-2 text-sm text-gray-700 align-middle';
+                switch(header) {
+                    case 'idlista':
+                    case 'legajo':
+                        return `${classes} w-20 font-semibold text-gray-900 whitespace-nowrap`;
+                    case 'cliente':
+                         return `${classes} font-semibold text-indigo-700`;
+                    case 'fecha lista de empaque':
+                        return `${classes} w-40 whitespace-nowrap`;
+                    case 'bultos':
+                        return `${classes} w-24 text-center`;
+                    default:
+                        return classes;
+                }
+            };
 
             return (
                 <div className="min-h-screen p-4 sm:p-6 bg-black bg-opacity-50">
@@ -289,8 +309,8 @@
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b pb-4 border-gray-200">
                              <h1 className="text-3xl font-extrabold text-gray-800">Histórico de Listas de Empaque</h1>
                              <div className="flex items-center space-x-3 mt-4 sm:mt-0">
-                                <a href="grillaqr.html" className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 transition-colors shadow-sm flex items-center"><i className="fas fa-qrcode mr-2"></i>Volver a Trazabilidad</a>
-                                <a href="index.html" className="bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">Volver al Menú</a>
+                                <a href="grillaqr.html" className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 transition-colors shadow-sm flex items-center"><i className="fas fa-qrcode mr-2"></i>Trazabilidad Lotes</a>
+                                <a href="index.html" className="bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">Menú Principal</a>
                             </div>
                         </div>
                         
@@ -298,10 +318,7 @@
                             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                <div className="md:col-span-2">
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Búsqueda Global</label>
-                                    <div className="relative">
-                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><i className="fas fa-search text-gray-400"></i></div>
-                                        <input type="text" placeholder="Buscar en toda la tabla..." value={globalFilter} onChange={e => setGlobalFilter(e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm p-2 border pl-10"/>
-                                    </div>
+                                    <input type="text" placeholder="Buscar en toda la tabla..." value={globalFilter} onChange={e => setGlobalFilter(e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm p-2 border"/>
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Fecha Desde</label>
@@ -312,9 +329,7 @@
                                     <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)} className="w-full rounded-md border-gray-300 shadow-sm p-2 border"/>
                                 </div>
                             </div>
-                             <div className="flex justify-end">
-                                <button onClick={clearFilters} className="bg-white text-gray-700 border border-gray-300 font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-gray-50 flex items-center justify-center"><i className="fas fa-times-circle mr-2"></i>Limpiar Todos los Filtros</button>
-                            </div>
+                             <div className="flex justify-end"><button onClick={clearFilters} className="bg-white text-gray-700 border border-gray-300 font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-gray-50 flex items-center"><i className="fas fa-times-circle mr-2"></i>Limpiar Filtros</button></div>
                         </div>
 
                         <div className="flex flex-col sm:flex-row justify-between items-center mb-4">
@@ -324,79 +339,48 @@
                                 <div className="relative" ref={exportMenuRef}>
                                     <button onClick={() => setIsExportOpen(prev => !prev)} disabled={sortedData.length === 0} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-blue-700 disabled:opacity-50 flex items-center"><i className="fas fa-download mr-2"></i>Exportar<i className={`fas fa-chevron-down ml-2 transition-transform ${isExportOpen ? 'rotate-180' : ''}`}></i></button>
                                     {isExportOpen && (
-                                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border z-20">
-                                            <ul className="text-gray-700">
-                                                <li><button onClick={exportToPDF} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-file-pdf w-6 mr-2 text-red-500"></i>Exportar a PDF</button></li>
-                                                <li><button onClick={exportToExcel} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-file-excel w-6 mr-2 text-green-500"></i>Exportar a Excel</button></li>
-                                            </ul>
-                                        </div>
+                                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border z-20"><ul className="text-gray-700">
+                                            <li><button onClick={exportToPDF} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-file-pdf w-6 mr-2 text-red-500"></i>a PDF</button></li>
+                                            <li><button onClick={exportToExcel} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-file-excel w-6 mr-2 text-green-500"></i>a Excel</button></li>
+                                        </ul></div>
                                     )}
                                 </div>
                             </div>
                         </div>
 
                         <div className="overflow-x-auto rounded-lg shadow-md border" style={{ maxHeight: '65vh' }}>
-                            <table className="min-w-full divide-y divide-gray-200">
+                            <table className="min-w-full divide-y divide-gray-200 table-auto zebra-stripes">
                                 <thead className="bg-gray-800 text-white sticky top-0 z-10">
-                                    <tr>
-                                        {headers.map(header => (
-                                            <th key={header} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider" onClick={() => handleSort(header)}>
-                                                <div className="flex items-center">
-                                                    <span>{header}</span>
-                                                    {sortConfig.key === header ? (
-                                                        <i className={`fas ${sortConfig.direction === 'ascending' ? 'fa-sort-up' : 'fa-sort-down'} ml-2`}></i>
-                                                    ) : (
-                                                        <i className="fas fa-sort ml-2 sort-icon"></i>
-                                                    )}
-                                                </div>
-                                            </th>
-                                        ))}
-                                    </tr>
+                                    <tr>{displayHeaders.map(header => (<th key={header} className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider" onClick={() => handleSort(header)}>
+                                        <div className="flex items-center">{header}<i className={`fas ${sortConfig.key === header ? (sortConfig.direction === 'ascending' ? 'fa-sort-up' : 'fa-sort-down') : 'fa-sort'} ml-2 sort-icon`}></i></div>
+                                    </th>))}</tr>
                                     <tr className="bg-gray-200">
-                                        {headers.map(header => (
-                                            <th key={`filter-${header}`} className="p-1">
-                                                <input 
-                                                    type="text" 
-                                                    placeholder={`Filtrar ${header}...`}
-                                                    value={columnFilters[header] || ''} 
-                                                    onChange={e => handleColumnFilterChange(header, e.target.value)} 
-                                                    className="w-full p-1 text-sm text-gray-700 border rounded"
-                                                />
-                                            </th>
+                                        {displayHeaders.map(header => (<th key={`filter-${header}`} className="p-1"><input type="text" placeholder="Filtrar..." value={columnFilters[header] || ''} onChange={e => handleColumnFilterChange(header, e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
                                         ))}
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
-                                    {isLoading ? (
-                                        <tr><td colSpan={headers.length} className="p-8 text-center text-gray-500">Cargando datos...</td></tr>
-                                    ) : (
-                                        sortedData.length > 0 ? sortedData.map((item) => (
-                                            <tr key={item.id} className="hover:bg-gray-50">
-                                                {headers.map(header => {
-                                                    // --- INICIO DE LA MODIFICACIÓN PARA CÁPSULAS ---
-                                                    const isLotesColumn = header === 'lotes de produccion';
+                                    {isLoading ? (<tr><td colSpan={displayHeaders.length} className="p-8 text-center text-gray-500">Cargando datos...</td></tr>) 
+                                    : ( sortedData.length > 0 ? sortedData.map((item) => (
+                                        <tr key={item.id} className="hover:bg-blue-50">
+                                            {displayHeaders.map(header => {
+                                                const content = item[header];
+                                                const isLotesColumn = header === 'lotes de produccion';
 
-                                                    return (
-                                                        <td key={`${item.id}-${header}`} className="px-4 py-2 text-sm text-gray-600 align-middle">
-                                                            {isLotesColumn && item[header] ? (
-                                                                <div className="flex flex-wrap gap-1">
-                                                                    {item[header].split('#').filter(lote => lote.trim() !== '').map((lote, i) => (
-                                                                        <span key={`${lote}-${i}`} className="px-2.5 py-0.5 text-xs font-semibold bg-gray-100 text-gray-800 rounded-full">
-                                                                            {lote}
-                                                                        </span>
-                                                                    ))}
-                                                                </div>
-                                                            ) : (
-                                                                item[header]
-                                                            )}
-                                                        </td>
-                                                    );
-                                                    // --- FIN DE LA MODIFICACIÓN ---
-                                                })}
-                                            </tr>
-                                        )) : (
-                                            <tr><td colSpan={headers.length} className="px-4 py-8 text-center text-sm text-gray-500">No se encontraron registros con los filtros aplicados.</td></tr>
-                                        )
+                                                return (
+                                                    <td key={`${item.id}-${header}`} className={getColumnClasses(header)}>
+                                                        {isLotesColumn && content ? (
+                                                            <div className="flex flex-wrap gap-1">
+                                                                {content.split('#').filter(lote => lote.trim() !== '').map((lote, i) => (
+                                                                    <span key={`${lote}-${i}`} className="px-2 py-0.5 text-xs font-semibold bg-gray-200 text-gray-800 rounded-full">{lote}</span>
+                                                                ))}
+                                                            </div>
+                                                        ) : (content)}
+                                                    </td>
+                                                );
+                                            })}
+                                        </tr>
+                                    )) : (<tr><td colSpan={displayHeaders.length} className="p-8 text-center text-gray-500">No se encontraron registros.</td></tr>)
                                     )}
                                 </tbody>
                             </table>
