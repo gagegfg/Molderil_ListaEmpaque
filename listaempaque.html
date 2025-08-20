@@ -50,7 +50,7 @@
     const USUARIO_GITHUB = 'gagegfg';
     const REPO_NOMBRE = 'Molderil_ListaEmpaque';
     const RUTA_HISTORICO_CSV = 'detallelotes.csv';
-    const RUTA_LISTAEMPAQUE_CSV = 'listaempaque.csv'; // <-- NUEVA RUTA
+    const RUTA_LISTAEMPAQUE_CSV = 'listaempaque.csv';
     const RUTA_CLS_TXT = 'cls.txt';
     
     // --- CONFIGURACIÓN DEL SISTEMA DE BLOQUEO ---
@@ -124,25 +124,24 @@
               <h4 className="font-semibold text-lg text-indigo-600">3. La Lista de Artículos</h4>
               <p>Cada artículo que escaneas se añade a la tabla. Dentro de la tabla puedes:</p>
                <ul className="list-disc list-inside ml-4 mt-1">
-                <li><strong>Editar la Cantidad:</strong> Si necesitas hacer "picking" (usar una cantidad parcial), haz clic en la cantidad en la tabla para editarla. No puedes ingresar una cantidad mayor a la original del pallet.</li>
-                <li><strong>Eliminar Lotes:</strong> Al editar la cantidad de un pallet con varios lotes, aparecerá una (X) para eliminar los lotes que no correspondan.</li>
-                <li><strong>Marcar como Controlado:</strong> Usa la casilla de verificación para llevar un control visual de los pallets que ya has revisado.</li>
-                <li><strong>Eliminar (🗑️):</strong> Si agregaste un artículo por error, usa el ícono de la papelera para quitarlo de la lista.</li>
-                <li><strong>Ver el Total:</strong> Debajo de la tabla siempre verás el conteo total de bultos escaneados.</li>
+                <li><strong>Editar la Cantidad:</strong> Si necesitas hacer "picking", haz clic en la cantidad para editarla. No puedes ingresar una cantidad mayor a la original.</li>
+                <li><strong>Eliminar Lotes:</strong> Al editar la cantidad, aparecerá una (X) para eliminar los lotes que no correspondan (si hay más de uno).</li>
+                <li><strong>Marcar como Controlado:</strong> Usa la casilla de verificación para llevar un control visual.</li>
+                <li><strong>Eliminar (🗑️):</strong> Quita un artículo de la lista si lo agregaste por error.</li>
                 <li><strong>Ver Notas (Doble Clic):</strong> Si una fila está coloreada, haz doble clic para ver la nota asociada.</li>
               </ul>
+              <p className="mt-2 text-sm font-bold text-red-600">Importante: Una vez que guardas la lista (descargando PDF, etc.), ya no podrás editarla.</p>
             </div>
 
             <div>
               <h4 className="font-semibold text-lg text-indigo-600">4. Acciones Finales y Exportación</h4>
               <p>Cuando hayas terminado de escanear, tienes varias opciones:</p>
               <ul className="list-disc list-inside ml-4 mt-1">
-                <li><strong>Botón Principal (Compartir/Descargar):</strong> Es la acción más común. Genera un PDF y te permite compartirlo (en móviles) o descargarlo.</li>
-                <li><strong>Menú "Más Acciones" (▼):</strong> Despliega opciones adicionales como Imprimir, Enviar por Correo/WhatsApp o Copiar los datos en formato JSON.</li>
-                 <li><strong>Nuevo Escaneo:</strong> Limpia la pantalla y te permite iniciar una nueva lista de empaque, ya sea para otro cliente o con otro legajo.</li>
+                <li><strong>Botón Principal (Descargar PDF):</strong> Es la acción más común. Genera y descarga un PDF. Al hacer esto por primera vez, la lista se guardará en el sistema y se cerrará para futuras ediciones.</li>
+                <li><strong>Menú "Más Acciones" (▼):</strong> Despliega opciones adicionales como Imprimir, Compartir, etc.</li>
+                 <li><strong>Nuevo Escaneo:</strong> Limpia la pantalla y te permite iniciar una nueva lista de empaque.</li>
                 <li><strong>Volver al Menú:</strong> Te regresa a la página principal de la aplicación.</li>
               </ul>
-               <p className="mt-2 text-sm font-bold text-red-600">Importante: Al generar un PDF (por cualquier método), el sistema te pedirá confirmación para registrar el despacho. Esta acción marcará los pallets como despachados y asignará al cliente en el sistema de control de GitHub.</p>
             </div>
           </div>
 
@@ -166,7 +165,7 @@
               No (Cancelar)
             </button>
             <button onClick={onConfirm} className="bg-green-600 text-white font-semibold py-2 px-6 rounded-md shadow-md hover:bg-green-700">
-              Sí (Adjuntar)
+              Sí (Confirmar)
             </button>
           </div>
         </div>
@@ -195,6 +194,7 @@
       const [isShareApiSupported, setIsShareApiSupported] = useState(false);
       const [editingItemId, setEditingItemId] = useState(null);
       const [editingQuantity, setEditingQuantity] = useState('');
+      const [isListSaved, setIsListSaved] = useState(false); // <-- NUEVO ESTADO PARA BLOQUEAR LA LISTA
 
       const [clientList, setClientList] = useState([]);
       const [skuList, setSkuList] = useState([]);
@@ -435,9 +435,7 @@
             }
         };
 
-      // =================================================================
-      // ### INICIO: LÓGICA DE GUARDADO ATÓMICO EN GITHUB ###
-      // =================================================================
+      // --- LÓGICA DE GUARDADO ATÓMICO EN GITHUB ---
       const ejecutarProcesoDeGuardado = async (itemsScaneados, cliente, legajo) => {
         if (!apiToken) throw new Error("No hay token de API para conectar con GitHub.");
         if (itemsScaneados.length === 0) {
@@ -453,7 +451,7 @@
         setIsGenerating(true);
         
         try {
-            // --- TAREA 1: Actualizar detallelotes.csv ---
+            // TAREA 1: Actualizar detallelotes.csv
             const urlDetalle = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${RUTA_HISTORICO_CSV}`;
             const fileResponseDetalle = await fetch(urlDetalle, { headers: { 'Authorization': `token ${apiToken}` }, cache: 'no-store' });
             if (!fileResponseDetalle.ok) throw new Error(`Error ${fileResponseDetalle.status}: No se pudo obtener ${RUTA_HISTORICO_CSV}.`);
@@ -500,7 +498,7 @@
                 }
             }
 
-            // --- TAREA 2: Actualizar listaempaque.csv ---
+            // TAREA 2: Actualizar listaempaque.csv
             const urlLista = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${RUTA_LISTAEMPAQUE_CSV}`;
             let shaLista = null;
             let contenidoCsvLista = "";
@@ -513,7 +511,7 @@
                     shaLista = fileDataLista.sha;
                     contenidoCsvLista = atob(fileDataLista.content);
                     const lineasLista = contenidoCsvLista.split('\n').filter(Boolean);
-                    if (lineasLista.length > 1) { // Ignorar cabecera
+                    if (lineasLista.length > 1) {
                         maxId = Math.max(...lineasLista.slice(1).map(line => parseInt(line.split(';')[0], 10) || 0));
                     }
                 } else if (fileResponseLista.status !== 404) {
@@ -529,17 +527,10 @@
             
             let nuevasLineas = itemsScaneados.map(item => {
                 const campos = [
-                    newIdLista,
-                    cliente,
-                    legajo,
-                    item.sku,
-                    item.descripcion,
-                    item.numeroDePallet,
-                    item.lotesProduccion.join('#'),
-                    item.fechaProduccion,
-                    item.cantidad.replace(/\./g, '').replace(',', '.'), // Formato numérico consistente
-                    item.unidadMedida,
-                    fechaCreacion
+                    newIdLista, cliente, legajo, item.sku, item.descripcion, item.numeroDePallet,
+                    item.lotesProduccion.join('#'), item.fechaProduccion,
+                    item.cantidad.replace(/\./g, '').replace(',', '.'),
+                    item.unidadMedida, fechaCreacion
                 ];
                 return campos.join(';');
             });
@@ -559,7 +550,7 @@
                 body: JSON.stringify({
                     message: `Agrega lista de empaque ID ${newIdLista} para cliente ${cliente}`,
                     content: nuevoContenidoBase64Lista,
-                    sha: shaLista, // Será null si el archivo es nuevo
+                    sha: shaLista,
                 }),
             });
 
@@ -582,9 +573,6 @@
             setIsGenerating(false);
         }
       };
-      // =================================================================
-      // ### FIN: LÓGICA DE GUARDADO ATÓMICO EN GITHUB ###
-      // =================================================================
 
 
       const parseSpanishNumber = (str) => {
@@ -849,7 +837,7 @@
       };
 
       const createPdfDocument = async () => {
-        setIsGenerating(true);
+        // No se cambia el estado isGenerating aquí, se controla desde la función que lo llama
         try {
           if (!isPdfLibLoaded) throw new Error("La librería jsPDF no está cargada.");
           const { jsPDF } = window.jspdf;
@@ -939,7 +927,7 @@
               pdf.setFontSize(7);
             }
             if (item.tieneNota) {
-              pdf.setFillColor(255, 250, 205); // Light yellow
+              pdf.setFillColor(255, 250, 205);
               pdf.rect(m, y, pageWidth, rowHeight, 'F');
             }
             pdf.line(m, y, pdfWidth - m, y);
@@ -977,9 +965,6 @@
           setModalContent({ title: 'Error de PDF', message: `Error: ${error.message}` });
           setShowInfoModal(true);
           return null;
-        } finally {
-          // La generación del PDF no debe cambiar el estado de `isGenerating` aquí,
-          // ya que la función principal de guardado lo controla.
         }
       };
 
@@ -1005,7 +990,6 @@
                 textArea.remove();
             }
         });
-
         promise.then(() => showFeedback(feedbackMsg)).catch(() => showFeedback('Error al copiar'));
       };
 
@@ -1023,18 +1007,25 @@
             return;
         }
 
+        if (isListSaved) {
+            showFeedback('Generando documento de lista ya guardada...');
+            setIsGenerating(true);
+            await finalAction();
+            setIsGenerating(false);
+            return;
+        }
+
         setConfirmationModalContent({
-            title: 'Confirmar Despacho',
-            message: `Está a punto de registrar el despacho de ${items.length} pallet(s) para el cliente ${clienteNombre}.\n\nEsta acción marcará los lotes como despachados y guardará la lista en el sistema. No se puede deshacer.\n\n¿Desea continuar?`,
+            title: 'Confirmar y Cerrar Lista',
+            message: `Está a punto de registrar y CERRAR la lista con ${items.length} pallet(s).\n\nUna vez guardada, no podrá modificarla.\n\n¿Desea continuar?`,
             onConfirm: async () => {
                 setShowConfirmationModal(false);
-                // Llamada a la nueva función de guardado atómico
                 const success = await ejecutarProcesoDeGuardado(items, clienteNombre, operarioLegajo);
                 if (success) {
-                    showFeedback('¡Operación registrada! Generando PDF...');
+                    setIsListSaved(true);
+                    showFeedback('¡Operación registrada! Generando documento...');
                     await finalAction();
                 } else {
-                    // El error ya se muestra en la función de guardado
                     showFeedback('Fallo el registro de la operación.');
                 }
             },
@@ -1050,10 +1041,7 @@
       const handleDownloadPdf = () => {
         handleDispatchAndExecuteAction(async () => {
             const pdf = await createPdfDocument();
-            if (pdf) {
-                pdf.save(getPdfFilename());
-                setIsGenerating(false); // Asegurarse de resetear el estado
-            }
+            if (pdf) pdf.save(getPdfFilename());
         });
       };
 
@@ -1066,7 +1054,6 @@
                 iframe.src = pdf.output('bloburl');
                 document.body.appendChild(iframe);
                 iframe.contentWindow.print();
-                setIsGenerating(false);
             }
         });
       };
@@ -1083,7 +1070,6 @@
                 document.body.appendChild(iframe);
                 iframe.src = mailtoLink;
                 setTimeout(() => document.body.removeChild(iframe), 500);
-                setIsGenerating(false);
             }
         });
       };
@@ -1096,7 +1082,6 @@
                 pdf.save(pdfName);
                 setModalContent({ title: 'Enviar por WhatsApp', message: `El archivo "${pdfName}" se ha descargado. Ahora se abrirá WhatsApp Web para que lo adjuntes.` });
                 setShowInfoModal(true);
-                setIsGenerating(false);
             }
         });
       };
@@ -1104,10 +1089,7 @@
       const handleShare = () => {
         handleDispatchAndExecuteAction(async () => {
             const pdf = await createPdfDocument();
-            if (!pdf) {
-                setIsGenerating(false);
-                return;
-            }
+            if (!pdf) return;
 
             const pdfBlob = pdf.output('blob');
             const pdfFile = new File([pdfBlob], getPdfFilename(), { type: 'application/pdf' });
@@ -1128,10 +1110,9 @@
                     }
                 }
             } else {
-                setModalContent({ title: 'No se puede compartir', message: `Tu navegador no soporta compartir este tipo de archivo. Por favor, descarga el PDF y compártelo manually.` });
+                setModalContent({ title: 'No se puede compartir', message: `Tu navegador no soporta compartir este tipo de archivo. Por favor, descarga el PDF y compártelo manualmente.` });
                 setShowInfoModal(true);
             }
-            setIsGenerating(false);
         });
       };
 
@@ -1144,7 +1125,13 @@
         copyToClipboard(jsonString, '¡JSON copiado!');
       };
 
-      const handleReset = () => { setIsDataEntered(false); setOperarioLegajo(''); setClienteNombre(''); setItems([]); };
+      const handleReset = () => { 
+        setIsDataEntered(false); 
+        setOperarioLegajo(''); 
+        setClienteNombre(''); 
+        setItems([]); 
+        setIsListSaved(false);
+      };
 
       const handleCloseInfoModal = () => {
         setShowInfoModal(false);
@@ -1343,34 +1330,47 @@
               </div>
             ) : (
               <>
-                <div className="space-y-4 mb-4">
-                  <button onClick={() => setIsCameraActive(true)} className="w-full bg-purple-600 text-white font-semibold py-4 px-4 rounded-md shadow-md hover:bg-purple-700 text-xl flex items-center justify-center">
-                      <i className="fas fa-camera mr-3"></i> Escanear con Cámara
-                  </button>
-                  <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
-                    <form onSubmit={handleManualSubmit} className="flex-grow flex space-x-2">
-                      <input 
-                        type="text" 
-                        ref={manualInputRef} 
-                        value={mockQrValue} 
-                        onChange={(e) => setMockQrValue(e.target.value)} 
-                        className="w-full rounded-md p-2 border text-xl" 
-                        placeholder="Ingresar QR manual o con pistola"
-                      />
-                      <button 
-                        type="submit" 
-                        disabled={!mockQrValue} 
-                        className="bg-green-600 text-white font-semibold py-2 px-4 rounded-md shadow-md hover:bg-green-700 disabled:opacity-50 text-lg"
-                      >
-                        Agregar
-                      </button>
-                    </form>
-                    <button onClick={() => fileInputRef.current.click()} className="bg-orange-500 text-white font-semibold py-2 px-4 rounded-md shadow-md hover:bg-orange-600 text-lg flex items-center justify-center">
-                      <i className="fas fa-file-image mr-2"></i> Adjuntar QR
-                    </button>
-                    <input type="file" ref={fileInputRef} onChange={handleImageUpload} className="hidden" accept="image/*" />
+                {isListSaved ? (
+                  <div className="text-center p-4 mb-4 bg-yellow-100 border-t-4 border-yellow-500 rounded-b text-yellow-900 shadow-md">
+                    <div className="flex items-center justify-center">
+                        <i className="fas fa-lock text-2xl mr-3"></i>
+                        <div>
+                            <p className="font-bold text-lg">Esta lista ha sido guardada y cerrada.</p>
+                            <p className="text-sm">Para comenzar una nueva, presione "Nuevo Escaneo".</p>
+                        </div>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="space-y-4 mb-4">
+                    <button onClick={() => setIsCameraActive(true)} className="w-full bg-purple-600 text-white font-semibold py-4 px-4 rounded-md shadow-md hover:bg-purple-700 text-xl flex items-center justify-center">
+                        <i className="fas fa-camera mr-3"></i> Escanear con Cámara
+                    </button>
+                    <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
+                      <form onSubmit={handleManualSubmit} className="flex-grow flex space-x-2">
+                        <input 
+                          type="text" 
+                          ref={manualInputRef} 
+                          value={mockQrValue} 
+                          onChange={(e) => setMockQrValue(e.target.value)} 
+                          className="w-full rounded-md p-2 border text-xl" 
+                          placeholder="Ingresar QR manual o con pistola"
+                        />
+                        <button 
+                          type="submit" 
+                          disabled={!mockQrValue} 
+                          className="bg-green-600 text-white font-semibold py-2 px-4 rounded-md shadow-md hover:bg-green-700 disabled:opacity-50 text-lg"
+                        >
+                          Agregar
+                        </button>
+                      </form>
+                      <button onClick={() => fileInputRef.current.click()} className="bg-orange-500 text-white font-semibold py-2 px-4 rounded-md shadow-md hover:bg-orange-600 text-lg flex items-center justify-center">
+                        <i className="fas fa-file-image mr-2"></i> Adjuntar QR
+                      </button>
+                      <input type="file" ref={fileInputRef} onChange={handleImageUpload} className="hidden" accept="image/*" />
+                    </div>
+                  </div>
+                )}
+
 
                 <div className="overflow-x-auto rounded-lg shadow-md mb-6 border">
                   <table className="min-w-full divide-y divide-gray-200 table-auto">
@@ -1412,7 +1412,7 @@
                                     {item.lotesProduccion.map(lote => (
                                     <span key={lote} className="bg-gray-200 text-gray-800 text-xs font-semibold px-2.5 py-1 rounded-full flex items-center">
                                         {lote}
-                                        {item.cantidadEditada && item.lotesProduccion.length > 1 && (
+                                        {item.cantidadEditada && item.lotesProduccion.length > 1 && !isListSaved && (
                                         <button
                                             onClick={() => handleDeleteLote(item.id, lote)}
                                             className="ml-2 text-red-500 hover:text-red-800 font-bold"
@@ -1441,15 +1441,23 @@
                                   autoFocus
                                 />
                               ) : (
-                                <div onClick={() => handleStartEdit(item)} className="cursor-pointer p-1 rounded flex justify-between items-center">
+                                <div onClick={() => !isListSaved && handleStartEdit(item)} className={`${!isListSaved ? 'cursor-pointer' : ''} p-1 rounded flex justify-between items-center`}>
                                   <span>{item.cantidad}</span>
-                                  <i className="fas fa-pencil-alt ml-2 text-gray-300 group-hover:text-gray-600 transition-colors"></i>
+                                  {!isListSaved && <i className="fas fa-pencil-alt ml-2 text-gray-300 group-hover:text-gray-600 transition-colors"></i>}
                                 </div>
                               )}
                             </td>
                             <td className="px-2 py-4 whitespace-nowrap text-sm">{item.unidadMedida}</td>
                             <td className="px-2 py-4 text-center"><input type="checkbox" checked={item.controlado} onChange={() => handleControlCheck(item.id)} className="h-4 w-4"/></td>
-                            <td className="px-2 py-4 text-center"><button onClick={() => handleDelete(item.id)} className="text-red-600 hover:text-red-900"><i className="fas fa-trash"></i></button></td>
+                            <td className="px-2 py-4 text-center">
+                                <button 
+                                    onClick={() => handleDelete(item.id)} 
+                                    className={`text-red-600 ${isListSaved ? 'opacity-50 cursor-not-allowed' : 'hover:text-red-900'}`}
+                                    disabled={isListSaved}
+                                >
+                                    <i className="fas fa-trash"></i>
+                                </button>
+                            </td>
                           </tr>
                         ))
                       )}
@@ -1465,11 +1473,11 @@
                   <div className="relative w-full sm:w-auto flex-grow" ref={actionsMenuRef}>
                     <div className="flex rounded-md shadow-sm">
                         <button
-                            onClick={isShareApiSupported ? handleShare : handleDownloadPdf}
+                            onClick={handleDownloadPdf}
                             disabled={items.length === 0 || isGenerating || !isPdfLibLoaded}
                             className="flex-grow bg-blue-600 text-white font-semibold py-3 px-5 rounded-l-md hover:bg-blue-700 disabled:opacity-50 text-xl flex items-center justify-center"
                         >
-                            {isGenerating ? 'Registrando...' : (isShareApiSupported ? 'Compartir PDF' : 'Descargar PDF')}
+                            {isGenerating ? (isListSaved ? 'Generando...' : 'Registrando...') : 'Descargar PDF'}
                         </button>
                         <button
                             onClick={() => setIsActionsOpen(prev => !prev)}
@@ -1483,9 +1491,9 @@
                       <div className="absolute bottom-full mb-2 w-full bg-white rounded-md shadow-lg border z-20">
                         <ul className="text-gray-700">
                           {isShareApiSupported && (
-                            <li><button onClick={handleShare} className="w-full text-left font-bold text-indigo-600 hover:bg-indigo-50 p-3 flex items-center"><i className="fas fa-share-alt w-6 mr-2"></i>Compartir PDF</button></li>
+                            <li><button onClick={handleShare} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-share-alt w-6 mr-2"></i>Compartir PDF</button></li>
                           )}
-                          <li><button onClick={handleDownloadPdf} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-download w-6 mr-2"></i>Descargar PDF</button></li>
+                          <li><button onClick={handleDownloadPdf} className="w-full text-left font-bold text-indigo-600 hover:bg-indigo-50 p-3 flex items-center"><i className="fas fa-download w-6 mr-2"></i>Descargar PDF</button></li>
                           <li><button onClick={handlePrintPdf} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-print w-6 mr-2"></i>Imprimir PDF</button></li>
                           <li><button onClick={handleEmailPdf} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-envelope w-6 mr-2"></i>Enviar por Correo</button></li>
                           <li><button onClick={handleWhatsAppPdf} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fab fa-whatsapp w-6 mr-2"></i>Enviar por WhatsApp</button></li>
@@ -1513,4 +1521,4 @@
     root.render(<App />);
   </script>
 </body>
-</html>
+</ht
