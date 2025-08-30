@@ -97,6 +97,9 @@
 
             const [modalState, setModalState] = useState({ isOpen: false, type: null, title: '', message: '', onConfirm: null });
             const [observationModal, setObservationModal] = useState({ isOpen: false, text: '' });
+            // --- INICIO: Funcionalidad de Notas ---
+            const [noteModal, setNoteModal] = useState({ isOpen: false, item: null, text: '' });
+            // --- FIN: Funcionalidad de Notas ---
             const [reprintModal, setReprintModal] = useState({ isOpen: false, pdfUrl: null, printablePdfUrl: null, palletId: null });
             const [showHelpModal, setShowHelpModal] = useState(false);
             const [showPendingModal, setShowPendingModal] = useState(false);
@@ -381,7 +384,6 @@
                 }
             };
             
-            // --- CORREGIDO: Guardado secuencial para evitar error 409 ---
             const saveData = async (updatedLotes, updatedNotes) => {
                 const lock = await acquireLock('saveData');
                 if (!lock.success) {
@@ -393,12 +395,12 @@
                 let lotesResult = false;
                 let notesResult = false;
                 try {
-                    // 1. Guardar Lotes primero y esperar a que termine
+                    // 1. Guardar Lotes
                     lotesResult = await saveCsvToGithub(CSV_PATH_LOTES, updatedLotes, item => 
                         [item.sku, item.descripcion, item.numeroDePallet, item.lotesProduccion, item.fechaProduccion, item.cantidad, item.unidadMedida, item.despachado || 'FALSE', item.cliente || ''].join(';')
                     );
 
-                    // 2. Si el primer guardado fue exitoso, proceder con el segundo
+                    // 2. Guardar Notas
                     if (lotesResult === true) {
                         notesResult = await saveCsvToGithub(CSV_PATH_NOTAS, updatedNotes, item => 
                             [item.sku, item.numeroDePallet, item.observacion].join(';')
@@ -623,6 +625,73 @@
                     }
                 });
             };
+
+            // --- INICIO: Funcionalidad de Notas ---
+            const handleOpenNoteModal = (item) => {
+                setNoteModal({
+                    isOpen: true,
+                    item: item,
+                    text: item.noteText || ''
+                });
+            };
+
+            const handleSaveNote = () => {
+                const { item, text } = noteModal;
+                const updatedText = text.trim();
+
+                // Cerrar el modal inmediatamente
+                setNoteModal({ isOpen: false, item: null, text: '' });
+
+                executeActionWithAuth(() => {
+                    let newNotesData = [...notesData];
+                    const noteIndex = newNotesData.findIndex(n => n.sku === item.sku && n.numeroDePallet === item.numeroDePallet);
+
+                    if (updatedText) { // Guardar o actualizar nota
+                        if (noteIndex > -1) {
+                            newNotesData[noteIndex].observacion = updatedText;
+                        } else {
+                            newNotesData.push({ sku: item.sku, numeroDePallet: item.numeroDePallet, observacion: updatedText });
+                        }
+                    } else if (noteIndex > -1) { // Eliminar nota si el texto está vacío
+                        newNotesData.splice(noteIndex, 1);
+                    }
+                    
+                    // Actualizar UI instantáneamente
+                    const newAllData = allData.map(d => {
+                        if (d.id === item.id) {
+                            return { ...d, hasNote: !!updatedText, noteText: updatedText };
+                        }
+                        return d;
+                    });
+                    setAllData(newAllData);
+
+                    // Guardar los cambios en GitHub (se guarda el archivo de notas completo)
+                    // Se pasa `allData` sin modificar, ya que el archivo detallelotes.csv no cambia
+                    saveData(allData, newNotesData);
+                });
+            };
+
+            const NoteModal = ({ isOpen, text, onTextChange, onClose, onSave }) => {
+                if (!isOpen) return null;
+                return (
+                    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-lg">
+                            <h3 className="text-lg font-bold text-gray-800 mb-4">Agregar/Editar Nota</h3>
+                            <textarea
+                                value={text}
+                                onChange={e => onTextChange(e.target.value)}
+                                className="w-full h-40 p-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                                placeholder="Escriba su nota aquí... Deje el campo vacío para eliminar la nota."
+                            />
+                            <div className="flex justify-end space-x-3 mt-6">
+                                <button onClick={onClose} className="bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300">Cancelar</button>
+                                <button onClick={onSave} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Guardar Nota</button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+            // --- FIN: Funcionalidad de Notas ---
 
             const handleChangeClientName = (rowId, oldClient, newClient) => {
                 if (!newClient || !clientList.includes(newClient.toUpperCase())) {
@@ -977,6 +1046,16 @@
                                     <li><strong>Observaciones:</strong> Las filas resaltadas en amarillo claro tienen una nota. Haz doble clic o una pulsación larga en la fila para ver la observación.</li>
                                 </ul>
                             </div>
+                             {/* --- INICIO: Funcionalidad de Notas (Ayuda) --- */}
+                            <div>
+                                <h4 className="font-bold text-lg text-indigo-700">Gestión de Notas</h4>
+                                <ul className="list-disc list-inside mt-2 space-y-1">
+                                    <li><strong>Agregar/Editar:</strong> En el menú de acciones (<i className="fas fa-ellipsis-v"></i>), selecciona "Agregar Nota" o "Editar/Ver Nota". Se abrirá una ventana para que escribas.</li>
+                                    <li><strong>Visualizar:</strong> Las filas con notas aparecen resaltadas en amarillo y el número de pallet tiene un asterisco (*). Puedes ver la nota haciendo doble clic en la fila.</li>
+                                    <li><strong>Eliminar:</strong> Para borrar una nota, ábrela para editarla y simplemente guarda el campo de texto vacío.</li>
+                                </ul>
+                            </div>
+                            {/* --- FIN: Funcionalidad de Notas (Ayuda) --- */}
                             <div>
                                 <h4 className="font-bold text-lg text-indigo-700">Gestión de Clientes</h4>
                                 <ul className="list-disc list-inside mt-2 space-y-1">
@@ -1022,6 +1101,15 @@
                     )}
                     <ActionModal isOpen={modalState.isOpen} type={modalState.type} title={modalState.title} message={modalState.message} onClose={() => setModalState({ isOpen: false })} onConfirm={modalState.onConfirm} suggestions={clientList}/>
                     <ObservationModal isOpen={observationModal.isOpen} text={observationModal.text} onClose={() => setObservationModal({ isOpen: false, text: '' })} />
+                    {/* --- INICIO: Funcionalidad de Notas --- */}
+                    <NoteModal 
+                        isOpen={noteModal.isOpen}
+                        text={noteModal.text}
+                        onTextChange={(text) => setNoteModal(prev => ({ ...prev, text }))}
+                        onClose={() => setNoteModal({ isOpen: false, item: null, text: '' })}
+                        onSave={handleSaveNote}
+                    />
+                    {/* --- FIN: Funcionalidad de Notas --- */}
                     <ReprintModal isOpen={reprintModal.isOpen} pdfUrl={reprintModal.pdfUrl} printablePdfUrl={reprintModal.printablePdfUrl} palletId={reprintModal.palletId} onClose={() => setReprintModal({ isOpen: false, pdfUrl: null, printablePdfUrl: null, palletId: null })} />
                     <PendingModal isOpen={showPendingModal} onClose={() => setShowPendingModal(false)} data={allData} />
                     {showHelpModal && <HelpModal onClose={() => setShowHelpModal(false)} />}
@@ -1034,7 +1122,6 @@
                             </div>
                             <div className="flex items-center space-x-3 mt-4 sm:mt-0">
                                 <button onClick={() => setShowPendingModal(true)} className="bg-yellow-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-yellow-600 transition-colors shadow-sm flex items-center"><i className="fas fa-pallet mr-2"></i>Pendientes de Transferencia</button>
-                                {/*--====== BOTÓN AÑADIDO AQUÍ ======--*/}
                                 <a href="histolistaempaque.html" className="bg-purple-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-purple-700 transition-colors shadow-sm flex items-center"><i className="fas fa-history mr-2"></i>Histórico Empaque</a>
                                 <a href="generarqr.html" className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 transition-colors shadow-sm flex items-center"><i className="fas fa-plus mr-2"></i>Generar Nuevo</a>
                                 <a href="index.html" className="bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">Volver al Menú</a>
@@ -1171,8 +1258,11 @@
                                                             <i className="fas fa-ellipsis-v"></i>
                                                         </button>
                                                         {activeActionMenu === item.id && (
-                                                            <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border z-30">
+                                                            <div className="absolute right-0 mt-2 w-56 bg-white rounded-md shadow-lg border z-30">
                                                                 <ul className="text-gray-700 text-left">
+                                                                    {/* --- INICIO: Funcionalidad de Notas --- */}
+                                                                    <li><button onClick={() => { handleOpenNoteModal(item); setActiveActionMenu(null); }} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-sticky-note w-6 mr-2 text-yellow-500"></i>{item.hasNote ? 'Editar/Ver Nota' : 'Agregar Nota'}</button></li>
+                                                                    {/* --- FIN: Funcionalidad de Notas --- */}
                                                                     <li><button onClick={() => { handleReprint(item); setActiveActionMenu(null); }} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-print w-6 mr-2 text-blue-500"></i>Reimprimir Etiqueta</button></li>
                                                                     <li><button onClick={() => { handleAddClient(item.id); setActiveActionMenu(null); }} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-user-plus w-6 mr-2 text-green-500"></i>Añadir Cliente</button></li>
                                                                     <li><hr className="my-1"/></li>
