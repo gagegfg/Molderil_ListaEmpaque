@@ -438,53 +438,69 @@
             scene.add(warehouseBox);
         }
         
-        // --- FUNCIÓN DE CONSTRUCCIÓN DE ESTANTERÍAS (CORREGIDA) ---
+        // --- FUNCIÓN DE CONSTRUCCIÓN DE ESTANTERÍAS (REFACTORIZADA) ---
         function createRack(def) {
             const rack = new THREE.Group();
             const postGeo = new THREE.BoxGeometry(0.12, def.slotHeight * def.levels, 0.12);
-            const beamHorXGeo = new THREE.BoxGeometry(def.slotWidth, 0.1, 0.12);
-            const beamHorZGeo = new THREE.BoxGeometry(0.1, 0.1, def.slotDepth); // Viga de soporte en profundidad
+            const beamXGeo = new THREE.BoxGeometry(def.slotWidth, 0.1, 0.12);
+            const beamZGeo = new THREE.BoxGeometry(0.12, 0.1, def.slotDepth);
 
+            // 1. Matriz de Postes Verticales
             for (let c = 0; c <= def.columns; c++) {
-                const post = new THREE.Mesh(postGeo, rackPostMaterial);
-                post.position.set(c * def.slotWidth, (def.slotHeight * def.levels) / 2, 0);
-                post.castShadow = true;
-                rack.add(post);
-            }
-
-            for (let l = 1; l <= def.levels; l++) {
-                const yPos = (l - 1) * def.slotHeight + 0.05;
-                for (let c = 0; c < def.columns; c++) {
-                    const xCenter = c * def.slotWidth + def.slotWidth / 2;
-                    
-                    const beam = new THREE.Mesh(beamHorXGeo, rackBeamMaterial);
-                    beam.position.set(xCenter, yPos, 0);
-                    beam.castShadow = true;
-                    rack.add(beam);
-
-                    // AÑADIR VIGAS DE SOPORTE EN PROFUNDIDAD
-                    const supportRail1 = new THREE.Mesh(beamHorZGeo, rackBeamMaterial);
-                    supportRail1.position.set(xCenter - 0.4, yPos, def.slotDepth / 2);
-                    supportRail1.castShadow = true;
-                    rack.add(supportRail1);
-                    
-                    const supportRail2 = new THREE.Mesh(beamHorZGeo, rackBeamMaterial);
-                    supportRail2.position.set(xCenter + 0.4, yPos, def.slotDepth / 2);
-                    supportRail2.castShadow = true;
-                    rack.add(supportRail2);
+                for (let p = 0; p <= def.depthPositions; p++) {
+                    const post = new THREE.Mesh(postGeo, rackPostMaterial);
+                    post.position.set(
+                        c * def.slotWidth,
+                        (def.slotHeight * def.levels) / 2,
+                        (p - def.depthPositions / 2) * def.slotDepth
+                    );
+                    post.castShadow = true;
+                    rack.add(post);
                 }
             }
-            
-            rack.translateX(def.slotWidth / 2);
-            // Mover toda la estantería para centrarla en Z
-            rack.translateZ(-def.slotDepth / 2);
+
+            // 2. Vigas Horizontales por nivel
+            for (let l = 1; l <= def.levels; l++) {
+                const yPos = (l - 1) * def.slotHeight;
+
+                // Vigas Laterales (a lo ancho)
+                for (let p = 0; p <= def.depthPositions; p++) {
+                    // Omitir las vigas frontales que bloquean el paso
+                    if (p > 0) { 
+                        for (let c = 0; c < def.columns; c++) {
+                            const beam = new THREE.Mesh(beamXGeo, rackBeamMaterial);
+                            beam.position.set(
+                                c * def.slotWidth + def.slotWidth / 2,
+                                yPos,
+                                (p - def.depthPositions / 2) * def.slotDepth
+                            );
+                            beam.castShadow = true;
+                            rack.add(beam);
+                        }
+                    }
+                }
+                
+                // Vigas de Soporte (en profundidad)
+                for (let c = 0; c <= def.columns; c++) {
+                     for (let p = 0; p < def.depthPositions; p++) {
+                        const supportRail = new THREE.Mesh(beamZGeo, rackBeamMaterial);
+                        supportRail.position.set(
+                            c * def.slotWidth,
+                            yPos,
+                            (p - (def.depthPositions - 1) / 2) * def.slotDepth
+                        );
+                        supportRail.castShadow = true;
+                        rack.add(supportRail);
+                     }
+                }
+            }
             return rack;
         }
 
         function calculateSlotPosition(def, level, column, depthPos) {
-            const x = (column - 1) * def.slotWidth + def.slotWidth / 2;
+            const x = (column - 0.5) * def.slotWidth;
             const y = (level - 1) * def.slotHeight;
-            const z = (depthPos - 1 - (def.depthPositions - 1) / 2) * def.slotDepth;
+            const z = (depthPos - 0.5 - def.depthPositions / 2) * def.slotDepth;
             return new THREE.Vector3(x, y, z);
         }
 
@@ -798,3 +814,4 @@
     </script>
 </body>
 </html>
+
