@@ -13,6 +13,7 @@
             --text-color: #f0f0f0;
             --highlight-color: #00aaff;
             --border-color: rgba(255, 255, 255, 0.2);
+            --action-color: #2dd4bf;
         }
         body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #1a1a1a; }
         canvas#render-canvas { display: block; touch-action: none; /* Previene scroll en touch */ }
@@ -117,7 +118,7 @@
         #sku-legend li { display: flex; align-items: center; margin-bottom: 5px; }
         .color-swatch { width: 15px; height: 15px; border-radius: 3px; margin-right: 10px; border: 1px solid #000; }
 
-        /* Botón de "Volver" mejorado */
+        /* Botón genérico estilizado */
         .styled-button {
             display: flex;
             align-items: center;
@@ -130,6 +131,11 @@
             font-weight: bold;
             margin-top: 10px;
             font-size: 1em;
+            border: none;
+            cursor: pointer;
+        }
+        .styled-button.action {
+             background: var(--action-color);
         }
         .styled-button svg {
              width: 20px;
@@ -160,8 +166,14 @@
             <h2>Controles</h2>
             <p><strong>Flechas:</strong> Moverse</p>
             <p><strong>Av/Re Pág:</strong> Subir/Bajar</p>
-            <p><strong>CTRL + Flechas:</strong> Mirar</p>
             <p><strong>Ratón/Táctil:</strong> Orbitar/Zoom</p>
+            <button id="refresh-button" class="styled-button action">
+                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                    <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"></path>
+                    <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"></path>
+                </svg>
+                <span>Refrescar y Reposicionar</span>
+            </button>
             <a href="grillaqr.html" class="styled-button">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
                     <path fill-rule="evenodd" d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8z"></path>
@@ -219,6 +231,7 @@
         const skuColorMap = new Map();
         const keyboardState = {};
         let worldBounds = new THREE.Box3();
+        const initialCameraPosition = new THREE.Vector3(40, 30, 50);
 
         // --- CONTENEDORES DE DATOS CARGADOS ---
         const racksData = new Map();
@@ -298,7 +311,7 @@
             scene.background = new THREE.Color(0xdedede);
 
             camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 2000);
-            camera.position.set(40, 30, 50);
+            camera.position.copy(initialCameraPosition);
 
             renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('render-canvas'), antialias: true, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -318,7 +331,7 @@
             const dirLight = new THREE.DirectionalLight(0xffffff, 2.0);
             dirLight.position.set(-50, 60, 40);
             dirLight.castShadow = true;
-            dirLight.shadow.camera.top = 80; // Aumentar área de sombra
+            dirLight.shadow.camera.top = 80;
             dirLight.shadow.camera.bottom = -80;
             dirLight.shadow.camera.left = -100;
             dirLight.shadow.camera.right = 100;
@@ -334,7 +347,7 @@
             controls.dampingFactor = 0.05;
             controls.minDistance = 2;
             controls.maxDistance = 150;
-            controls.maxPolarAngle = Math.PI / 1.5; // Permitir mirar un poco más hacia arriba
+            controls.maxPolarAngle = Math.PI / 1.5;
             controls.target.set(0, 3, 0);
         }
 
@@ -371,12 +384,12 @@
         
         // --- LÓGICA DE CONSTRUCCIÓN PARAMÉTRICA DEL DEPÓSITO ---
         function buildWarehouse() {
-            const mainGroup = new THREE.Group(); // Grupo para calcular límites
+            const mainGroup = new THREE.Group();
             for (const [id, rackDef] of racksData.entries()) {
                 const rackGroup = createRack(rackDef);
                 rackGroup.position.set(rackDef.x, 0, rackDef.z);
                 rackGroup.rotation.y = THREE.MathUtils.degToRad(rackDef.rotationY);
-                mainGroup.add(rackGroup); // Agregar al grupo principal
+                mainGroup.add(rackGroup);
 
                 for (let l = 1; l <= rackDef.levels; l++) {
                     for (let c = 1; c <= rackDef.columns; c++) {
@@ -400,10 +413,8 @@
             }
             scene.add(mainGroup);
             
-            // --- Calcular límites y crear entorno ---
-            worldBounds.setFromObject(mainGroup, true).expandByScalar(20); // Caja contenedora con padding
+            worldBounds.setFromObject(mainGroup, true).expandByScalar(20);
             
-            // Suelo único
             const floorSize = Math.max(worldBounds.getSize(new THREE.Vector3()).x, worldBounds.getSize(new THREE.Vector3()).z);
             const textureLoader = new THREE.TextureLoader();
             const floorTexture = textureLoader.load('fondo.jpg');
@@ -418,21 +429,18 @@
             floor.receiveShadow = true;
             scene.add(floor);
 
-            // Paredes y techo
             const wallMaterial = new THREE.MeshStandardMaterial({ color: 0xe0e0e0, side: THREE.BackSide, roughness: 1.0 });
-            const warehouseBox = new THREE.Mesh(new THREE.BoxGeometry(floorSize, 30, floorSize), wallMaterial);
-            warehouseBox.position.y = 14.9;
+            const warehouseBox = new THREE.Mesh(new THREE.BoxGeometry(floorSize, 40, floorSize), wallMaterial);
+            warehouseBox.position.y = 19.9;
             scene.add(warehouseBox);
         }
         
-        // --- FUNCIÓN DE CONSTRUCCIÓN DE ESTANTERÍAS (CORREGIDA) ---
         function createRack(def) {
             const rack = new THREE.Group();
             const postGeo = new THREE.BoxGeometry(0.12, def.slotHeight * def.levels, 0.12);
             const beamHorXGeo = new THREE.BoxGeometry(def.slotWidth, 0.1, 0.12);
             
             for (let c = 0; c <= def.columns; c++) {
-                // Postes frontales y traseros
                 const zFront = -(def.depthPositions / 2) * def.slotDepth;
                 const zBack = (def.depthPositions / 2) * def.slotDepth;
 
@@ -472,7 +480,7 @@
         function calculateSlotPosition(def, level, column, depthPos) {
             const x = (column - 1) * def.slotWidth + def.slotWidth / 2;
             const y = (level - 1) * def.slotHeight;
-            const z = (depthPos - 1.5 - (def.depthPositions - 1) / 2) * def.slotDepth + (def.slotDepth /2);
+            const z = (depthPos - 1 - (def.depthPositions - 1) / 2) * def.slotDepth;
             return new THREE.Vector3(x, y, z);
         }
 
@@ -553,48 +561,33 @@
                 leftPanel.classList.toggle('hidden');
                 rightPanel.classList.toggle('hidden');
             });
+            
+            document.getElementById('refresh-button').addEventListener('click', (e) => {
+                e.preventDefault();
+                window.location.reload(true);
+            });
         }
         
         function handleKeyboardInput(deltaTime) {
-            const moveSpeed = 15 * deltaTime;
+            const moveSpeed = 20 * deltaTime;
             const rotateSpeed = 1.5 * deltaTime;
+            const moveVector = new THREE.Vector3();
 
-            const forward = new THREE.Vector3();
-            camera.getWorldDirection(forward);
-            forward.y = 0; // Movimiento en el plano XZ
-            forward.normalize();
-            
-            const right = new THREE.Vector3().crossVectors(camera.up, forward).normalize();
+            if (keyboardState['ArrowUp'] || keyboardState['KeyW']) moveVector.z -= 1;
+            if (keyboardState['ArrowDown'] || keyboardState['KeyS']) moveVector.z += 1;
+            if (keyboardState['ArrowLeft'] || keyboardState['KeyA']) moveVector.x -= 1;
+            if (keyboardState['ArrowRight'] || keyboardState['KeyD']) moveVector.x += 1;
+            if (keyboardState['PageUp'] || keyboardState['KeyE']) moveVector.y += 1;
+            if (keyboardState['PageDown'] || keyboardState['KeyQ']) moveVector.y -= 1;
 
-            let moved = false;
-            if (keyboardState['ArrowUp'] || keyboardState['KeyW']) {
-                if(keyboardState['ControlLeft'] || keyboardState['ControlRight']) camera.rotation.x += rotateSpeed;
-                else camera.position.addScaledVector(forward, moveSpeed);
-                moved = true;
-            }
-            if (keyboardState['ArrowDown'] || keyboardState['KeyS']) {
-                if(keyboardState['ControlLeft'] || keyboardState['ControlRight']) camera.rotation.x -= rotateSpeed;
-                else camera.position.addScaledVector(forward, -moveSpeed);
-                moved = true;
-            }
-            if (keyboardState['ArrowLeft'] || keyboardState['KeyA']) {
-                if(keyboardState['ControlLeft'] || keyboardState['ControlRight']) camera.rotation.y += rotateSpeed;
-                else camera.position.addScaledVector(right, -moveSpeed);
-                moved = true;
-            }
-            if (keyboardState['ArrowRight'] || keyboardState['KeyD']) {
-                 if(keyboardState['ControlLeft'] || keyboardState['ControlRight']) camera.rotation.y -= rotateSpeed;
-                 else camera.position.addScaledVector(right, moveSpeed);
-                 moved = true;
-            }
-            if (keyboardState['PageUp'] || keyboardState['KeyE']) { camera.position.y += moveSpeed; moved = true; }
-            if (keyboardState['PageDown'] || keyboardState['KeyQ']) { camera.position.y -= moveSpeed; moved = true; }
-            
-            if (moved) {
-                // Actualiza el target de los OrbitControls para que no se reinicie la vista
-                const newTarget = new THREE.Vector3();
-                camera.getWorldDirection(newTarget);
-                controls.target.copy(camera.position).add(newTarget);
+            if (moveVector.lengthSq() > 0) {
+                moveVector.normalize().multiplyScalar(moveSpeed);
+                // Aplica el movimiento relativo a la dirección de la cámara
+                moveVector.applyQuaternion(camera.quaternion);
+                
+                camera.position.add(moveVector);
+                // El target de OrbitControls debe seguir la cámara para evitar saltos
+                controls.target.add(moveVector);
             }
         }
 
@@ -683,9 +676,9 @@
             }
         }
         
-        function animateCameraTo(targetPosition) {
+        function animateCameraTo(targetPosition, cameraEndPosition = null) {
             const startPos = camera.position.clone();
-            const endPos = targetPosition.clone().add(new THREE.Vector3(8, 6, 8));
+            const endPos = cameraEndPosition || targetPosition.clone().add(new THREE.Vector3(8, 6, 8));
             const startTarget = controls.target.clone();
 
             let t = 0;
@@ -731,7 +724,7 @@
 
         function createTextures() {
             const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 256;
-            const ctx = canvas.getContext('2d'); // CORREGIDO: '2d' en lugar de 'd'
+            const ctx = canvas.getContext('2d'); // CORREGIDO: '2d' 
             ctx.fillStyle = '#c2a385'; ctx.fillRect(0, 0, 256, 256);
             ctx.strokeStyle = '#a18465'; ctx.lineWidth = 2;
             for (let i = 0; i < 20; i++) {
@@ -757,7 +750,6 @@
             
             handleKeyboardInput(deltaTime);
             
-            // Limitar cámara a los bordes del mundo
             camera.position.clamp(worldBounds.min, worldBounds.max);
 
             controls.update(deltaTime);
@@ -768,4 +760,3 @@
     </script>
 </body>
 </html>
-
