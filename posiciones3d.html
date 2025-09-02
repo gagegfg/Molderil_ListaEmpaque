@@ -17,21 +17,39 @@
         body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #1a1a1a; }
         canvas#render-canvas { display: block; }
 
-        /* Pantalla de carga animada */
+        /* Pantalla de carga estilo grillaqr.html */
         #loader {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: #111; color: var(--text-color);
-            display: flex; justify-content: center; align-items: center;
-            flex-direction: column; z-index: 100; transition: opacity 0.5s ease-out;
+            position: fixed; inset: 0;
+            display: flex; align-items: center; justify-content: center;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 100; transition: opacity 0.5s ease-out;
+            -webkit-backdrop-filter: blur(12px);
+            backdrop-filter: blur(12px);
         }
-        #loader h1 { font-size: 2em; margin: 0; color: var(--highlight-color); }
-        #loader p { font-size: 1.1em; margin-top: 10px; }
-        .spinner {
-            border: 4px solid rgba(255, 255, 255, 0.1); width: 40px; height: 40px;
-            border-radius: 50%; border-left-color: var(--highlight-color);
-            animation: spin 1s ease infinite; margin-top: 20px;
+        .loader-panel {
+            background: rgba(210, 180, 140, 0.2);
+            border: 1px solid rgba(210, 180, 140, 0.3);
+            padding: 2rem; border-radius: 0.75rem;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            width: 100%; max-width: 28rem; text-align: center;
         }
-        @keyframes spin { to { transform: rotate(360deg); } }
+        .loader-panel img {
+            margin: 0 auto 1.5rem auto; height: 8rem;
+            filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.4)) drop-shadow(-2px -2px 4px rgba(255,255,255,0.6));
+        }
+        #loader-status {
+            font-size: 1.25rem; color: white; margin-bottom: 1rem;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        }
+        .progress-bar-container {
+            width: 100%; background-color: rgba(255, 255, 255, 0.2);
+            border-radius: 9999px; height: 1rem;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        #loader-progress {
+            background-color: #f59e0b; height: 100%;
+            border-radius: 9999px; transition: width 0.5s ease-in-out;
+        }
 
         /* Contenedores de la interfaz de usuario */
         .ui-container {
@@ -77,9 +95,13 @@
 </head>
 <body>
     <div id="loader">
-        <div class="spinner"></div>
-        <h1>MOLDERIL</h1>
-        <p>Cargando visualizador de depósito...</p>
+        <div class="loader-panel">
+            <img src="https://placehold.co/400x150/transparent/white?text=MOLDERIL&font=raleway" alt="Logo Molderil"/>
+            <p id="loader-status">Iniciando aplicación...</p>
+            <div class="progress-bar-container">
+                <div id="loader-progress" style="width: 0%"></div>
+            </div>
+        </div>
     </div>
 
     <div id="left-panel" class="ui-container" style="display: none;">
@@ -156,22 +178,66 @@
 
         // --- ELEMENTOS DEL DOM ---
         const loaderUI = document.getElementById('loader');
+        const loaderStatus = document.getElementById('loader-status');
+        const loaderProgress = document.getElementById('loader-progress');
         const searchInput = document.getElementById('search-input');
         const searchResult = document.getElementById('search-result');
         const leftPanel = document.getElementById('left-panel');
         const rightPanel = document.getElementById('right-panel');
 
+        // --- FUNCIÓN PARA ACTUALIZAR LA BARRA DE PROGRESO ---
+        function updateLoader(status, percentage) {
+            loaderStatus.textContent = status;
+            loaderProgress.style.width = `${percentage}%`;
+        }
+
         // --- FUNCIÓN PRINCIPAL DE INICIALIZACIÓN ---
         async function init() {
             clock = new THREE.Clock();
+            
+            updateLoader('Inicializando motor 3D...', 10);
             setupScene();
             setupLights();
             setupControls();
             
             try {
+                updateLoader('Descargando archivos de datos...', 25);
                 // Carga de todos los datos en paralelo para máxima velocidad
                 await Promise.all([
-// ... existing code ... -->
+                    loadCSV('definicion_estanterias.csv', parseRacks, racksData),
+                    loadCSV('inventario_ubicaciones.csv', parseInventory, inventoryData),
+                    loadCSV('detallelotes.csv', parseLotes, lotesData),
+                    loadCSV('articulos.csv', parseArticulos, articulosData)
+                ]);
+                
+                updateLoader('Procesando texturas...', 75);
+                createTextures(); // Generar texturas procedurales
+                
+                updateLoader('Construyendo depósito...', 90);
+                buildWarehouse(); // Construir la escena 3D
+                setupInteractions(); // Habilitar clics y hover
+                
+                updateLoader('¡Listo!', 100);
+                // Transición suave para ocultar el cargador
+                setTimeout(() => {
+                    loaderUI.style.opacity = '0';
+                    setTimeout(() => {
+                        loaderUI.style.display = 'none';
+                        leftPanel.style.display = 'flex';
+                    }, 500);
+                }, 500);
+
+
+                animate(); // Iniciar el bucle de renderizado
+
+            } catch (error) {
+                console.error("Error crítico durante la inicialización:", error);
+                updateLoader('Error de Carga', 100);
+                loaderProgress.style.backgroundColor = '#ef4444'; // Color rojo para error
+                loaderStatus.innerHTML = `No se pudo cargar el depósito.<br><span style="font-size: 0.8em; color: #ff8888;">${error.message}</span>`;
+            }
+        }
+
         // --- CONFIGURACIÓN DE LA ESCENA Y RENDERIZADO THREE.JS ---
         function setupScene() {
             scene = new THREE.Scene();
