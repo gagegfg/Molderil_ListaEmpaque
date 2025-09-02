@@ -108,6 +108,7 @@
             color: var(--text-color); font-size: 24px; cursor: pointer;
             display: flex; justify-content: center; align-items: center;
             backdrop-filter: blur(10px);
+            z-index: 10;
         }
 
         /* Leyenda de colores */
@@ -199,6 +200,7 @@
         const palletsInScene = new Map();
         const skuColorMap = new Map();
         const keyboardState = {};
+        let worldBounds = new THREE.Box3();
 
         // --- CONTENEDORES DE DATOS CARGADOS ---
         const racksData = new Map();
@@ -287,27 +289,6 @@
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             renderer.toneMapping = THREE.LinearToneMapping;
             renderer.toneMappingExposure = 1.0;
-
-            // Cargar textura para el suelo y configurarla
-            const textureLoader = new THREE.TextureLoader();
-            const floorTexture = textureLoader.load('fondo.jpg');
-            floorTexture.wrapS = THREE.RepeatWrapping;
-            floorTexture.wrapT = THREE.RepeatWrapping;
-            floorTexture.repeat.set(30, 30); // Aumentar repetición para que la textura sea más pequeña y sutil
-
-            const floor = new THREE.Mesh(
-                new THREE.PlaneGeometry(300, 300),
-                // Usar la textura en el mapa del material
-                new THREE.MeshStandardMaterial({ 
-                    color: 0xdddddd, // Color base claro para teñir la textura sutilmente
-                    map: floorTexture,
-                    roughness: 0.9, // Muy rugoso para evitar reflejos
-                    metalness: 0.1
-                })
-            );
-            floor.rotation.x = -Math.PI / 2;
-            floor.receiveShadow = true;
-            scene.add(floor);
         }
 
         function setupLights() {
@@ -319,10 +300,10 @@
             const dirLight = new THREE.DirectionalLight(0xffffff, 2.0);
             dirLight.position.set(-50, 60, 40);
             dirLight.castShadow = true;
-            dirLight.shadow.camera.top = 60;
-            dirLight.shadow.camera.bottom = -60;
-            dirLight.shadow.camera.left = -80;
-            dirLight.shadow.camera.right = 80;
+            dirLight.shadow.camera.top = 80; // Aumentar área de sombra
+            dirLight.shadow.camera.bottom = -80;
+            dirLight.shadow.camera.left = -100;
+            dirLight.shadow.camera.right = 100;
             dirLight.shadow.mapSize.width = 4096;
             dirLight.shadow.mapSize.height = 4096;
             dirLight.shadow.bias = -0.002;
@@ -333,11 +314,10 @@
             controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
             controls.dampingFactor = 0.05;
-            controls.minDistance = 5;
+            controls.minDistance = 2;
             controls.maxDistance = 150;
-            controls.maxPolarAngle = Math.PI / 2.1;
+            controls.maxPolarAngle = Math.PI / 1.5; // Permitir mirar un poco más hacia arriba
             controls.target.set(0, 3, 0);
-            controls.enablePan = false;
         }
 
         // --- LÓGICA DE CARGA Y PARSEO DE DATOS CSV ---
@@ -373,11 +353,12 @@
         
         // --- LÓGICA DE CONSTRUCCIÓN PARAMÉTRICA DEL DEPÓSITO ---
         function buildWarehouse() {
+            const mainGroup = new THREE.Group(); // Grupo para calcular límites
             for (const [id, rackDef] of racksData.entries()) {
                 const rackGroup = createRack(rackDef);
                 rackGroup.position.set(rackDef.x, 0, rackDef.z);
                 rackGroup.rotation.y = THREE.MathUtils.degToRad(rackDef.rotationY);
-                scene.add(rackGroup);
+                mainGroup.add(rackGroup); // Agregar al grupo principal
 
                 for (let l = 1; l <= rackDef.levels; l++) {
                     for (let c = 1; c <= rackDef.columns; c++) {
@@ -399,43 +380,70 @@
                     }
                 }
             }
+            scene.add(mainGroup);
+            
+            // --- Calcular límites y crear entorno ---
+            worldBounds.setFromObject(mainGroup, true).expandByScalar(20); // Caja contenedora con padding
+            
+            // Suelo único
+            const floorSize = Math.max(worldBounds.getSize(new THREE.Vector3()).x, worldBounds.getSize(new THREE.Vector3()).z);
+            const textureLoader = new THREE.TextureLoader();
+            const floorTexture = textureLoader.load('fondo.jpg');
+            const floor = new THREE.Mesh(
+                new THREE.PlaneGeometry(floorSize, floorSize),
+                new THREE.MeshStandardMaterial({ 
+                    color: 0xcccccc, map: floorTexture, roughness: 0.9, metalness: 0.1
+                })
+            );
+            floor.rotation.x = -Math.PI / 2;
+            floor.position.y = -0.01;
+            floor.receiveShadow = true;
+            scene.add(floor);
+
+            // Paredes y techo
+            const wallMaterial = new THREE.MeshStandardMaterial({ color: 0xe0e0e0, side: THREE.BackSide, roughness: 1.0 });
+            const warehouseBox = new THREE.Mesh(new THREE.BoxGeometry(floorSize, 30, floorSize), wallMaterial);
+            warehouseBox.position.y = 14.9;
+            scene.add(warehouseBox);
         }
         
+        // --- FUNCIÓN DE CONSTRUCCIÓN DE ESTANTERÍAS (CORREGIDA) ---
         function createRack(def) {
             const rack = new THREE.Group();
             const postGeo = new THREE.BoxGeometry(0.12, def.slotHeight * def.levels, 0.12);
             const beamHorXGeo = new THREE.BoxGeometry(def.slotWidth, 0.1, 0.12);
-            const beamHorZGeo = new THREE.BoxGeometry(0.12, 0.1, def.slotDepth);
-
+            
             for (let c = 0; c <= def.columns; c++) {
-                for (let p = 0; p <= def.depthPositions; p++) {
-                    const post = new THREE.Mesh(postGeo, rackPostMaterial);
-                    const zPos = (p - def.depthPositions / 2) * def.slotDepth;
-                    post.position.set(c * def.slotWidth, (def.slotHeight * def.levels) / 2, zPos);
-                    post.castShadow = true;
-                    rack.add(post);
-                }
+                // Postes frontales y traseros
+                const zFront = -(def.depthPositions / 2) * def.slotDepth;
+                const zBack = (def.depthPositions / 2) * def.slotDepth;
+
+                const postFront = new THREE.Mesh(postGeo, rackPostMaterial);
+                postFront.position.set(c * def.slotWidth, (def.slotHeight * def.levels) / 2, zFront);
+                postFront.castShadow = true;
+                rack.add(postFront);
+                
+                const postBack = new THREE.Mesh(postGeo, rackPostMaterial);
+                postBack.position.set(c * def.slotWidth, (def.slotHeight * def.levels) / 2, zBack);
+                postBack.castShadow = true;
+                rack.add(postBack);
             }
 
             for (let l = 1; l <= def.levels; l++) {
                 const yPos = (l - 1) * def.slotHeight + 0.05;
                 for (let c = 0; c < def.columns; c++) {
-                    for (let p = 0; p <= def.depthPositions; p++) {
-                        const beam = new THREE.Mesh(beamHorXGeo, rackBeamMaterial);
-                        const zPos = (p - def.depthPositions / 2) * def.slotDepth;
-                        beam.position.set(c * def.slotWidth + def.slotWidth / 2, yPos, zPos);
-                        beam.castShadow = true;
-                        rack.add(beam);
-                    }
-                }
-                for (let c = 0; c <= def.columns; c++) {
-                     for (let p = 0; p < def.depthPositions; p++) {
-                        const beam = new THREE.Mesh(beamHorZGeo, rackBeamMaterial);
-                        const zPos = (p - def.depthPositions / 2) * def.slotDepth + def.slotDepth / 2;
-                        beam.position.set(c * def.slotWidth, yPos, zPos);
-                        beam.castShadow = true;
-                        rack.add(beam);
-                     }
+                    const zFront = -(def.depthPositions / 2) * def.slotDepth;
+                    const zBack = (def.depthPositions / 2) * def.slotDepth;
+                    
+                    const beamFront = new THREE.Mesh(beamHorXGeo, rackBeamMaterial);
+                    beamFront.position.set(c * def.slotWidth + def.slotWidth / 2, yPos, zFront);
+                    beamFront.castShadow = true;
+                    rack.add(beamFront);
+                    
+                    const beamBack = new THREE.Mesh(beamHorXGeo, rackBeamMaterial);
+                    beamBack.position.set(c * def.slotWidth + def.slotWidth / 2, yPos, zBack);
+                    beamBack.castShadow = true;
+                    rack.add(beamBack);
                 }
             }
             
@@ -446,7 +454,7 @@
         function calculateSlotPosition(def, level, column, depthPos) {
             const x = (column - 1) * def.slotWidth + def.slotWidth / 2;
             const y = (level - 1) * def.slotHeight;
-            const z = (depthPos - 1 - (def.depthPositions - 1) / 2) * def.slotDepth;
+            const z = (depthPos - 1.5 - (def.depthPositions - 1) / 2) * def.slotDepth + (def.slotDepth /2);
             return new THREE.Vector3(x, y, z);
         }
 
@@ -493,7 +501,7 @@
             const mouse = new THREE.Vector2();
             
             function onPointerMove(event) {
-                if (event.touches && event.touches.length > 1) return;
+                if (event.pointerType === 'touch' && event.touches.length > 1) return;
                 mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
                 mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
                 raycaster.setFromCamera(mouse, camera);
@@ -535,41 +543,40 @@
 
             const forward = new THREE.Vector3();
             camera.getWorldDirection(forward);
+            forward.y = 0; // Movimiento en el plano XZ
+            forward.normalize();
+            
             const right = new THREE.Vector3().crossVectors(camera.up, forward).normalize();
 
+            let moved = false;
             if (keyboardState['ArrowUp'] || keyboardState['KeyW']) {
-                if(keyboardState['ControlLeft'] || keyboardState['ControlRight']) {
-                    camera.rotateX(rotateSpeed);
-                } else {
-                    camera.position.addScaledVector(forward, moveSpeed);
-                }
+                if(keyboardState['ControlLeft'] || keyboardState['ControlRight']) camera.rotation.x += rotateSpeed;
+                else camera.position.addScaledVector(forward, moveSpeed);
+                moved = true;
             }
             if (keyboardState['ArrowDown'] || keyboardState['KeyS']) {
-                if(keyboardState['ControlLeft'] || keyboardState['ControlRight']) {
-                    camera.rotateX(-rotateSpeed);
-                } else {
-                    camera.position.addScaledVector(forward, -moveSpeed);
-                }
+                if(keyboardState['ControlLeft'] || keyboardState['ControlRight']) camera.rotation.x -= rotateSpeed;
+                else camera.position.addScaledVector(forward, -moveSpeed);
+                moved = true;
             }
             if (keyboardState['ArrowLeft'] || keyboardState['KeyA']) {
-                if(keyboardState['ControlLeft'] || keyboardState['ControlRight']) {
-                    camera.rotateY(rotateSpeed);
-                } else {
-                    camera.position.addScaledVector(right, moveSpeed);
-                }
+                if(keyboardState['ControlLeft'] || keyboardState['ControlRight']) camera.rotation.y += rotateSpeed;
+                else camera.position.addScaledVector(right, -moveSpeed);
+                moved = true;
             }
             if (keyboardState['ArrowRight'] || keyboardState['KeyD']) {
-                 if(keyboardState['ControlLeft'] || keyboardState['ControlRight']) {
-                    camera.rotateY(-rotateSpeed);
-                } else {
-                    camera.position.addScaledVector(right, -moveSpeed);
-                }
+                 if(keyboardState['ControlLeft'] || keyboardState['ControlRight']) camera.rotation.y -= rotateSpeed;
+                 else camera.position.addScaledVector(right, moveSpeed);
+                 moved = true;
             }
-            if (keyboardState['PageUp'] || keyboardState['KeyE']) camera.position.y += moveSpeed;
-            if (keyboardState['PageDown'] || keyboardState['KeyQ']) camera.position.y -= moveSpeed;
+            if (keyboardState['PageUp'] || keyboardState['KeyE']) { camera.position.y += moveSpeed; moved = true; }
+            if (keyboardState['PageDown'] || keyboardState['KeyQ']) { camera.position.y -= moveSpeed; moved = true; }
             
-            if (Object.values(keyboardState).some(v => v)) {
-                controls.target.copy(camera.position).add(forward);
+            if (moved) {
+                // Actualiza el target de los OrbitControls para que no se reinicie la vista
+                const newTarget = new THREE.Vector3();
+                camera.getWorldDirection(newTarget);
+                controls.target.copy(camera.position).add(newTarget);
             }
         }
 
@@ -706,7 +713,7 @@
 
         function createTextures() {
             const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 256;
-            const ctx = canvas.getContext('2d');
+            const ctx = canvas.getContext('d');
             ctx.fillStyle = '#c2a385'; ctx.fillRect(0, 0, 256, 256);
             ctx.strokeStyle = '#a18465'; ctx.lineWidth = 2;
             for (let i = 0; i < 20; i++) {
@@ -730,10 +737,11 @@
             requestAnimationFrame(animate);
             const deltaTime = clock.getDelta();
             
-            if (!controls.active) {
-                handleKeyboardInput(deltaTime);
-            }
+            handleKeyboardInput(deltaTime);
             
+            // Limitar cámara a los bordes del mundo
+            camera.position.clamp(worldBounds.min, worldBounds.max);
+
             controls.update(deltaTime);
             renderer.render(scene, camera);
         }
