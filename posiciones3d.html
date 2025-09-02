@@ -146,10 +146,6 @@
     <script type="module">
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-        import { SAOPass } from 'three/addons/postprocessing/SAOPass.js';
-        import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
         
         // --- CONFIGURACIÓN DE LA APLICACIÓN ---
         const GITHUB_USER = 'gagegfg';
@@ -157,7 +153,7 @@
         const BASE_URL = `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/main/`;
 
         // --- ESTADO GLOBAL DE LA APLICACIÓN ---
-        let scene, camera, renderer, controls, composer, clock;
+        let scene, camera, renderer, controls, clock;
         let hoveredObject = null;
         let selectedObject = null;
         const palletsInScene = new Map();
@@ -170,10 +166,11 @@
         const articulosData = new Map();
         
         // --- MATERIALES Y GEOMETRÍAS REUTILIZABLES PARA OPTIMIZACIÓN ---
-        const rackPostMaterial = new THREE.MeshStandardMaterial({ color: 0x4d6a93, roughness: 0.6, metalness: 0.8 });
-        const rackBeamMaterial = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.6, metalness: 0.5 });
+        const rackPostMaterial = new THREE.MeshStandardMaterial({ color: 0x4d6a93, roughness: 0.8, metalness: 0.2 });
+        const rackBeamMaterial = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.8, metalness: 0.2 });
         const emptySlotMaterial = new THREE.MeshStandardMaterial({ color: 0x22c55e, transparent: true, opacity: 0.15 });
-        const highlightMaterial = new THREE.MeshStandardMaterial({ color: 0x00aaff, emissive: 0x00aaff, emissiveIntensity: 1.5, toneMapped: false });
+        const highlightMaterial = new THREE.MeshStandardMaterial({ color: 0x00aaff, emissive: 0x00aaff, emissiveIntensity: 0.8, toneMapped: false });
+        const lineMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 1 });
         let palletBaseMaterial;
 
         // --- ELEMENTOS DEL DOM ---
@@ -241,34 +238,22 @@
         // --- CONFIGURACIÓN DE LA ESCENA Y RENDERIZADO THREE.JS ---
         function setupScene() {
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0xababab); // Fondo más claro y neutro
-            // scene.fog = new THREE.Fog(scene.background, 70, 150); // Eliminado para máxima claridad
+            scene.background = new THREE.Color(0xdedede); // Fondo gris claro estilo CAD
 
-            camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(30, 20, 40);
+            camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera.position.set(40, 30, 50);
 
             renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('render-canvas'), antialias: true, powerPreference: "high-performance" });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-            renderer.toneMapping = THREE.ACESFilmicToneMapping;
-            renderer.toneMappingExposure = 1.25; // Aumento de exposición para una imagen más brillante
-
-            // Cadena de post-procesamiento para efectos visuales avanzados
-            composer = new EffectComposer(renderer);
-            composer.addPass(new RenderPass(scene, camera));
-            // Oclusión ambiental para sombras de contacto realistas
-            const saoPass = new SAOPass(scene, camera, false, true);
-            saoPass.params.saoIntensity = 0.01; // Reducido para un efecto más sutil
-            saoPass.params.saoScale = 2;
-            saoPass.params.saoKernelRadius = 50;
-            composer.addPass(saoPass);
-            composer.addPass(new OutputPass());
+            renderer.toneMapping = THREE.LinearToneMapping; // Mapeo de tonos lineal para colores puros
+            renderer.toneMappingExposure = 1.0;
 
             const floor = new THREE.Mesh(
-                new THREE.PlaneGeometry(200, 200),
-                new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.8, metalness: 0.2 }) // Color del suelo ajustado
+                new THREE.PlaneGeometry(300, 300),
+                new THREE.MeshStandardMaterial({ color: 0xcfcfcf, roughness: 0.8, metalness: 0.1 })
             );
             floor.rotation.x = -Math.PI / 2;
             floor.receiveShadow = true;
@@ -276,21 +261,23 @@
         }
 
         function setupLights() {
-            scene.add(new THREE.AmbientLight(0xffffff, 1.0)); // Luz ambiental más intensa
-            const hemiLight = new THREE.HemisphereLight(0xffffff, 0x888888, 1.5); // Luz de relleno más potente
+            // Iluminación ambiental brillante y uniforme
+            scene.add(new THREE.AmbientLight(0xffffff, 1.2)); 
+            const hemiLight = new THREE.HemisphereLight(0xffffff, 0x888888, 1.5);
             hemiLight.position.set(0, 50, 0);
             scene.add(hemiLight);
 
-            const dirLight = new THREE.DirectionalLight(0xffffff, 3.0); // Luz principal (sol) más fuerte
-            dirLight.position.set(-40, 50, 30); // Ángulo ajustado para mejores sombras
+            // Luz principal direccional para generar sombras
+            const dirLight = new THREE.DirectionalLight(0xffffff, 2.0);
+            dirLight.position.set(-50, 60, 40);
             dirLight.castShadow = true;
-            dirLight.shadow.camera.top = 40;
-            dirLight.shadow.camera.bottom = -40;
-            dirLight.shadow.camera.left = -50;
-            dirLight.shadow.camera.right = 50;
+            dirLight.shadow.camera.top = 60;
+            dirLight.shadow.camera.bottom = -60;
+            dirLight.shadow.camera.left = -80;
+            dirLight.shadow.camera.right = 80;
             dirLight.shadow.mapSize.width = 4096;
             dirLight.shadow.mapSize.height = 4096;
-            dirLight.shadow.bias = -0.001;
+            dirLight.shadow.bias = -0.002;
             scene.add(dirLight);
         }
 
@@ -299,7 +286,7 @@
             controls.enableDamping = true;
             controls.dampingFactor = 0.05;
             controls.minDistance = 5;
-            controls.maxDistance = 100;
+            controls.maxDistance = 150;
             controls.maxPolarAngle = Math.PI / 2.1;
             controls.target.set(0, 3, 0);
         }
@@ -366,60 +353,85 @@
             }
         }
         
+        // --- FUNCIÓN DE CONSTRUCCIÓN DE ESTANTERÍAS (CORREGIDA) ---
         function createRack(def) {
             const rack = new THREE.Group();
             const postGeo = new THREE.BoxGeometry(0.12, def.slotHeight * def.levels, 0.12);
-            const beamHorGeo = new THREE.BoxGeometry(def.slotWidth, 0.1, 0.12);
+            const beamHorXGeo = new THREE.BoxGeometry(def.slotWidth, 0.1, 0.12);
+            const beamHorZGeo = new THREE.BoxGeometry(0.12, 0.1, def.slotDepth);
 
             // Postes verticales
-            for (let i = 0; i <= def.columns; i++) {
-                const post = new THREE.Mesh(postGeo, rackPostMaterial);
-                post.position.set(i * def.slotWidth, (def.slotHeight * def.levels) / 2, 0);
-                post.castShadow = true;
-                rack.add(post.clone().translateZ(-def.slotDepth));
-                rack.add(post);
+            for (let c = 0; c <= def.columns; c++) {
+                for (let p = 0; p <= def.depthPositions; p++) {
+                    const post = new THREE.Mesh(postGeo, rackPostMaterial);
+                    const zPos = (p - def.depthPositions / 2) * def.slotDepth;
+                    post.position.set(c * def.slotWidth, (def.slotHeight * def.levels) / 2, zPos);
+                    post.castShadow = true;
+                    rack.add(post);
+                }
+            }
+
+            for (let l = 1; l <= def.levels; l++) {
+                const yPos = (l - 1) * def.slotHeight + 0.05;
+                // Vigas horizontales en X
+                for (let c = 0; c < def.columns; c++) {
+                    for (let p = 0; p <= def.depthPositions; p++) {
+                        const beam = new THREE.Mesh(beamHorXGeo, rackBeamMaterial);
+                        const zPos = (p - def.depthPositions / 2) * def.slotDepth;
+                        beam.position.set(c * def.slotWidth + def.slotWidth / 2, yPos, zPos);
+                        beam.castShadow = true;
+                        rack.add(beam);
+                    }
+                }
+                // Vigas horizontales en Z
+                for (let c = 0; c <= def.columns; c++) {
+                     for (let p = 0; p < def.depthPositions; p++) {
+                        const beam = new THREE.Mesh(beamHorZGeo, rackBeamMaterial);
+                        const zPos = (p - def.depthPositions / 2) * def.slotDepth + def.slotDepth / 2;
+                        beam.position.set(c * def.slotWidth, yPos, zPos);
+                        beam.castShadow = true;
+                        rack.add(beam);
+                     }
+                }
             }
             
-            // Vigas horizontales
-            for (let l = 1; l <= def.levels; l++) {
-                 for (let c = 0; c < def.columns; c++) {
-                    const beam = new THREE.Mesh(beamHorGeo, rackBeamMaterial);
-                    beam.position.set(c * def.slotWidth + def.slotWidth / 2, (l-1) * def.slotHeight + 0.05, 0);
-                    beam.castShadow = true;
-                    rack.add(beam.clone().translateZ(-def.slotDepth));
-                    rack.add(beam);
-                 }
-            }
             // Mover el origen para que coincida con las coordenadas del CSV
             rack.translateX(def.slotWidth / 2);
-            rack.translateZ(-def.slotDepth / 2);
 
             return rack;
         }
 
+        // --- FUNCIÓN DE CÁLCULO DE POSICIÓN (CORREGIDA) ---
         function calculateSlotPosition(def, level, column, depthPos) {
             const x = (column - 1) * def.slotWidth;
             const y = (level - 1) * def.slotHeight;
-            const z = (depthPos - 1 - (def.depthPositions - 1) / 2) * (def.slotDepth / def.depthPositions * 0.9);
+            const z = (depthPos - 1 - (def.depthPositions - 1) / 2) * def.slotDepth;
             return new THREE.Vector3(x, y, z);
         }
 
         function createPallet(data, locationId) {
             const palletGroup = new THREE.Group();
             
+            const boxGeo = new THREE.BoxGeometry(1.2, 1.2, 1.0);
             const boxMaterial = new THREE.MeshStandardMaterial({ color: getSkuColor(data.sku), roughness: 0.7 });
-            const box = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.0), boxMaterial.clone());
+            const box = new THREE.Mesh(boxGeo, boxMaterial.clone());
             box.position.y = 0.15 + 1.2/2;
             box.castShadow = true;
             box.receiveShadow = true;
 
-            const base = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.15, 1.0), palletBaseMaterial);
+            const baseGeo = new THREE.BoxGeometry(1.2, 0.15, 1.0);
+            const base = new THREE.Mesh(baseGeo, palletBaseMaterial);
             base.position.y = 0.15/2;
             base.castShadow = true;
             base.receiveShadow = true;
             
-            palletGroup.add(box);
-            palletGroup.add(base);
+            // Contornos estilo CAD
+            const boxEdges = new THREE.LineSegments(new THREE.EdgesGeometry(boxGeo), lineMaterial);
+            boxEdges.position.copy(box.position);
+            const baseEdges = new THREE.LineSegments(new THREE.EdgesGeometry(baseGeo), lineMaterial);
+            baseEdges.position.copy(base.position);
+
+            palletGroup.add(box, base, boxEdges, baseEdges);
 
             palletGroup.userData = { isPallet: true, ...data, locationId };
             palletGroup.userData.originalMaterial = box.material;
@@ -448,9 +460,16 @@
                 const intersects = raycaster.intersectObjects(scene.children, true);
                 let foundObject = null;
                 if (intersects.length > 0) {
-                     const firstHit = intersects[0].object;
-                     if (firstHit.parent?.userData.isPallet) foundObject = firstHit.parent;
-                     else if (firstHit.userData.isEmptySlot) foundObject = firstHit;
+                     for(const intersect of intersects) {
+                         if (intersect.object.parent?.userData.isPallet) {
+                            foundObject = intersect.object.parent;
+                            break;
+                         }
+                         if (intersect.object.userData.isEmptySlot) {
+                             foundObject = intersect.object;
+                             break;
+                         }
+                     }
                 }
                 handleHover(foundObject);
             }
@@ -541,7 +560,7 @@
         
         function animateCameraTo(targetPosition) {
             const startPos = camera.position.clone();
-            const endPos = targetPosition.clone().add(new THREE.Vector3(5, 4, 5));
+            const endPos = targetPosition.clone().add(new THREE.Vector3(8, 6, 8));
             const startTarget = controls.target.clone();
 
             let t = 0;
@@ -562,7 +581,7 @@
             for (let i = 0; i < sku.length; i++) {
                 hash = sku.charCodeAt(i) + ((hash << 5) - hash);
             }
-            const color = new THREE.Color().setHSL((hash % 360) / 360, 0.7, 0.6);
+            const color = new THREE.Color().setHSL((hash % 360) / 360, 0.85, 0.7);
             skuColorMap.set(sku, color);
             return color;
         }
@@ -585,7 +604,6 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-            composer.setSize(window.innerWidth, window.innerHeight);
         }
         window.addEventListener('resize', onWindowResize);
 
@@ -593,7 +611,7 @@
         function animate() {
             requestAnimationFrame(animate);
             controls.update();
-            composer.render();
+            renderer.render(scene, camera);
         }
 
         // Iniciar la aplicación
@@ -601,3 +619,4 @@
     </script>
 </body>
 </html>
+
