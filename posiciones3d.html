@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Molderil - Visualizador de Depósito 3D Paramétrico</title>
     <!-- Librería para generar códigos QR -->
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
@@ -15,18 +15,26 @@
             --border-color: rgba(255, 255, 255, 0.2);
         }
         body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #1a1a1a; }
-        canvas#render-canvas { display: block; }
+        canvas#render-canvas { display: block; touch-action: none; /* Previene scroll en touch */ }
 
-        /* Pantalla de carga estilo grillaqr.html */
+        /* Pantalla de carga estilo grillaqr.html con fondo.jpg */
         #loader {
             position: fixed; inset: 0;
             display: flex; align-items: center; justify-content: center;
-            background-color: rgba(0, 0, 0, 0.5);
+            background-image: url('fondo.jpg'); /* FONDO AÑADIDO */
+            background-size: cover;
+            background-position: center;
             z-index: 100; transition: opacity 0.5s ease-out;
+        }
+        .loader-overlay { /* Capa para oscurecer y desenfocar el fondo */
+            position: absolute;
+            inset: 0;
+            background-color: rgba(0, 0, 0, 0.5);
             -webkit-backdrop-filter: blur(12px);
             backdrop-filter: blur(12px);
         }
         .loader-panel {
+            position: relative; /* Para que esté por encima del overlay */
             background: rgba(210, 180, 140, 0.2);
             border: 1px solid rgba(210, 180, 140, 0.3);
             padding: 2rem; border-radius: 0.75rem;
@@ -55,9 +63,11 @@
         .ui-container {
             position: absolute; top: 0; padding: 15px;
             display: flex; flex-direction: column; gap: 15px; max-width: 340px;
-            pointer-events: none; /* Permite hacer clic "a través" de los contenedores */
+            pointer-events: none;
+            transition: opacity 0.3s ease;
         }
-        .ui-container > * { pointer-events: auto; /* Rehabilita eventos en los paneles hijos */ }
+        .ui-container.hidden { opacity: 0; pointer-events: none; }
+        .ui-container > * { pointer-events: auto; }
         #left-panel { left: 0; }
         #right-panel { right: 0; display: none; }
 
@@ -75,7 +85,6 @@
         }
         .ui-panel p, .ui-panel li { margin: 8px 0; font-size: 14px; line-height: 1.5; }
         
-        /* Elementos específicos de la UI */
         #search-input {
             width: calc(100% - 22px); padding: 10px; border-radius: 8px;
             border: 1px solid var(--border-color); background: rgba(0,0,0,0.3);
@@ -83,7 +92,6 @@
         }
         #search-result { color: #ffc107; font-weight: bold; margin-top: 8px; height: 20px; }
         
-        /* Panel de información detallada */
         #pallet-info p {
             display: grid; grid-template-columns: 100px 1fr;
             align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px;
@@ -91,10 +99,34 @@
         #pallet-info p span:first-child { font-weight: bold; color: #aaa; }
         #pallet-info p span:last-child { text-align: right; word-break: break-word; }
         #qr-container { text-align: center; margin: 10px 0; background: white; padding: 5px; border-radius: 8px; display: none; }
+        
+        /* Botón para ocultar UI */
+        #toggle-ui-button {
+            position: absolute; bottom: 15px; right: 15px;
+            width: 50px; height: 50px; border-radius: 50%;
+            background: var(--panel-bg); border: 1px solid var(--border-color);
+            color: var(--text-color); font-size: 24px; cursor: pointer;
+            display: flex; justify-content: center; align-items: center;
+            backdrop-filter: blur(10px);
+        }
+
+        /* Leyenda de colores */
+        #sku-legend { max-height: 150px; overflow-y: auto; padding-right: 10px; }
+        #sku-legend ul { list-style: none; padding: 0; margin: 0; }
+        #sku-legend li { display: flex; align-items: center; margin-bottom: 5px; }
+        .color-swatch { width: 15px; height: 15px; border-radius: 3px; margin-right: 10px; border: 1px solid #000; }
+
+        .styled-button {
+            display: block; width: 100%; text-align: center; background: var(--highlight-color);
+            color: white; padding: 10px; border-radius: 8px; text-decoration: none;
+            font-weight: bold; margin-top: 10px;
+        }
+
     </style>
 </head>
 <body>
     <div id="loader">
+        <div class="loader-overlay"></div>
         <div class="loader-panel">
             <img src="https://placehold.co/400x150/transparent/white?text=MOLDERIL&font=raleway" alt="Logo Molderil"/>
             <p id="loader-status">Iniciando aplicación...</p>
@@ -104,7 +136,7 @@
         </div>
     </div>
 
-    <div id="left-panel" class="ui-container" style="display: none;">
+    <div id="left-panel" class="ui-container">
         <div class="ui-panel">
             <h2>Buscar Pallet</h2>
             <input type="text" id="search-input" placeholder="Ingresar ID de Pallet...">
@@ -112,9 +144,15 @@
         </div>
         <div class="ui-panel">
             <h2>Controles</h2>
-            <p><strong>Rueda del mouse:</strong> Zoom</p>
-            <p><strong>Click izquierdo + Arrastrar:</strong> Rotar Cámara</p>
-            <p><strong>Click derecho + Arrastrar:</strong> Mover Cámara</p>
+            <p><strong>Flechas:</strong> Moverse</p>
+            <p><strong>Av/Re Pág:</strong> Subir/Bajar</p>
+            <p><strong>CTRL + Flechas:</strong> Mirar</p>
+            <p><strong>Ratón/Táctil:</strong> Orbitar/Zoom</p>
+            <a href="grillaqr.html" class="styled-button">Volver a Grilla</a>
+        </div>
+         <div class="ui-panel" id="legend-panel" style="display: none;">
+            <h2>Leyenda de Colores</h2>
+            <div id="sku-legend"><ul></ul></div>
         </div>
     </div>
 
@@ -133,6 +171,8 @@
             <p><span>F. Prod:</span> <span id="info-fecha"></span></p>
         </div>
     </div>
+
+    <button id="toggle-ui-button" title="Ocultar/Mostrar UI">👁️</button>
 
     <canvas id="render-canvas"></canvas>
 
@@ -158,6 +198,7 @@
         let selectedObject = null;
         const palletsInScene = new Map();
         const skuColorMap = new Map();
+        const keyboardState = {};
 
         // --- CONTENEDORES DE DATOS CARGADOS ---
         const racksData = new Map();
@@ -177,10 +218,9 @@
         const loaderUI = document.getElementById('loader');
         const loaderStatus = document.getElementById('loader-status');
         const loaderProgress = document.getElementById('loader-progress');
-        const searchInput = document.getElementById('search-input');
-        const searchResult = document.getElementById('search-result');
         const leftPanel = document.getElementById('left-panel');
         const rightPanel = document.getElementById('right-panel');
+        const legendPanel = document.getElementById('legend-panel');
 
         // --- FUNCIÓN PARA ACTUALIZAR LA BARRA DE PROGRESO ---
         function updateLoader(status, percentage) {
@@ -199,7 +239,6 @@
             
             try {
                 updateLoader('Descargando archivos de datos...', 25);
-                // Carga de todos los datos en paralelo para máxima velocidad
                 await Promise.all([
                     loadCSV('definicion_estanterias.csv', parseRacks, racksData),
                     loadCSV('inventario_ubicaciones.csv', parseInventory, inventoryData),
@@ -208,14 +247,14 @@
                 ]);
                 
                 updateLoader('Procesando texturas...', 75);
-                createTextures(); // Generar texturas procedurales
+                createTextures();
                 
                 updateLoader('Construyendo depósito...', 90);
-                buildWarehouse(); // Construir la escena 3D
-                setupInteractions(); // Habilitar clics y hover
+                buildWarehouse();
+                populateLegend();
+                setupInteractions();
                 
                 updateLoader('¡Listo!', 100);
-                // Transición suave para ocultar el cargador
                 setTimeout(() => {
                     loaderUI.style.opacity = '0';
                     setTimeout(() => {
@@ -224,21 +263,19 @@
                     }, 500);
                 }, 500);
 
-
-                animate(); // Iniciar el bucle de renderizado
-
+                animate();
             } catch (error) {
                 console.error("Error crítico durante la inicialización:", error);
                 updateLoader('Error de Carga', 100);
-                loaderProgress.style.backgroundColor = '#ef4444'; // Color rojo para error
-                loaderStatus.innerHTML = `No se pudo cargar el depósito.<br><span style="font-size: 0.8em; color: #ff8888;">${error.message}</span>`;
+                loaderProgress.style.backgroundColor = '#ef4444';
+                loaderStatus.innerHTML = `No se pudo cargar.<br><span style="font-size: 0.8em; color: #ff8888;">${error.message}</span>`;
             }
         }
 
         // --- CONFIGURACIÓN DE LA ESCENA Y RENDERIZADO THREE.JS ---
         function setupScene() {
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0xdedede); // Fondo gris claro estilo CAD
+            scene.background = new THREE.Color(0xdedede);
 
             camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 2000);
             camera.position.set(40, 30, 50);
@@ -248,12 +285,25 @@
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-            renderer.toneMapping = THREE.LinearToneMapping; // Mapeo de tonos lineal para colores puros
+            renderer.toneMapping = THREE.LinearToneMapping;
             renderer.toneMappingExposure = 1.0;
+
+            // Cargar textura para el suelo y configurarla
+            const textureLoader = new THREE.TextureLoader();
+            const floorTexture = textureLoader.load('fondo.jpg');
+            floorTexture.wrapS = THREE.RepeatWrapping;
+            floorTexture.wrapT = THREE.RepeatWrapping;
+            floorTexture.repeat.set(30, 30); // Aumentar repetición para que la textura sea más pequeña y sutil
 
             const floor = new THREE.Mesh(
                 new THREE.PlaneGeometry(300, 300),
-                new THREE.MeshStandardMaterial({ color: 0xcfcfcf, roughness: 0.8, metalness: 0.1 })
+                // Usar la textura en el mapa del material
+                new THREE.MeshStandardMaterial({ 
+                    color: 0xdddddd, // Color base claro para teñir la textura sutilmente
+                    map: floorTexture,
+                    roughness: 0.9, // Muy rugoso para evitar reflejos
+                    metalness: 0.1
+                })
             );
             floor.rotation.x = -Math.PI / 2;
             floor.receiveShadow = true;
@@ -261,13 +311,11 @@
         }
 
         function setupLights() {
-            // Iluminación ambiental brillante y uniforme
             scene.add(new THREE.AmbientLight(0xffffff, 1.2)); 
             const hemiLight = new THREE.HemisphereLight(0xffffff, 0x888888, 1.5);
             hemiLight.position.set(0, 50, 0);
             scene.add(hemiLight);
 
-            // Luz principal direccional para generar sombras
             const dirLight = new THREE.DirectionalLight(0xffffff, 2.0);
             dirLight.position.set(-50, 60, 40);
             dirLight.castShadow = true;
@@ -289,6 +337,7 @@
             controls.maxDistance = 150;
             controls.maxPolarAngle = Math.PI / 2.1;
             controls.target.set(0, 3, 0);
+            controls.enablePan = false;
         }
 
         // --- LÓGICA DE CARGA Y PARSEO DE DATOS CSV ---
@@ -297,7 +346,7 @@
             const response = await fetch(url);
             if (!response.ok) throw new Error(`No se pudo cargar ${path}`);
             const text = await response.text();
-            const rows = text.trim().split('\n').slice(1); // Omitir cabecera
+            const rows = text.trim().split('\n').slice(1);
             rows.forEach(row => parser(row.trim(), dataMap));
         }
 
@@ -330,7 +379,6 @@
                 rackGroup.rotation.y = THREE.MathUtils.degToRad(rackDef.rotationY);
                 scene.add(rackGroup);
 
-                // Poblar la estantería con pallets o slots vacíos
                 for (let l = 1; l <= rackDef.levels; l++) {
                     for (let c = 1; c <= rackDef.columns; c++) {
                         for (let p = 1; p <= rackDef.depthPositions; p++) {
@@ -353,14 +401,12 @@
             }
         }
         
-        // --- FUNCIÓN DE CONSTRUCCIÓN DE ESTANTERÍAS (CORREGIDA) ---
         function createRack(def) {
             const rack = new THREE.Group();
             const postGeo = new THREE.BoxGeometry(0.12, def.slotHeight * def.levels, 0.12);
             const beamHorXGeo = new THREE.BoxGeometry(def.slotWidth, 0.1, 0.12);
             const beamHorZGeo = new THREE.BoxGeometry(0.12, 0.1, def.slotDepth);
 
-            // Postes verticales
             for (let c = 0; c <= def.columns; c++) {
                 for (let p = 0; p <= def.depthPositions; p++) {
                     const post = new THREE.Mesh(postGeo, rackPostMaterial);
@@ -373,7 +419,6 @@
 
             for (let l = 1; l <= def.levels; l++) {
                 const yPos = (l - 1) * def.slotHeight + 0.05;
-                // Vigas horizontales en X
                 for (let c = 0; c < def.columns; c++) {
                     for (let p = 0; p <= def.depthPositions; p++) {
                         const beam = new THREE.Mesh(beamHorXGeo, rackBeamMaterial);
@@ -383,7 +428,6 @@
                         rack.add(beam);
                     }
                 }
-                // Vigas horizontales en Z
                 for (let c = 0; c <= def.columns; c++) {
                      for (let p = 0; p < def.depthPositions; p++) {
                         const beam = new THREE.Mesh(beamHorZGeo, rackBeamMaterial);
@@ -395,15 +439,12 @@
                 }
             }
             
-            // Mover el origen para que coincida con las coordenadas del CSV
             rack.translateX(def.slotWidth / 2);
-
             return rack;
         }
 
-        // --- FUNCIÓN DE CÁLCULO DE POSICIÓN (CORREGIDA) ---
         function calculateSlotPosition(def, level, column, depthPos) {
-            const x = (column - 1) * def.slotWidth;
+            const x = (column - 1) * def.slotWidth + def.slotWidth / 2;
             const y = (level - 1) * def.slotHeight;
             const z = (depthPos - 1 - (def.depthPositions - 1) / 2) * def.slotDepth;
             return new THREE.Vector3(x, y, z);
@@ -425,7 +466,6 @@
             base.castShadow = true;
             base.receiveShadow = true;
             
-            // Contornos estilo CAD
             const boxEdges = new THREE.LineSegments(new THREE.EdgesGeometry(boxGeo), lineMaterial);
             boxEdges.position.copy(box.position);
             const baseEdges = new THREE.LineSegments(new THREE.EdgesGeometry(baseGeo), lineMaterial);
@@ -441,7 +481,7 @@
         function createEmptySlot(def, locationId) {
             const slotGeo = new THREE.BoxGeometry(def.slotWidth * 0.9, def.slotHeight * 0.8, def.slotDepth * 0.9);
             const emptySlot = new THREE.Mesh(slotGeo, emptySlotMaterial.clone());
-            emptySlot.position.y = (def.slotHeight * 0.8) / 2 + 0.1;
+            emptySlot.position.y = (def.slotHeight * 0.8) / 2 + 0.15;
             emptySlot.userData = { isEmptySlot: true, locationId };
             emptySlot.userData.originalMaterial = emptySlot.material;
             return emptySlot;
@@ -453,6 +493,7 @@
             const mouse = new THREE.Vector2();
             
             function onPointerMove(event) {
+                if (event.touches && event.touches.length > 1) return;
                 mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
                 mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
                 raycaster.setFromCamera(mouse, camera);
@@ -473,14 +514,65 @@
                 }
                 handleHover(foundObject);
             }
-
             function onClick() { handleClick(hoveredObject); }
             
             window.addEventListener('pointermove', onPointerMove);
             window.addEventListener('click', onClick);
-            searchInput.addEventListener('change', () => searchAndFocus(searchInput.value.trim()));
+
+            window.addEventListener('keydown', (event) => { keyboardState[event.code] = true; });
+            window.addEventListener('keyup', (event) => { keyboardState[event.code] = false; });
+            document.getElementById('search-input').addEventListener('change', (e) => searchAndFocus(e.target.value.trim()));
+
+            document.getElementById('toggle-ui-button').addEventListener('click', () => {
+                leftPanel.classList.toggle('hidden');
+                rightPanel.classList.toggle('hidden');
+            });
         }
         
+        function handleKeyboardInput(deltaTime) {
+            const moveSpeed = 15 * deltaTime;
+            const rotateSpeed = 1.5 * deltaTime;
+
+            const forward = new THREE.Vector3();
+            camera.getWorldDirection(forward);
+            const right = new THREE.Vector3().crossVectors(camera.up, forward).normalize();
+
+            if (keyboardState['ArrowUp'] || keyboardState['KeyW']) {
+                if(keyboardState['ControlLeft'] || keyboardState['ControlRight']) {
+                    camera.rotateX(rotateSpeed);
+                } else {
+                    camera.position.addScaledVector(forward, moveSpeed);
+                }
+            }
+            if (keyboardState['ArrowDown'] || keyboardState['KeyS']) {
+                if(keyboardState['ControlLeft'] || keyboardState['ControlRight']) {
+                    camera.rotateX(-rotateSpeed);
+                } else {
+                    camera.position.addScaledVector(forward, -moveSpeed);
+                }
+            }
+            if (keyboardState['ArrowLeft'] || keyboardState['KeyA']) {
+                if(keyboardState['ControlLeft'] || keyboardState['ControlRight']) {
+                    camera.rotateY(rotateSpeed);
+                } else {
+                    camera.position.addScaledVector(right, moveSpeed);
+                }
+            }
+            if (keyboardState['ArrowRight'] || keyboardState['KeyD']) {
+                 if(keyboardState['ControlLeft'] || keyboardState['ControlRight']) {
+                    camera.rotateY(-rotateSpeed);
+                } else {
+                    camera.position.addScaledVector(right, -moveSpeed);
+                }
+            }
+            if (keyboardState['PageUp'] || keyboardState['KeyE']) camera.position.y += moveSpeed;
+            if (keyboardState['PageDown'] || keyboardState['KeyQ']) camera.position.y -= moveSpeed;
+            
+            if (Object.values(keyboardState).some(v => v)) {
+                controls.target.copy(camera.position).add(forward);
+            }
+        }
+
         function restoreMaterial(object) {
             if (!object) return;
             const mat = object.userData.originalMaterial;
@@ -509,7 +601,6 @@
                     selectedObject.material = highlightMaterial;
                     updateInfoPanel(selectedObject.userData);
                 }
-                 // Animar cámara al hacer clic
                 const targetPosition = new THREE.Vector3();
                 selectedObject.getWorldPosition(targetPosition);
                 animateCameraTo(targetPosition);
@@ -523,16 +614,25 @@
                 const loteInfo = lotesData.get(data.palletId) || {};
                 const artInfo = articulosData.get(data.sku) || {};
                 
-                document.getElementById('info-title').textContent = `Pallet: ${data.palletId}`;
+                const palletId = data.palletId || 'N/A';
+                const sku = data.sku || 'N/A';
+                const desc = artInfo.desc || 'Descripción no encontrada';
+                const qty = loteInfo.cantidad || 'N/A';
+                const uom = loteInfo.uom || '';
+                const lotes = loteInfo.lotes || 'N/A';
+                const fecha = loteInfo.fecha || 'N/A';
+
+                document.getElementById('info-title').textContent = `Pallet: ${palletId}`;
                 document.getElementById('info-location').textContent = data.locationId;
-                document.getElementById('info-pallet').textContent = data.palletId || 'N/A';
-                document.getElementById('info-sku').textContent = data.sku || 'N/A';
-                document.getElementById('info-desc').textContent = artInfo.desc || 'Descripción no encontrada';
-                document.getElementById('info-qty').textContent = loteInfo.cantidad ? `${loteInfo.cantidad} ${loteInfo.uom || ''}` : 'N/A';
-                document.getElementById('info-lotes').textContent = (loteInfo.lotes || '').replace(/#/g, ', ');
-                document.getElementById('info-fecha').textContent = loteInfo.fecha || 'N/A';
+                document.getElementById('info-pallet').textContent = palletId;
+                document.getElementById('info-sku').textContent = sku;
+                document.getElementById('info-desc').textContent = desc;
+                document.getElementById('info-qty').textContent = `${qty} ${uom}`;
+                document.getElementById('info-lotes').textContent = lotes.replace(/#/g, ', ');
+                document.getElementById('info-fecha').textContent = fecha;
                 
-                const qrString = `ID:${data.palletId};SKU:${data.sku};LOC:${data.locationId}`;
+                const cantidadParaQR = (qty !== 'N/A') ? qty.replace(',', '.') : '';
+                const qrString = [ sku, desc, palletId, lotes, fecha, cantidadParaQR, uom ].join(';');
                 QRCode.toCanvas(document.getElementById('qr-canvas'), qrString, { width: 150, margin: 1 });
                 document.getElementById('qr-container').style.display = 'block';
 
@@ -548,13 +648,13 @@
         }
         
         function searchAndFocus(palletId) {
-            searchResult.textContent = '';
+            document.getElementById('search-result').textContent = '';
             const pallet = palletsInScene.get(palletId);
             if (pallet) {
-                handleClick(pallet); // Esto ya llama a la animación de cámara
-                searchResult.textContent = `Encontrado en: ${pallet.userData.locationId}`;
+                handleClick(pallet);
+                document.getElementById('search-result').textContent = `Encontrado: ${pallet.userData.locationId}`;
             } else {
-                searchResult.textContent = 'Pallet no encontrado.';
+                document.getElementById('search-result').textContent = 'Pallet no encontrado.';
             }
         }
         
@@ -566,15 +666,33 @@
             let t = 0;
             function animateFocus() {
                 t = Math.min(t + clock.getDelta() * 1.5, 1);
-                const easedT = 0.5 - 0.5 * Math.cos(t * Math.PI); // Ease in-out
+                const easedT = 0.5 - 0.5 * Math.cos(t * Math.PI);
                 camera.position.lerpVectors(startPos, endPos, easedT);
                 controls.target.lerpVectors(startTarget, targetPosition, easedT);
                 if (t < 1) requestAnimationFrame(animateFocus);
+                else controls.target.copy(targetPosition);
             }
             animateFocus();
         }
 
         // --- FUNCIONES DE UTILIDAD ---
+        function populateLegend() {
+            const legendList = document.querySelector("#sku-legend ul");
+            if (!legendList) return;
+            const sortedSkus = [...skuColorMap.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+            
+            for (const [sku, color] of sortedSkus) {
+                const listItem = document.createElement('li');
+                const swatch = document.createElement('div');
+                swatch.className = 'color-swatch';
+                swatch.style.backgroundColor = `#${color.getHexString()}`;
+                listItem.appendChild(swatch);
+                listItem.append(sku);
+                legendList.appendChild(listItem);
+            }
+            legendPanel.style.display = 'block';
+        }
+
         function getSkuColor(sku) {
             if (skuColorMap.has(sku)) return skuColorMap.get(sku);
             let hash = 0;
@@ -610,13 +728,17 @@
         // --- BUCLE DE ANIMACIÓN ---
         function animate() {
             requestAnimationFrame(animate);
-            controls.update();
+            const deltaTime = clock.getDelta();
+            
+            if (!controls.active) {
+                handleKeyboardInput(deltaTime);
+            }
+            
+            controls.update(deltaTime);
             renderer.render(scene, camera);
         }
 
-        // Iniciar la aplicación
         init();
     </script>
 </body>
 </html>
-
