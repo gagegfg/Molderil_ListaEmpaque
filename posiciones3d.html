@@ -158,8 +158,8 @@
 
     <div id="left-panel" class="ui-container">
         <div class="ui-panel">
-            <h2>Buscar Pallet</h2>
-            <input type="text" id="search-input" placeholder="Ingresar ID de Pallet...">
+            <h2>Buscar Universal</h2>
+            <input type="text" id="search-input" placeholder="SKU, Pallet, Lote...">
             <p id="search-result"></p>
         </div>
         <div class="ui-panel">
@@ -227,6 +227,7 @@
         let scene, camera, renderer, controls, clock;
         let hoveredObject = null;
         let selectedObject = null;
+        let highlightedObjects = [];
         const palletsInScene = new Map();
         const skuColorMap = new Map();
         const keyboardState = {};
@@ -254,6 +255,8 @@
         const leftPanel = document.getElementById('left-panel');
         const rightPanel = document.getElementById('right-panel');
         const legendPanel = document.getElementById('legend-panel');
+        const searchInput = document.getElementById('search-input');
+        const searchResult = document.getElementById('search-result');
 
         // --- FUNCIÓN PARA ACTUALIZAR LA BARRA DE PROGRESO ---
         function updateLoader(status, percentage) {
@@ -415,7 +418,7 @@
             
             worldBounds.setFromObject(mainGroup, true).expandByScalar(20);
             
-            const floorSize = Math.max(worldBounds.getSize(new THREE.Vector3()).x, worldBounds.getSize(new THREE.Vector3()).z);
+            const floorSize = Math.max(worldBounds.getSize(new THREE.Vector3()).x, worldBounds.getSize(new THREE.Vector3()).z) + 20;
             const textureLoader = new THREE.TextureLoader();
             const floorTexture = textureLoader.load('fondo.jpg');
             const floor = new THREE.Mesh(
@@ -443,51 +446,38 @@
             const beamHorZGeo = new THREE.BoxGeometry(0.1, 0.1, def.slotDepth); // Viga de soporte en profundidad
 
             for (let c = 0; c <= def.columns; c++) {
-                const zFront = -(def.depthPositions / 2) * def.slotDepth;
-                const zBack = (def.depthPositions / 2) * def.slotDepth;
-
-                const postFront = new THREE.Mesh(postGeo, rackPostMaterial);
-                postFront.position.set(c * def.slotWidth, (def.slotHeight * def.levels) / 2, zFront);
-                postFront.castShadow = true;
-                rack.add(postFront);
-                
-                const postBack = new THREE.Mesh(postGeo, rackPostMaterial);
-                postBack.position.set(c * def.slotWidth, (def.slotHeight * def.levels) / 2, zBack);
-                postBack.castShadow = true;
-                rack.add(postBack);
+                const post = new THREE.Mesh(postGeo, rackPostMaterial);
+                post.position.set(c * def.slotWidth, (def.slotHeight * def.levels) / 2, 0);
+                post.castShadow = true;
+                rack.add(post);
             }
 
             for (let l = 1; l <= def.levels; l++) {
                 const yPos = (l - 1) * def.slotHeight + 0.05;
                 for (let c = 0; c < def.columns; c++) {
                     const xCenter = c * def.slotWidth + def.slotWidth / 2;
-                    const zFront = -(def.depthPositions / 2) * def.slotDepth;
-                    const zBack = (def.depthPositions / 2) * def.slotDepth;
                     
-                    const beamFront = new THREE.Mesh(beamHorXGeo, rackBeamMaterial);
-                    beamFront.position.set(xCenter, yPos, zFront);
-                    beamFront.castShadow = true;
-                    rack.add(beamFront);
-                    
-                    const beamBack = new THREE.Mesh(beamHorXGeo, rackBeamMaterial);
-                    beamBack.position.set(xCenter, yPos, zBack);
-                    beamBack.castShadow = true;
-                    rack.add(beamBack);
+                    const beam = new THREE.Mesh(beamHorXGeo, rackBeamMaterial);
+                    beam.position.set(xCenter, yPos, 0);
+                    beam.castShadow = true;
+                    rack.add(beam);
 
                     // AÑADIR VIGAS DE SOPORTE EN PROFUNDIDAD
                     const supportRail1 = new THREE.Mesh(beamHorZGeo, rackBeamMaterial);
-                    supportRail1.position.set(xCenter - 0.4, yPos, 0); // Desplazado a un lado
+                    supportRail1.position.set(xCenter - 0.4, yPos, def.slotDepth / 2);
                     supportRail1.castShadow = true;
                     rack.add(supportRail1);
                     
                     const supportRail2 = new THREE.Mesh(beamHorZGeo, rackBeamMaterial);
-                    supportRail2.position.set(xCenter + 0.4, yPos, 0); // Desplazado al otro lado
+                    supportRail2.position.set(xCenter + 0.4, yPos, def.slotDepth / 2);
                     supportRail2.castShadow = true;
                     rack.add(supportRail2);
                 }
             }
             
             rack.translateX(def.slotWidth / 2);
+            // Mover toda la estantería para centrarla en Z
+            rack.translateZ(-def.slotDepth / 2);
             return rack;
         }
 
@@ -569,7 +559,7 @@
 
             window.addEventListener('keydown', (event) => { keyboardState[event.code] = true; });
             window.addEventListener('keyup', (event) => { keyboardState[event.code] = false; });
-            document.getElementById('search-input').addEventListener('change', (e) => searchAndFocus(e.target.value.trim()));
+            searchInput.addEventListener('change', (e) => searchAndFocus(e.target.value.trim()));
 
             document.getElementById('toggle-ui-button').addEventListener('click', () => {
                 leftPanel.classList.toggle('hidden');
@@ -584,7 +574,6 @@
         
         function handleKeyboardInput(deltaTime) {
             const moveSpeed = 20 * deltaTime;
-            const rotateSpeed = 1.5 * deltaTime;
             const moveVector = new THREE.Vector3();
 
             if (keyboardState['ArrowUp'] || keyboardState['KeyW']) moveVector.z -= 1;
@@ -596,12 +585,19 @@
 
             if (moveVector.lengthSq() > 0) {
                 moveVector.normalize().multiplyScalar(moveSpeed);
-                // Aplica el movimiento relativo a la dirección de la cámara
                 moveVector.applyQuaternion(camera.quaternion);
                 
                 camera.position.add(moveVector);
-                // El target de OrbitControls debe seguir la cámara para evitar saltos
                 controls.target.add(moveVector);
+            }
+        }
+        
+        function clearHighlights() {
+            highlightedObjects.forEach(obj => restoreMaterial(obj));
+            highlightedObjects = [];
+            if(selectedObject) {
+                restoreMaterial(selectedObject);
+                selectedObject = null;
             }
         }
 
@@ -614,18 +610,20 @@
 
         function handleHover(object) {
             if (hoveredObject === object) return;
-            if (hoveredObject !== selectedObject) restoreMaterial(hoveredObject);
+            if (hoveredObject && !highlightedObjects.includes(hoveredObject) && hoveredObject !== selectedObject) {
+                restoreMaterial(hoveredObject);
+            }
             hoveredObject = object;
-            if (hoveredObject && hoveredObject !== selectedObject) {
+            if (hoveredObject && !highlightedObjects.includes(hoveredObject) && hoveredObject !== selectedObject) {
                  if (hoveredObject.userData.isPallet) hoveredObject.children[0].material = highlightMaterial;
                  else if (hoveredObject.userData.isEmptySlot) hoveredObject.material = highlightMaterial;
             }
         }
         
         function handleClick(object) {
-            if (selectedObject) restoreMaterial(selectedObject);
-            selectedObject = object;
-            if (selectedObject) {
+            clearHighlights();
+            if (object) {
+                selectedObject = object;
                 if (selectedObject.userData.isPallet) {
                     selectedObject.children[0].material = highlightMaterial;
                     updateInfoPanel(selectedObject.userData);
@@ -679,14 +677,40 @@
             rightPanel.style.display = 'block';
         }
         
-        function searchAndFocus(palletId) {
-            document.getElementById('search-result').textContent = '';
-            const pallet = palletsInScene.get(palletId);
-            if (pallet) {
+        // --- FUNCIÓN DE BÚSQUEDA UNIVERSAL (MEJORADA) ---
+        function searchAndFocus(searchTerm) {
+            clearHighlights();
+            searchResult.textContent = '';
+            if (!searchTerm) return;
+            
+            const term = searchTerm.toLowerCase();
+            const foundPallets = [];
+
+            for (const pallet of palletsInScene.values()) {
+                const loteInfo = lotesData.get(pallet.userData.palletId) || {};
+                const skuMatch = pallet.userData.sku.toLowerCase().includes(term);
+                const palletIdMatch = pallet.userData.palletId.toLowerCase().includes(term);
+                const lotesMatch = (loteInfo.lotes || '').toLowerCase().includes(term);
+
+                if (skuMatch || palletIdMatch || lotesMatch) {
+                    foundPallets.push(pallet);
+                }
+            }
+
+            if (foundPallets.length === 0) {
+                searchResult.textContent = 'No se encontraron pallets.';
+            } else if (foundPallets.length === 1) {
+                const pallet = foundPallets[0];
                 handleClick(pallet);
-                document.getElementById('search-result').textContent = `Encontrado: ${pallet.userData.locationId}`;
+                searchResult.textContent = `Encontrado: ${pallet.userData.locationId}`;
             } else {
-                document.getElementById('search-result').textContent = 'Pallet no encontrado.';
+                searchResult.textContent = `${foundPallets.length} pallets encontrados.`;
+                foundPallets.forEach(pallet => {
+                    if (pallet.userData.isPallet) {
+                        pallet.children[0].material = highlightMaterial;
+                    }
+                    highlightedObjects.push(pallet);
+                });
             }
         }
         
@@ -738,7 +762,7 @@
 
         function createTextures() {
             const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 256;
-            const ctx = canvas.getContext('2d'); // CORREGIDO: '2d' 
+            const ctx = canvas.getContext('2d');
             ctx.fillStyle = '#c2a385'; ctx.fillRect(0, 0, 256, 256);
             ctx.strokeStyle = '#a18465'; ctx.lineWidth = 2;
             for (let i = 0; i < 20; i++) {
@@ -774,4 +798,3 @@
     </script>
 </body>
 </html>
-
