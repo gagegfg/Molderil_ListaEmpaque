@@ -117,10 +117,23 @@
         #sku-legend li { display: flex; align-items: center; margin-bottom: 5px; }
         .color-swatch { width: 15px; height: 15px; border-radius: 3px; margin-right: 10px; border: 1px solid #000; }
 
+        /* Botón de "Volver" mejorado */
         .styled-button {
-            display: block; width: 100%; text-align: center; background: var(--highlight-color);
-            color: white; padding: 10px; border-radius: 8px; text-decoration: none;
-            font-weight: bold; margin-top: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            text-align: center;
+            background: var(--highlight-color);
+            color: white; padding: 12px 10px; border-radius: 8px; text-decoration: none;
+            font-weight: bold;
+            margin-top: 10px;
+            font-size: 1em;
+        }
+        .styled-button svg {
+             width: 20px;
+             height: 20px;
         }
 
     </style>
@@ -149,7 +162,12 @@
             <p><strong>Av/Re Pág:</strong> Subir/Bajar</p>
             <p><strong>CTRL + Flechas:</strong> Mirar</p>
             <p><strong>Ratón/Táctil:</strong> Orbitar/Zoom</p>
-            <a href="grillaqr.html" class="styled-button">Volver a Grilla</a>
+            <a href="grillaqr.html" class="styled-button">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                    <path fill-rule="evenodd" d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8z"></path>
+                </svg>
+                <span>Trazabilidad de Lotes</span>
+            </a>
         </div>
          <div class="ui-panel" id="legend-panel" style="display: none;">
             <h2>Leyenda de Colores</h2>
@@ -713,7 +731,7 @@
 
         function createTextures() {
             const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 256;
-            const ctx = canvas.getContext('d');
+            const ctx = canvas.getContext('2d'); // CORREGIDO: '2d' en lugar de 'd'
             ctx.fillStyle = '#c2a385'; ctx.fillRect(0, 0, 256, 256);
             ctx.strokeStyle = '#a18465'; ctx.lineWidth = 2;
             for (let i = 0; i < 20; i++) {
@@ -750,3 +768,4 @@
     </script>
 </body>
 </html>
+
