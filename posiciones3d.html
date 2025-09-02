@@ -3,466 +3,505 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Molderil - Visualizador 3D de Depósito (Interactivo)</title>
+    <title>Molderil - Visualizador de Depósito 3D Paramétrico</title>
+    <!-- Librería para generar códigos QR -->
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; background-color: #333; }
-        #render-canvas { display: block; }
-        #loader {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            color: white; font-size: 24px; text-align: center; z-index: 100;
+        /* Estilos generales y tema oscuro moderno */
+        :root {
+            --panel-bg: rgba(20, 20, 25, 0.8);
+            --text-color: #f0f0f0;
+            --highlight-color: #00aaff;
+            --border-color: rgba(255, 255, 255, 0.2);
         }
+        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #1a1a1a; }
+        canvas#render-canvas { display: block; }
+
+        /* Pantalla de carga animada */
+        #loader {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: #111; color: var(--text-color);
+            display: flex; justify-content: center; align-items: center;
+            flex-direction: column; z-index: 100; transition: opacity 0.5s ease-out;
+        }
+        #loader h1 { font-size: 2em; margin: 0; color: var(--highlight-color); }
+        #loader p { font-size: 1.1em; margin-top: 10px; }
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.1); width: 40px; height: 40px;
+            border-radius: 50%; border-left-color: var(--highlight-color);
+            animation: spin 1s ease infinite; margin-top: 20px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Contenedores de la interfaz de usuario */
         .ui-container {
             position: absolute; top: 0; padding: 15px;
-            display: flex; flex-direction: column; gap: 10px; max-width: 320px;
+            display: flex; flex-direction: column; gap: 15px; max-width: 340px;
+            pointer-events: none; /* Permite hacer clic "a través" de los contenedores */
         }
+        .ui-container > * { pointer-events: auto; /* Rehabilita eventos en los paneles hijos */ }
         #left-panel { left: 0; }
-        #right-panel { right: 0; display: none; } /* Oculto por defecto */
+        #right-panel { right: 0; display: none; }
 
+        /* Paneles individuales de la UI con efecto "frosty" */
         .ui-panel {
-            background: rgba(0, 0, 0, 0.75); color: white; border-radius: 10px; padding: 15px;
-            backdrop-filter: blur(5px);
+            background: var(--panel-bg); color: var(--text-color);
+            border-radius: 12px; padding: 18px;
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
         }
-        .ui-panel h2 { margin: 0 0 10px 0; border-bottom: 1px solid #555; padding-bottom: 5px; font-size: 1.1em;}
-        .ui-panel p, .ui-panel li { margin: 5px 0; font-size: 14px; }
-        #search-input { width: calc(100% - 20px); padding: 8px; border-radius: 5px; border: 1px solid #555; background: #222; color: white;}
-        #search-result { color: #ffc107; font-weight: bold; margin-top: 5px; height: 20px;}
-        #pallet-info p { display: flex; justify-content: space-between; align-items: center; }
+        .ui-panel h2 {
+            margin: 0 0 12px 0; border-bottom: 1px solid var(--border-color);
+            padding-bottom: 8px; font-size: 1.2em; color: var(--highlight-color);
+        }
+        .ui-panel p, .ui-panel li { margin: 8px 0; font-size: 14px; line-height: 1.5; }
+        
+        /* Elementos específicos de la UI */
+        #search-input {
+            width: calc(100% - 22px); padding: 10px; border-radius: 8px;
+            border: 1px solid var(--border-color); background: rgba(0,0,0,0.3);
+            color: var(--text-color); font-size: 1em;
+        }
+        #search-result { color: #ffc107; font-weight: bold; margin-top: 8px; height: 20px; }
+        
+        /* Panel de información detallada */
+        #pallet-info p {
+            display: grid; grid-template-columns: 100px 1fr;
+            align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px;
+        }
         #pallet-info p span:first-child { font-weight: bold; color: #aaa; }
-        #pallet-info p span:last-child { text-align: right; }
-        #qr-canvas { border-radius: 5px; }
+        #pallet-info p span:last-child { text-align: right; word-break: break-word; }
+        #qr-container { text-align: center; margin: 10px 0; background: white; padding: 5px; border-radius: 8px; display: none; }
     </style>
 </head>
 <body>
-    <div id="loader"><p>Cargando depósito 3D...</p></div>
+    <div id="loader">
+        <div class="spinner"></div>
+        <h1>MOLDERIL</h1>
+        <p>Cargando visualizador de depósito...</p>
+    </div>
 
     <div id="left-panel" class="ui-container" style="display: none;">
         <div class="ui-panel">
             <h2>Buscar Pallet</h2>
-            <input type="text" id="search-input" placeholder="Ingresar N° de Pallet...">
+            <input type="text" id="search-input" placeholder="Ingresar ID de Pallet...">
             <p id="search-result"></p>
         </div>
         <div class="ui-panel">
             <h2>Controles</h2>
             <p><strong>Rueda del mouse:</strong> Zoom</p>
-            <p><strong>Click izquierdo + Arrastrar:</strong> Rotar</p>
-            <p><strong>Click derecho + Arrastrar:</strong> Mover</p>
+            <p><strong>Click izquierdo + Arrastrar:</strong> Rotar Cámara</p>
+            <p><strong>Click derecho + Arrastrar:</strong> Mover Cámara</p>
         </div>
-         <a href="grillaqr.html" style="text-decoration: none;">
-            <div class="ui-panel" style="background: #007bff; text-align: center; cursor: pointer;">
-                <h2 style="border: none; font-size: 1.2em;">🏠 Volver al Menú</h2>
-            </div>
-        </a>
     </div>
 
     <div id="right-panel" class="ui-container">
         <div class="ui-panel" id="pallet-info">
-            <h2 id="info-title">Detalles del Pallet</h2>
-            <div id="qr-container" style="text-align: center; margin-bottom: 10px; display: none;">
-                <canvas id="qr-canvas" width="150" height="150"></canvas>
+            <h2 id="info-title">Detalles</h2>
+            <div id="qr-container">
+                <canvas id="qr-canvas"></canvas>
             </div>
-            <p><span>N° Pallet:</span> <span id="info-pallet"></span></p>
             <p><span>Ubicación:</span> <span id="info-location"></span></p>
+            <p><span>ID Pallet:</span> <span id="info-pallet"></span></p>
             <p><span>SKU:</span> <span id="info-sku"></span></p>
             <p><span>Descripción:</span> <span id="info-desc"></span></p>
             <p><span>Cantidad:</span> <span id="info-qty"></span></p>
             <p><span>Lotes:</span> <span id="info-lotes"></span></p>
+            <p><span>F. Prod:</span> <span id="info-fecha"></span></p>
         </div>
     </div>
 
     <canvas id="render-canvas"></canvas>
 
     <script type="importmap">
-    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/" } }
+    { "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+    } }
     </script>
+
     <script type="module">
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-
-        // --- CONFIGURACIÓN ---
-        const USUARIO_GITHUB = 'gagegfg';
-        const REPO_NOMBRE = 'Molderil_ListaEmpaque';
-        const RUTA_UBICACIONES_CSV = 'ubicacionespallet.csv';
-        const RUTA_LOTES_CSV = 'detallelotes.csv';
-        const RUTA_ARTICULOS_CSV = 'articulos.csv';
-
-        // --- ESTADO DE LA APLICACIÓN ---
-        let locationsData = new Map();
-        let lotesDetails = new Map();
-        let articulosDetails = new Map();
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { SAOPass } from 'three/addons/postprocessing/SAOPass.js';
+        import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
         
+        // --- CONFIGURACIÓN DE LA APLICACIÓN ---
+        const GITHUB_USER = 'gagegfg';
+        const GITHUB_REPO = 'Molderil_ListaEmpaque';
+        const BASE_URL = `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/main/`;
+
+        // --- ESTADO GLOBAL DE LA APLICACIÓN ---
+        let scene, camera, renderer, controls, composer, clock;
         let hoveredObject = null;
         let selectedObject = null;
-        const highlightMaterialPallet = new THREE.MeshStandardMaterial({ color: 0xffff00, emissive: 0x555500 });
-        const highlightMaterialSlot = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.5, wireframe: true });
+        const palletsInScene = new Map();
+        const skuColorMap = new Map();
+
+        // --- CONTENEDORES DE DATOS CARGADOS ---
+        const racksData = new Map();
+        const inventoryData = new Map();
+        const lotesData = new Map();
+        const articulosData = new Map();
+        
+        // --- MATERIALES Y GEOMETRÍAS REUTILIZABLES PARA OPTIMIZACIÓN ---
+        const rackPostMaterial = new THREE.MeshStandardMaterial({ color: 0x4d6a93, roughness: 0.6, metalness: 0.8 });
+        const rackBeamMaterial = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.6, metalness: 0.5 });
+        const emptySlotMaterial = new THREE.MeshStandardMaterial({ color: 0x22c55e, transparent: true, opacity: 0.15 });
+        const highlightMaterial = new THREE.MeshStandardMaterial({ color: 0x00aaff, emissive: 0x00aaff, emissiveIntensity: 1.5, toneMapped: false });
+        let palletBaseMaterial;
 
         // --- ELEMENTOS DEL DOM ---
-        const loader = document.getElementById('loader');
+        const loaderUI = document.getElementById('loader');
         const searchInput = document.getElementById('search-input');
         const searchResult = document.getElementById('search-result');
-        const canvas = document.getElementById('render-canvas');
         const leftPanel = document.getElementById('left-panel');
         const rightPanel = document.getElementById('right-panel');
 
-        // --- CONFIGURACIÓN BÁSICA DE THREE.JS ---
-        const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x555555);
-        scene.fog = new THREE.Fog(0x555555, 60, 120);
-        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.set(20, 15, 30);
-        const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        
-        // --- ILUMINACIÓN ---
-        scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-        const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
-        dirLight.position.set(30, 40, 20);
-        dirLight.castShadow = true;
-        dirLight.shadow.camera.top = 30; dirLight.shadow.camera.bottom = -30;
-        dirLight.shadow.camera.left = -35; dirLight.shadow.camera.right = 35;
-        dirLight.shadow.mapSize.width = 2048; dirLight.shadow.mapSize.height = 2048;
-        scene.add(dirLight);
-        
-        // --- CONTROLES ---
-        const controls = new OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true;
-        controls.enableZoom = true; // Asegurarse de que el zoom (scroll) esté activado
-        controls.maxPolarAngle = Math.PI / 2.1; 
-        controls.target.set(0, 1, 0);
-
-        // --- CONSTANTES Y GEOMETRÍAS ---
-        const PALLET_WIDTH = 1.2, PALLET_DEPTH = 1, PALLET_HEIGHT = 1.2;
-        const RACK_BEAM_HEIGHT = 0.1, RACK_BEAM_DEPTH = 0.12, RACK_POST_SIZE = 0.12;
-        const rackPostMaterial = new THREE.MeshStandardMaterial({ color: 0x0055a4, roughness: 0.6, metalness: 0.5 });
-        const rackBeamMaterial = new THREE.MeshStandardMaterial({ color: 0xff8c00, roughness: 0.6, metalness: 0.5 });
-        const palletBoxMaterial = new THREE.MeshStandardMaterial({ map: createBoxTexture() });
-        const emptySlotGeometry = new THREE.BoxGeometry(PALLET_WIDTH, PALLET_HEIGHT, PALLET_DEPTH);
-        const emptySlotMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.2, wireframe: true });
-
-        // --- Estructura del Depósito ---
-        const floor = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshStandardMaterial({ map: createConcreteTexture() }));
-        floor.rotation.x = -Math.PI / 2;
-        floor.receiveShadow = true;
-        scene.add(floor);
-        const walls = new THREE.Mesh(new THREE.BoxGeometry(100, 20, 100), new THREE.MeshStandardMaterial({color: 0xf0f0f0, side: THREE.BackSide}));
-        walls.position.y = 9.9;
-        scene.add(walls);
-
-        // --- LÓGICA PRINCIPAL ---
+        // --- FUNCIÓN PRINCIPAL DE INICIALIZACIÓN ---
         async function init() {
+            clock = new THREE.Clock();
+            setupScene();
+            setupLights();
+            setupControls();
+            
             try {
-                generateDefaultLocations();
-                
-                await Promise.allSettled([
-                    loadCSV(RUTA_UBICACIONES_CSV, parseUbicaciones),
-                    loadCSV(RUTA_LOTES_CSV, parseLotes),
-                    loadCSV(RUTA_ARTICULOS_CSV, parseArticulos)
-                ]);
-                
-                renderWarehouse();
-                
-                loader.style.display = 'none';
-                leftPanel.style.display = 'flex';
-                
-                setupInteractions();
+                // Carga de todos los datos en paralelo para máxima velocidad
+                await Promise.all([
+// ... existing code ... -->
+        // --- CONFIGURACIÓN DE LA ESCENA Y RENDERIZADO THREE.JS ---
+        function setupScene() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xababab); // Fondo más claro y neutro
+            // scene.fog = new THREE.Fog(scene.background, 70, 150); // Eliminado para máxima claridad
 
-            } catch (error) {
-                loader.innerHTML = `<p style="color: #ffc107;">Error Crítico:</p><p style="font-size: 16px;">${error.message}</p>`;
-            }
+            camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(30, 20, 40);
+
+            renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('render-canvas'), antialias: true, powerPreference: "high-performance" });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.25; // Aumento de exposición para una imagen más brillante
+
+            // Cadena de post-procesamiento para efectos visuales avanzados
+            composer = new EffectComposer(renderer);
+            composer.addPass(new RenderPass(scene, camera));
+            // Oclusión ambiental para sombras de contacto realistas
+            const saoPass = new SAOPass(scene, camera, false, true);
+            saoPass.params.saoIntensity = 0.01; // Reducido para un efecto más sutil
+            saoPass.params.saoScale = 2;
+            saoPass.params.saoKernelRadius = 50;
+            composer.addPass(saoPass);
+            composer.addPass(new OutputPass());
+
+            const floor = new THREE.Mesh(
+                new THREE.PlaneGeometry(200, 200),
+                new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.8, metalness: 0.2 }) // Color del suelo ajustado
+            );
+            floor.rotation.x = -Math.PI / 2;
+            floor.receiveShadow = true;
+            scene.add(floor);
         }
 
-        async function loadCSV(path, parser) {
-            try {
-                const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${path}?t=${new Date().getTime()}`;
-                const response = await fetch(url);
-                if (response.ok) {
-                    parser(await response.text());
-                } else if (response.status === 404) {
-                    console.warn(`${path} no encontrado.`);
-                    if (path === RUTA_UBICACIONES_CSV) {
-                        searchResult.textContent = 'Archivo no hallado. Depósito vacío.';
+        function setupLights() {
+            scene.add(new THREE.AmbientLight(0xffffff, 1.0)); // Luz ambiental más intensa
+            const hemiLight = new THREE.HemisphereLight(0xffffff, 0x888888, 1.5); // Luz de relleno más potente
+            hemiLight.position.set(0, 50, 0);
+            scene.add(hemiLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 3.0); // Luz principal (sol) más fuerte
+            dirLight.position.set(-40, 50, 30); // Ángulo ajustado para mejores sombras
+            dirLight.castShadow = true;
+            dirLight.shadow.camera.top = 40;
+            dirLight.shadow.camera.bottom = -40;
+            dirLight.shadow.camera.left = -50;
+            dirLight.shadow.camera.right = 50;
+            dirLight.shadow.mapSize.width = 4096;
+            dirLight.shadow.mapSize.height = 4096;
+            dirLight.shadow.bias = -0.001;
+            scene.add(dirLight);
+        }
+
+        function setupControls() {
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.minDistance = 5;
+            controls.maxDistance = 100;
+            controls.maxPolarAngle = Math.PI / 2.1;
+            controls.target.set(0, 3, 0);
+        }
+
+        // --- LÓGICA DE CARGA Y PARSEO DE DATOS CSV ---
+        async function loadCSV(path, parser, dataMap) {
+            const url = `${BASE_URL}${path}?t=${new Date().getTime()}`;
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`No se pudo cargar ${path}`);
+            const text = await response.text();
+            const rows = text.trim().split('\n').slice(1); // Omitir cabecera
+            rows.forEach(row => parser(row.trim(), dataMap));
+        }
+
+        function parseRacks(row, map) {
+            const [id, x, z, levels, cols, w, h, d, p, rotY] = row.split(';');
+            if (id) map.set(id, {
+                x: parseFloat(x), z: parseFloat(z), levels: parseInt(levels),
+                columns: parseInt(cols), slotWidth: parseFloat(w), slotHeight: parseFloat(h),
+                slotDepth: parseFloat(d), depthPositions: parseInt(p) || 1, rotationY: parseFloat(rotY) || 0
+            });
+        }
+        function parseInventory(row, map) {
+            const [locationId, sku, palletId] = row.split(';');
+            if (locationId) map.set(locationId.trim(), { sku: sku.trim(), palletId: palletId.trim() });
+        }
+        function parseLotes(row, map) {
+            const [sku, desc, pallet, lotes, fecha, qty, uom] = row.split(';');
+            if (pallet) map.set(pallet.trim(), { sku, lotes, fecha, cantidad: qty, uom });
+        }
+        function parseArticulos(row, map) {
+            const [tipo, sku, descLarga, descCorta] = row.split(';');
+            if (sku) map.set(sku.trim(), { desc: (descCorta || descLarga || '').trim() });
+        }
+        
+        // --- LÓGICA DE CONSTRUCCIÓN PARAMÉTRICA DEL DEPÓSITO ---
+        function buildWarehouse() {
+            for (const [id, rackDef] of racksData.entries()) {
+                const rackGroup = createRack(rackDef);
+                rackGroup.position.set(rackDef.x, 0, rackDef.z);
+                rackGroup.rotation.y = THREE.MathUtils.degToRad(rackDef.rotationY);
+                scene.add(rackGroup);
+
+                // Poblar la estantería con pallets o slots vacíos
+                for (let l = 1; l <= rackDef.levels; l++) {
+                    for (let c = 1; c <= rackDef.columns; c++) {
+                        for (let p = 1; p <= rackDef.depthPositions; p++) {
+                            const locationId = `${id}-${l}-${c}-${p}`;
+                            const pos = calculateSlotPosition(rackDef, l, c, p);
+                            
+                            const palletData = inventoryData.get(locationId);
+                            let mesh;
+                            if (palletData) {
+                                mesh = createPallet(palletData, locationId);
+                                palletsInScene.set(palletData.palletId, mesh);
+                            } else {
+                                mesh = createEmptySlot(rackDef, locationId);
+                            }
+                            mesh.position.copy(pos);
+                            rackGroup.add(mesh);
+                        }
                     }
-                } else {
-                    throw new Error(`Error de red al cargar ${path}`);
-                }
-            } catch (e) {
-                console.error(`Fallo al procesar ${path}:`, e);
-            }
-        }
-        
-        function parseUbicaciones(text) {
-            text.split('\n').slice(1).forEach(row => {
-                const [locationId, isOccupied, sku, numeroDePallet] = row.split(';');
-                if (locationId && locationId.trim() && locationsData.has(locationId.trim())) {
-                    const data = locationsData.get(locationId.trim());
-                    data.isOccupied = isOccupied.trim().toLowerCase() === 'true';
-                    data.sku = sku ? sku.trim() : '';
-                    data.numeroDePallet = numeroDePallet ? numeroDePallet.trim() : '';
-                }
-            });
-        }
-        
-        function parseLotes(text) {
-             text.split('\n').slice(1).forEach(row => {
-                const [sku, desc, pallet, lotes, fecha, qty, uom] = row.split(';');
-                if (pallet && pallet.trim()) {
-                    lotesDetails.set(pallet.trim(), { lotes: lotes, cantidad: qty });
-                }
-            });
-        }
-
-        function parseArticulos(text) {
-            text.split('\n').slice(1).forEach(row => {
-                const [tipo, sku, descLarga, descCorta] = row.split(';');
-                if (sku && sku.trim()) {
-                    articulosDetails.set(sku.trim(), { descCorta: descCorta ? descCorta.trim() : descLarga.trim() });
-                }
-            });
-        }
-
-        function renderWarehouse() {
-            const rackLayout = {
-                'A': { x: -22, z: -8 }, 'B': { x: -22, z: 8 },
-                'C': { x: -5, z: -8 }, 'D': { x: -5, z: 8 },
-                'E': { x: 12, z: -12 }, 'F': { x: 12, z: -4 },
-                'G': { x: 12, z: 4 }, 'H': { x: 12, z: 12 }
-            };
-
-            Object.entries(rackLayout).forEach(([id, config]) => {
-                const bays = (id >= 'E') ? 5 : 11;
-                const rack = createDetailedRack({ ...config, bays, levels: 3 });
-                scene.add(rack);
-            });
-
-            for (const [locationId, data] of locationsData.entries()) {
-                const [rackId, lvl, bay] = locationId.split('-');
-                const config = rackLayout[rackId];
-                if (!config) continue;
-                
-                const bayWidth = PALLET_WIDTH + 0.2;
-                const levelHeight = PALLET_HEIGHT + RACK_BEAM_HEIGHT + 0.3;
-                
-                const position = new THREE.Vector3(
-                    config.x + (bay - 1) * bayWidth,
-                    (lvl - 1) * levelHeight + RACK_BEAM_HEIGHT,
-                    config.z
-                );
-                
-                if (data.isOccupied) {
-                    const pallet = createDetailedPallet({ ...data, locationId });
-                    pallet.position.copy(position);
-                    scene.add(pallet);
-                } else {
-                    const emptySlot = new THREE.Mesh(emptySlotGeometry, emptySlotMaterial.clone());
-                    emptySlot.position.set(position.x + PALLET_WIDTH/2, position.y + PALLET_HEIGHT/2, position.z);
-                    emptySlot.userData = { isEmptySlot: true, locationId };
-                    scene.add(emptySlot);
                 }
             }
         }
+        
+        function createRack(def) {
+            const rack = new THREE.Group();
+            const postGeo = new THREE.BoxGeometry(0.12, def.slotHeight * def.levels, 0.12);
+            const beamHorGeo = new THREE.BoxGeometry(def.slotWidth, 0.1, 0.12);
 
+            // Postes verticales
+            for (let i = 0; i <= def.columns; i++) {
+                const post = new THREE.Mesh(postGeo, rackPostMaterial);
+                post.position.set(i * def.slotWidth, (def.slotHeight * def.levels) / 2, 0);
+                post.castShadow = true;
+                rack.add(post.clone().translateZ(-def.slotDepth));
+                rack.add(post);
+            }
+            
+            // Vigas horizontales
+            for (let l = 1; l <= def.levels; l++) {
+                 for (let c = 0; c < def.columns; c++) {
+                    const beam = new THREE.Mesh(beamHorGeo, rackBeamMaterial);
+                    beam.position.set(c * def.slotWidth + def.slotWidth / 2, (l-1) * def.slotHeight + 0.05, 0);
+                    beam.castShadow = true;
+                    rack.add(beam.clone().translateZ(-def.slotDepth));
+                    rack.add(beam);
+                 }
+            }
+            // Mover el origen para que coincida con las coordenadas del CSV
+            rack.translateX(def.slotWidth / 2);
+            rack.translateZ(-def.slotDepth / 2);
+
+            return rack;
+        }
+
+        function calculateSlotPosition(def, level, column, depthPos) {
+            const x = (column - 1) * def.slotWidth;
+            const y = (level - 1) * def.slotHeight;
+            const z = (depthPos - 1 - (def.depthPositions - 1) / 2) * (def.slotDepth / def.depthPositions * 0.9);
+            return new THREE.Vector3(x, y, z);
+        }
+
+        function createPallet(data, locationId) {
+            const palletGroup = new THREE.Group();
+            
+            const boxMaterial = new THREE.MeshStandardMaterial({ color: getSkuColor(data.sku), roughness: 0.7 });
+            const box = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.0), boxMaterial.clone());
+            box.position.y = 0.15 + 1.2/2;
+            box.castShadow = true;
+            box.receiveShadow = true;
+
+            const base = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.15, 1.0), palletBaseMaterial);
+            base.position.y = 0.15/2;
+            base.castShadow = true;
+            base.receiveShadow = true;
+            
+            palletGroup.add(box);
+            palletGroup.add(base);
+
+            palletGroup.userData = { isPallet: true, ...data, locationId };
+            palletGroup.userData.originalMaterial = box.material;
+            return palletGroup;
+        }
+
+        function createEmptySlot(def, locationId) {
+            const slotGeo = new THREE.BoxGeometry(def.slotWidth * 0.9, def.slotHeight * 0.8, def.slotDepth * 0.9);
+            const emptySlot = new THREE.Mesh(slotGeo, emptySlotMaterial.clone());
+            emptySlot.position.y = (def.slotHeight * 0.8) / 2 + 0.1;
+            emptySlot.userData = { isEmptySlot: true, locationId };
+            emptySlot.userData.originalMaterial = emptySlot.material;
+            return emptySlot;
+        }
+
+        // --- GESTIÓN DE INTERACTIVIDAD Y UI ---
         function setupInteractions() {
             const raycaster = new THREE.Raycaster();
             const mouse = new THREE.Vector2();
             
-            function updateInteractions(event) {
+            function onPointerMove(event) {
                 mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
                 mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
                 raycaster.setFromCamera(mouse, camera);
 
                 const intersects = raycaster.intersectObjects(scene.children, true);
                 let foundObject = null;
-                
                 if (intersects.length > 0) {
                      const firstHit = intersects[0].object;
-                     if (firstHit.parent && firstHit.parent.isGroup && firstHit.parent.userData.isPallet) {
-                        foundObject = firstHit.parent;
-                     } else if (firstHit.userData.isEmptySlot) {
-                        foundObject = firstHit;
-                     }
+                     if (firstHit.parent?.userData.isPallet) foundObject = firstHit.parent;
+                     else if (firstHit.userData.isEmptySlot) foundObject = firstHit;
                 }
-
                 handleHover(foundObject);
-                if (event.type === 'click') {
-                    handleClick(foundObject);
-                }
             }
 
-            window.addEventListener('mousemove', updateInteractions);
-            window.addEventListener('click', updateInteractions);
-        }
-
-        function unhighlight(object) {
-            if (!object) return;
-            if (object.userData.isPallet) {
-                object.children[0].material = palletBoxMaterial;
-            } else if (object.userData.isEmptySlot) {
-                object.material = emptySlotMaterial;
-            }
+            function onClick() { handleClick(hoveredObject); }
+            
+            window.addEventListener('pointermove', onPointerMove);
+            window.addEventListener('click', onClick);
+            searchInput.addEventListener('change', () => searchAndFocus(searchInput.value.trim()));
         }
         
+        function restoreMaterial(object) {
+            if (!object) return;
+            const mat = object.userData.originalMaterial;
+            if (object.userData.isPallet) object.children[0].material = mat;
+            else if (object.userData.isEmptySlot) object.material = mat;
+        }
+
         function handleHover(object) {
             if (hoveredObject === object) return;
-
-            unhighlight(hoveredObject);
-            
+            if (hoveredObject !== selectedObject) restoreMaterial(hoveredObject);
             hoveredObject = object;
-
             if (hoveredObject && hoveredObject !== selectedObject) {
-                if (hoveredObject.userData.isPallet) {
-                    hoveredObject.children[0].material = highlightMaterialPallet;
-                } else if (hoveredObject.userData.isEmptySlot) {
-                    hoveredObject.material = highlightMaterialSlot;
-                }
+                 if (hoveredObject.userData.isPallet) hoveredObject.children[0].material = highlightMaterial;
+                 else if (hoveredObject.userData.isEmptySlot) hoveredObject.material = highlightMaterial;
             }
         }
-
+        
         function handleClick(object) {
-            unhighlight(selectedObject); // Siempre des-resalta el anterior seleccionado
-            
-            selectedObject = object; // Asigna el nuevo
-
+            if (selectedObject) restoreMaterial(selectedObject);
+            selectedObject = object;
             if (selectedObject) {
                 if (selectedObject.userData.isPallet) {
-                    showPalletInfo(selectedObject);
-                    selectedObject.children[0].material = highlightMaterialPallet;
+                    selectedObject.children[0].material = highlightMaterial;
+                    updateInfoPanel(selectedObject.userData);
                 } else if (selectedObject.userData.isEmptySlot) {
-                    showEmptySlotInfo(selectedObject);
-                    selectedObject.material = highlightMaterialSlot;
+                    selectedObject.material = highlightMaterial;
+                    updateInfoPanel(selectedObject.userData);
                 }
+                 // Animar cámara al hacer clic
+                const targetPosition = new THREE.Vector3();
+                selectedObject.getWorldPosition(targetPosition);
+                animateCameraTo(targetPosition);
             } else {
-                 rightPanel.style.display = 'none';
+                rightPanel.style.display = 'none';
             }
         }
 
-        function showPalletInfo(palletObject) {
-            const data = palletObject.userData;
-            const loteInfo = lotesDetails.get(data.numeroDePallet) || { cantidad: 'N/A', lotes: 'N/A' };
-            const artInfo = articulosDetails.get(data.sku) || { descCorta: 'N/A' };
-            
-            document.getElementById('qr-container').style.display = 'block';
-            document.getElementById('info-title').textContent = `Detalles del Pallet`;
-            document.getElementById('info-pallet').textContent = data.numeroDePallet || 'N/A';
-            document.getElementById('info-location').textContent = data.locationId;
-            document.getElementById('info-sku').textContent = data.sku || 'N/A';
-            document.getElementById('info-desc').textContent = artInfo.descCorta;
-            document.getElementById('info-qty').textContent = loteInfo.cantidad;
-            document.getElementById('info-lotes').textContent = (loteInfo.lotes || '').replace(/#/g, ', ');
-            
-            const qrString = `${data.sku};${artInfo.descCorta};${data.numeroDePallet}`;
-            QRCode.toCanvas(document.getElementById('qr-canvas'), qrString, { width: 150, margin: 1 });
+        function updateInfoPanel(data) {
+            if (data.isPallet) {
+                const loteInfo = lotesData.get(data.palletId) || {};
+                const artInfo = articulosData.get(data.sku) || {};
+                
+                document.getElementById('info-title').textContent = `Pallet: ${data.palletId}`;
+                document.getElementById('info-location').textContent = data.locationId;
+                document.getElementById('info-pallet').textContent = data.palletId || 'N/A';
+                document.getElementById('info-sku').textContent = data.sku || 'N/A';
+                document.getElementById('info-desc').textContent = artInfo.desc || 'Descripción no encontrada';
+                document.getElementById('info-qty').textContent = loteInfo.cantidad ? `${loteInfo.cantidad} ${loteInfo.uom || ''}` : 'N/A';
+                document.getElementById('info-lotes').textContent = (loteInfo.lotes || '').replace(/#/g, ', ');
+                document.getElementById('info-fecha').textContent = loteInfo.fecha || 'N/A';
+                
+                const qrString = `ID:${data.palletId};SKU:${data.sku};LOC:${data.locationId}`;
+                QRCode.toCanvas(document.getElementById('qr-canvas'), qrString, { width: 150, margin: 1 });
+                document.getElementById('qr-container').style.display = 'block';
 
-            rightPanel.style.display = 'block';
-        }
-
-        function showEmptySlotInfo(slotObject) {
-            document.getElementById('qr-container').style.display = 'none';
-            document.getElementById('info-title').textContent = `Ubicación Vacía`;
-            document.getElementById('info-pallet').textContent = '---';
-            document.getElementById('info-location').textContent = slotObject.userData.locationId;
-            document.getElementById('info-sku').textContent = '---';
-            document.getElementById('info-desc').textContent = 'Disponible';
-            document.getElementById('info-qty').textContent = '---';
-            document.getElementById('info-lotes').textContent = '---';
+            } else if (data.isEmptySlot) {
+                document.getElementById('info-title').textContent = `Ubicación Vacía`;
+                document.getElementById('info-location').textContent = data.locationId;
+                ['pallet', 'sku', 'desc', 'qty', 'lotes', 'fecha'].forEach(id => {
+                    document.getElementById(`info-${id}`).textContent = '---';
+                });
+                document.getElementById('qr-container').style.display = 'none';
+            }
             rightPanel.style.display = 'block';
         }
         
-        function createDetailedRack(config) {
-            const rackGroup = new THREE.Group();
-            const bayWidth = PALLET_WIDTH + 0.2;
-            const levelHeight = PALLET_HEIGHT + RACK_BEAM_HEIGHT + 0.3;
-
-            for (let i = 0; i <= config.bays; i++) {
-                const post = new THREE.Mesh(new THREE.BoxGeometry(RACK_POST_SIZE, config.levels * levelHeight, RACK_POST_SIZE), rackPostMaterial);
-                post.position.set(i * bayWidth - bayWidth / 2, (config.levels * levelHeight) / 2, (PALLET_DEPTH / 2) - RACK_POST_SIZE/2);
-                post.castShadow = true;
-                rackGroup.add(post.clone().translateZ(-PALLET_DEPTH + RACK_POST_SIZE));
-                rackGroup.add(post);
+        function searchAndFocus(palletId) {
+            searchResult.textContent = '';
+            const pallet = palletsInScene.get(palletId);
+            if (pallet) {
+                handleClick(pallet); // Esto ya llama a la animación de cámara
+                searchResult.textContent = `Encontrado en: ${pallet.userData.locationId}`;
+            } else {
+                searchResult.textContent = 'Pallet no encontrado.';
             }
+        }
+        
+        function animateCameraTo(targetPosition) {
+            const startPos = camera.position.clone();
+            const endPos = targetPosition.clone().add(new THREE.Vector3(5, 4, 5));
+            const startTarget = controls.target.clone();
 
-            for (let l = 0; l < config.levels; l++) {
-                 for (let b = 0; b < config.bays; b++) {
-                    const beamF = new THREE.Mesh(new THREE.BoxGeometry(bayWidth, RACK_BEAM_HEIGHT, RACK_BEAM_DEPTH), rackBeamMaterial);
-                    beamF.position.set(b * bayWidth, l * levelHeight + RACK_BEAM_HEIGHT/2, PALLET_DEPTH / 2);
-                    beamF.castShadow = true;
-                    rackGroup.add(beamF);
-
-                    const beamB = beamF.clone();
-                    beamB.position.z = -PALLET_DEPTH / 2;
-                    rackGroup.add(beamB);
-                 }
+            let t = 0;
+            function animateFocus() {
+                t = Math.min(t + clock.getDelta() * 1.5, 1);
+                const easedT = 0.5 - 0.5 * Math.cos(t * Math.PI); // Ease in-out
+                camera.position.lerpVectors(startPos, endPos, easedT);
+                controls.target.lerpVectors(startTarget, targetPosition, easedT);
+                if (t < 1) requestAnimationFrame(animateFocus);
             }
-            rackGroup.position.set(config.x, 0, config.z);
-            return rackGroup;
+            animateFocus();
         }
-        function createDetailedPallet(data) {
-             const palletGroup = new THREE.Group();
-             palletGroup.userData.isPallet = true;
-             const box = new THREE.Mesh(new THREE.BoxGeometry(PALLET_WIDTH, PALLET_HEIGHT-0.15, PALLET_DEPTH), palletBoxMaterial.clone());
-             box.position.y = 0.15/2 + (PALLET_HEIGHT-0.15)/2;
-             box.castShadow = true;
-             
-             const base = new THREE.Mesh( new THREE.BoxGeometry(PALLET_WIDTH, 0.15, PALLET_DEPTH), new THREE.MeshStandardMaterial({map: createWoodTexture()}));
-             base.castShadow = true;
-             base.receiveShadow = true;
-             
-             palletGroup.add(box);
-             palletGroup.add(base);
-             palletGroup.userData = data;
 
-             return palletGroup;
-        }
-        function searchPallet(palletNumber) {
-            if (!palletNumber) return;
-            let found = false;
-
-            unhighlight(selectedObject);
-
-            const palletsInScene = [];
-            scene.traverse(obj => {
-                if (obj.isGroup && obj.userData.isPallet) {
-                    palletsInScene.push(obj);
-                }
-            });
-
-            const foundPallet = palletsInScene.find(p => p.userData.numeroDePallet === palletNumber);
-            
-            if (foundPallet) {
-                selectedObject = foundPallet;
-                selectedObject.children[0].material = highlightMaterialPallet;
-                showPalletInfo(selectedObject);
-                searchResult.textContent = `Encontrado en: ${selectedObject.userData.locationId}`;
-                
-                const targetPosition = selectedObject.position.clone();
-                controls.target.copy(targetPosition);
-                camera.position.set(targetPosition.x, targetPosition.y + 3, targetPosition.z + 5);
-                found = true;
+        // --- FUNCIONES DE UTILIDAD ---
+        function getSkuColor(sku) {
+            if (skuColorMap.has(sku)) return skuColorMap.get(sku);
+            let hash = 0;
+            for (let i = 0; i < sku.length; i++) {
+                hash = sku.charCodeAt(i) + ((hash << 5) - hash);
             }
-            if (!found) searchResult.textContent = 'Pallet no encontrado.';
+            const color = new THREE.Color().setHSL((hash % 360) / 360, 0.7, 0.6);
+            skuColorMap.set(sku, color);
+            return color;
         }
-        function animate() {
-            requestAnimationFrame(animate);
-            controls.update();
-            renderer.render(scene, camera);
-        }
-        function createConcreteTexture() {
-            const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 512;
-            const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#b0b0b0'; ctx.fillRect(0, 0, 512, 512);
-            for (let i = 0; i < 4000; i++) {
-                const x = Math.random() * 512; const y = Math.random() * 512;
-                const c = Math.floor(Math.random() * 30) + 150;
-                ctx.fillStyle = `rgb(${c},${c},${c})`;
-                ctx.beginPath(); ctx.arc(x, y, Math.random() * 1.5, 0, Math.PI * 2); ctx.fill();
-            }
-            const texture = new THREE.CanvasTexture(canvas);
-            texture.wrapS = THREE.RepeatWrapping; texture.wrapT = THREE.RepeatWrapping;
-            texture.repeat.set(20, 20);
-            return texture;
-        }
-        function createWoodTexture() {
+
+        function createTextures() {
             const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 256;
             const ctx = canvas.getContext('2d');
             ctx.fillStyle = '#c2a385'; ctx.fillRect(0, 0, 256, 256);
@@ -473,41 +512,26 @@
                 ctx.bezierCurveTo(128 + (Math.random()-0.5)*100, 85, 128 + (Math.random()-0.5)*100, 170, Math.random() * 256, 266);
                 ctx.stroke();
             }
-            const texture = new THREE.CanvasTexture(canvas);
-            texture.wrapS = THREE.RepeatWrapping; texture.wrapT = THREE.RepeatWrapping;
-            texture.repeat.set(2, 2);
-            return texture;
-        }
-        function createBoxTexture() {
-            const canvas = document.createElement('canvas'); canvas.width = 128; canvas.height = 128;
-            const context = canvas.getContext('2d'); context.fillStyle = '#d4b797'; context.fillRect(0, 0, 128, 128);
-            context.strokeStyle = '#ab8f6f'; context.lineWidth = 4; context.strokeRect(4, 4, 120, 120);
-            context.beginPath(); context.moveTo(4, 64); context.lineTo(124, 64); context.moveTo(64, 4); context.lineTo(64, 124); context.stroke();
-            return new THREE.CanvasTexture(canvas);
-        }
-        function generateDefaultLocations() {
-             const racks = [
-                { id: 'A', levels: 3, bays: 11, positions: 1 }, { id: 'B', levels: 3, bays: 11, positions: 1 },
-                { id: 'C', levels: 3, bays: 11, positions: 1 }, { id: 'D', levels: 3, bays: 11, positions: 1 },
-                { id: 'E', levels: 3, bays: 5, positions: 1 }, { id: 'F', levels: 3, bays: 5, positions: 1 },
-                { id: 'G', levels: 3, bays: 5, positions: 1 }, { id: 'H', levels: 3, bays: 5, positions: 1 }
-            ];
-            racks.forEach(r => {
-                for (let l = 1; l <= r.levels; l++) {
-                    for (let b = 1; b <= r.bays; b++) {
-                        for (let p = 1; p <= r.positions; p++) {
-                            const id = `${r.id}-${l}-${b}-${p}`;
-                            locationsData.set(id, { isOccupied: false, sku: '', numeroDePallet: '' });
-                        }
-                    }
-                }
-            });
+            palletBaseMaterial = new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(canvas) });
         }
         
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        }
+        window.addEventListener('resize', onWindowResize);
+
+        // --- BUCLE DE ANIMACIÓN ---
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            composer.render();
+        }
+
+        // Iniciar la aplicación
         init();
-        animate();
     </script>
 </body>
 </html>
-
-
