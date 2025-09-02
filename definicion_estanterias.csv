@@ -1,0 +1,5 @@
+id_estanteria;pos_x;pos_z;niveles;columnas;ancho_slot;alto_slot;profundidad_slot;posiciones_profundidad;rotacion_y
+HD-A;0.0;-8.0;3;20;1.4;1.65;1.0;11;0
+HD-B;0.0;8.0;3;20;1.4;1.65;1.0;11;0
+SEL-C;-1.5;0.0;3;10;1.4;1.65;1.0;1;90
+SEL-D;-7.5;0.0;3;10;1.4;1.65;1.0;1;90
