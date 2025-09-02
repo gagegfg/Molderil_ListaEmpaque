@@ -14,6 +14,7 @@
             --highlight-color: #00aaff;
             --border-color: rgba(255, 255, 255, 0.2);
             --action-color: #2dd4bf;
+            --special-color: #f59e0b;
         }
         body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #1a1a1a; }
         canvas#render-canvas { display: block; touch-action: none; /* Previene scroll en touch */ }
@@ -134,12 +135,25 @@
             border: none;
             cursor: pointer;
         }
-        .styled-button.action {
-             background: var(--action-color);
+        .styled-button.action { background: var(--action-color); }
+        .styled-button.special { background: var(--special-color); }
+        .styled-button svg { width: 20px; height: 20px; }
+
+        /* Controles de vista */
+        .view-controls {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin-top: 10px;
         }
-        .styled-button svg {
-             width: 20px;
-             height: 20px;
+        .view-controls button {
+            background-color: rgba(255,255,255,0.1);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 8px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
         }
 
     </style>
@@ -167,6 +181,15 @@
             <p><strong>Flechas:</strong> Moverse</p>
             <p><strong>Av/Re Pág:</strong> Subir/Bajar</p>
             <p><strong>Ratón/Táctil:</strong> Orbitar/Zoom</p>
+            <div class="view-controls">
+                <button id="view-n">N</button>
+                <button id="view-e">E</button>
+                <button id="view-s">S</button>
+                <button id="view-w">W</button>
+            </div>
+            <button id="flythrough-button" class="styled-button special">
+                <span>Iniciar Tour Virtual</span>
+            </button>
             <button id="refresh-button" class="styled-button action">
                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
                     <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"></path>
@@ -228,6 +251,8 @@
         let hoveredObject = null;
         let selectedObject = null;
         let highlightedObjects = [];
+        let isAnimating = false; // Controla animaciones de cámara
+        let flyThroughPath, flyThroughProgress;
         const palletsInScene = new Map();
         const skuColorMap = new Map();
         const keyboardState = {};
@@ -436,6 +461,8 @@
             const warehouseBox = new THREE.Mesh(new THREE.BoxGeometry(floorSize, 40, floorSize), wallMaterial);
             warehouseBox.position.y = 19.9;
             scene.add(warehouseBox);
+
+            createFlyThroughPath();
         }
         
         // --- FUNCIÓN DE CONSTRUCCIÓN DE ESTANTERÍAS (REFACTORIZADA) ---
@@ -570,9 +597,13 @@
                 e.preventDefault();
                 window.location.reload(true);
             });
+
+            // Vistas Cardinales y Tour
+            setupViewControls();
         }
         
         function handleKeyboardInput(deltaTime) {
+            if (isAnimating) return; // No mover si hay otra animación en curso
             const moveSpeed = 20 * deltaTime;
             const moveVector = new THREE.Vector3(0, 0, 0);
 
@@ -621,6 +652,7 @@
         }
         
         function handleClick(object) {
+            if (isAnimating) return;
             clearHighlights();
             if (object) {
                 selectedObject = object;
@@ -633,7 +665,7 @@
                 }
                 const targetPosition = new THREE.Vector3();
                 selectedObject.getWorldPosition(targetPosition);
-                animateCameraTo(targetPosition);
+                animateCameraTo({target: targetPosition});
             } else {
                 rightPanel.style.display = 'none';
             }
@@ -677,7 +709,6 @@
             rightPanel.style.display = 'block';
         }
         
-        // --- FUNCIÓN DE BÚSQUEDA UNIVERSAL (MEJORADA) ---
         function searchAndFocus(searchTerm) {
             clearHighlights();
             searchResult.textContent = '';
@@ -714,21 +745,72 @@
             }
         }
         
-        function animateCameraTo(targetPosition, cameraEndPosition = null) {
+        function animateCameraTo({position, target}) {
+            if (isAnimating) return;
+            isAnimating = true;
+            controls.enabled = false;
+
             const startPos = camera.position.clone();
-            const endPos = cameraEndPosition || targetPosition.clone().add(new THREE.Vector3(8, 6, 8));
+            const endPos = position;
             const startTarget = controls.target.clone();
+            const endTarget = target;
 
             let t = 0;
-            function animateFocus() {
-                t = Math.min(t + clock.getDelta() * 1.5, 1);
+            function animate() {
+                t = Math.min(t + clock.getDelta() * 0.7, 1);
                 const easedT = 0.5 - 0.5 * Math.cos(t * Math.PI);
-                camera.position.lerpVectors(startPos, endPos, easedT);
-                controls.target.lerpVectors(startTarget, targetPosition, easedT);
-                if (t < 1) requestAnimationFrame(animateFocus);
-                else controls.target.copy(targetPosition);
+                
+                if (endPos) camera.position.lerpVectors(startPos, endPos, easedT);
+                if (endTarget) controls.target.lerpVectors(startTarget, endTarget, easedT);
+
+                if (t < 1) {
+                    requestAnimationFrame(animate);
+                } else {
+                    if (endTarget) controls.target.copy(endTarget);
+                    isAnimating = false;
+                    controls.enabled = true;
+                }
             }
-            animateFocus();
+            animate();
+        }
+        
+        // --- NUEVAS FUNCIONES DE VISTAS Y TOUR ---
+        function setupViewControls() {
+            const center = worldBounds.getCenter(new THREE.Vector3());
+            const size = worldBounds.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.z) * 0.8;
+
+            document.getElementById('view-n').addEventListener('click', () => {
+                animateCameraTo({ position: new THREE.Vector3(center.x, maxDim, center.z - maxDim), target: center });
+            });
+            document.getElementById('view-s').addEventListener('click', () => {
+                animateCameraTo({ position: new THREE.Vector3(center.x, maxDim, center.z + maxDim), target: center });
+            });
+            document.getElementById('view-e').addEventListener('click', () => {
+                animateCameraTo({ position: new THREE.Vector3(center.x + maxDim, maxDim, center.z), target: center });
+            });
+            document.getElementById('view-w').addEventListener('click', () => {
+                animateCameraTo({ position: new THREE.Vector3(center.x - maxDim, maxDim, center.z), target: center });
+            });
+            document.getElementById('flythrough-button').addEventListener('click', startFlyThrough);
+        }
+
+        function createFlyThroughPath() {
+             const center = worldBounds.getCenter(new THREE.Vector3());
+             const size = worldBounds.getSize(new THREE.Vector3());
+             const p1 = new THREE.Vector3(worldBounds.min.x, 10, worldBounds.min.z);
+             const p2 = new THREE.Vector3(worldBounds.max.x, 10, worldBounds.min.z);
+             const p3 = new THREE.Vector3(worldBounds.max.x, 15, worldBounds.max.z);
+             const p4 = new THREE.Vector3(worldBounds.min.x, 15, worldBounds.max.z);
+             flyThroughPath = new THREE.CatmullRomCurve3([p1,p2,p3,p4], true);
+        }
+
+        function startFlyThrough() {
+            if (isAnimating) return;
+            isAnimating = true;
+            controls.enabled = false;
+            flyThroughProgress = 0;
+            searchResult.textContent = "Tour virtual en progreso...";
         }
 
         // --- FUNCIONES DE UTILIDAD ---
@@ -786,7 +868,23 @@
             requestAnimationFrame(animate);
             const deltaTime = clock.getDelta();
             
-            handleKeyboardInput(deltaTime);
+            if (isAnimating && flyThroughProgress !== undefined) {
+                 flyThroughProgress += deltaTime * 0.03; // Velocidad del tour
+                 if (flyThroughProgress >= 1) {
+                     flyThroughProgress = 0;
+                     isAnimating = false;
+                     controls.enabled = true;
+                     searchResult.textContent = "";
+                 }
+                 const pos = flyThroughPath.getPointAt(flyThroughProgress);
+                 camera.position.copy(pos);
+                 
+                 const lookAtPos = flyThroughPath.getPointAt((flyThroughProgress + 0.01) % 1);
+                 camera.lookAt(lookAtPos);
+                 controls.target.copy(lookAtPos);
+            } else {
+                handleKeyboardInput(deltaTime);
+            }
             
             camera.position.clamp(worldBounds.min, worldBounds.max);
 
@@ -798,4 +896,3 @@
     </script>
 </body>
 </html>
-
