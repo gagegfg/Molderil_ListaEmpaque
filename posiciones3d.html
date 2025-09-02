@@ -435,11 +435,13 @@
             scene.add(warehouseBox);
         }
         
+        // --- FUNCIÓN DE CONSTRUCCIÓN DE ESTANTERÍAS (CORREGIDA) ---
         function createRack(def) {
             const rack = new THREE.Group();
             const postGeo = new THREE.BoxGeometry(0.12, def.slotHeight * def.levels, 0.12);
             const beamHorXGeo = new THREE.BoxGeometry(def.slotWidth, 0.1, 0.12);
-            
+            const beamHorZGeo = new THREE.BoxGeometry(0.1, 0.1, def.slotDepth); // Viga de soporte en profundidad
+
             for (let c = 0; c <= def.columns; c++) {
                 const zFront = -(def.depthPositions / 2) * def.slotDepth;
                 const zBack = (def.depthPositions / 2) * def.slotDepth;
@@ -458,18 +460,30 @@
             for (let l = 1; l <= def.levels; l++) {
                 const yPos = (l - 1) * def.slotHeight + 0.05;
                 for (let c = 0; c < def.columns; c++) {
+                    const xCenter = c * def.slotWidth + def.slotWidth / 2;
                     const zFront = -(def.depthPositions / 2) * def.slotDepth;
                     const zBack = (def.depthPositions / 2) * def.slotDepth;
                     
                     const beamFront = new THREE.Mesh(beamHorXGeo, rackBeamMaterial);
-                    beamFront.position.set(c * def.slotWidth + def.slotWidth / 2, yPos, zFront);
+                    beamFront.position.set(xCenter, yPos, zFront);
                     beamFront.castShadow = true;
                     rack.add(beamFront);
                     
                     const beamBack = new THREE.Mesh(beamHorXGeo, rackBeamMaterial);
-                    beamBack.position.set(c * def.slotWidth + def.slotWidth / 2, yPos, zBack);
+                    beamBack.position.set(xCenter, yPos, zBack);
                     beamBack.castShadow = true;
                     rack.add(beamBack);
+
+                    // AÑADIR VIGAS DE SOPORTE EN PROFUNDIDAD
+                    const supportRail1 = new THREE.Mesh(beamHorZGeo, rackBeamMaterial);
+                    supportRail1.position.set(xCenter - 0.4, yPos, 0); // Desplazado a un lado
+                    supportRail1.castShadow = true;
+                    rack.add(supportRail1);
+                    
+                    const supportRail2 = new THREE.Mesh(beamHorZGeo, rackBeamMaterial);
+                    supportRail2.position.set(xCenter + 0.4, yPos, 0); // Desplazado al otro lado
+                    supportRail2.castShadow = true;
+                    rack.add(supportRail2);
                 }
             }
             
@@ -760,3 +774,4 @@
     </script>
 </body>
 </html>
+
