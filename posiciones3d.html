@@ -442,8 +442,7 @@
         function createRack(def) {
             const rack = new THREE.Group();
             const postGeo = new THREE.BoxGeometry(0.12, def.slotHeight * def.levels, 0.12);
-            const beamXGeo = new THREE.BoxGeometry(def.slotWidth, 0.1, 0.12);
-            const beamZGeo = new THREE.BoxGeometry(0.12, 0.1, def.slotDepth);
+            const beamZGeo = new THREE.BoxGeometry(0.12, 0.1, def.slotDepth); // Viga de soporte en profundidad
 
             // 1. Matriz de Postes Verticales
             for (let c = 0; c <= def.columns; c++) {
@@ -459,38 +458,23 @@
                 }
             }
 
-            // 2. Vigas Horizontales por nivel
+            // 2. Vigas de Soporte (en profundidad)
             for (let l = 1; l <= def.levels; l++) {
                 const yPos = (l - 1) * def.slotHeight;
-
-                // Vigas Laterales (a lo ancho)
-                for (let p = 0; p <= def.depthPositions; p++) {
-                    // Omitir las vigas frontales que bloquean el paso
-                    if (p > 0) { 
-                        for (let c = 0; c < def.columns; c++) {
-                            const beam = new THREE.Mesh(beamXGeo, rackBeamMaterial);
-                            beam.position.set(
-                                c * def.slotWidth + def.slotWidth / 2,
-                                yPos,
-                                (p - def.depthPositions / 2) * def.slotDepth
-                            );
-                            beam.castShadow = true;
-                            rack.add(beam);
-                        }
-                    }
-                }
-                
-                // Vigas de Soporte (en profundidad)
-                for (let c = 0; c <= def.columns; c++) {
+                for (let c = 0; c < def.columns; c++) {
                      for (let p = 0; p < def.depthPositions; p++) {
-                        const supportRail = new THREE.Mesh(beamZGeo, rackBeamMaterial);
-                        supportRail.position.set(
-                            c * def.slotWidth,
-                            yPos,
-                            (p - (def.depthPositions - 1) / 2) * def.slotDepth
-                        );
-                        supportRail.castShadow = true;
-                        rack.add(supportRail);
+                        const xPos = c * def.slotWidth;
+                        const zPos = (p - (def.depthPositions - 1) / 2) * def.slotDepth;
+
+                        const supportRail1 = new THREE.Mesh(beamZGeo, rackBeamMaterial);
+                        supportRail1.position.set(xPos, yPos, zPos);
+                        supportRail1.castShadow = true;
+                        rack.add(supportRail1);
+
+                        const supportRail2 = new THREE.Mesh(beamZGeo, rackBeamMaterial);
+                        supportRail2.position.set(xPos + def.slotWidth, yPos, zPos);
+                        supportRail2.castShadow = true;
+                        rack.add(supportRail2);
                      }
                 }
             }
@@ -590,7 +574,7 @@
         
         function handleKeyboardInput(deltaTime) {
             const moveSpeed = 20 * deltaTime;
-            const moveVector = new THREE.Vector3();
+            const moveVector = new THREE.Vector3(0, 0, 0);
 
             if (keyboardState['ArrowUp'] || keyboardState['KeyW']) moveVector.z -= 1;
             if (keyboardState['ArrowDown'] || keyboardState['KeyS']) moveVector.z += 1;
