@@ -756,7 +756,7 @@
                                     setTimeout(() => {
                                         document.body.removeChild(iframe);
                                         URL.revokeObjectURL(blobUrl);
-                                    }, 1000);
+                                    }, 60000);
                                 }
                             }, 1); // Un pequeño delay puede ser necesario
                         };
