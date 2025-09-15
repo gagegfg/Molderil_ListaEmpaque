@@ -724,8 +724,48 @@
                     if (i > 0) doc.addPage();
                     await drawLabelOnDoc(doc, data);
                 }
-                doc.autoPrint();
+                
+                // ### INICIO DE LA MODIFICACIÓN DE IMPRESIÓN ###
+                const isMobile = /Android|iPhone/i.test(navigator.userAgent);
+
+                // Siempre guardar el archivo, como se hacía antes.
                 doc.save(`etiqueta_pallet_${palletNum}.pdf`);
+
+                if (!isMobile) {
+                    // En escritorio, intentar abrir el diálogo de impresión.
+                    try {
+                        const pdfBlob = doc.output('blob');
+                        const blobUrl = URL.createObjectURL(pdfBlob);
+                        
+                        const iframe = document.createElement('iframe');
+                        iframe.style.display = 'none';
+                        iframe.src = blobUrl;
+                        
+                        document.body.appendChild(iframe);
+                        
+                        iframe.onload = () => {
+                            setTimeout(() => {
+                                try {
+                                    iframe.contentWindow.focus();
+                                    iframe.contentWindow.print();
+                                } catch (e) {
+                                    console.error("No se pudo abrir el diálogo de impresión.", e);
+                                    showToast("No se pudo abrir el diálogo de impresión automáticamente.", "error");
+                                } finally {
+                                    // Limpiar después de un tiempo prudencial
+                                    setTimeout(() => {
+                                        document.body.removeChild(iframe);
+                                        URL.revokeObjectURL(blobUrl);
+                                    }, 1000);
+                                }
+                            }, 1); // Un pequeño delay puede ser necesario
+                        };
+                    } catch (e) {
+                        console.error("Error al crear el iframe de impresión:", e);
+                        showToast("Error al preparar la impresión automática.", "error");
+                    }
+                }
+                // ### FIN DE LA MODIFICACIÓN DE IMPRESIÓN ###
 
                 setNumeroDePallet(palletNum + 1);
                 setSelectedArticulo(null);
