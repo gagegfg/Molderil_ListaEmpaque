@@ -659,28 +659,50 @@
         
         const handleGenerateAndPrintPDF = async () => {
             if (isSaving) return;
+            setIsSaving(true); // Feedback inmediato para el usuario
+
             const numCopias = parseInt(cantidadCopias, 10);
             const palletNum = parseInt(numeroDePallet, 10);
+
             if (isNaN(numCopias) || numCopias < 1 || isNaN(palletNum) || !previewPdfUrl) {
                 showToast("Genere una vista previa y verifique los datos.", 'error');
+                setIsSaving(false);
                 return;
             }
             if (!apiToken) {
                 showToast("ERROR: Clave de API no disponible. No se puede guardar.", 'error');
+                setIsSaving(false);
                 return;
             }
 
-            const isConfirmed = window.confirm(`Se registrará el Pallet Nº ${palletNum}.\n\nAl confirmar, este número quedará asignado y se guardará el registro. ¿Desea continuar?`);
-            if (!isConfirmed) return;
+            // Se elimina la confirmación del usuario para un proceso directo.
 
             const lock = await acquireLock('generateLabel');
             if (!lock.success) {
                 showToast(`No se pudo guardar. ${lock.error}. Intente de nuevo.`, 'error');
+                setIsSaving(false);
                 return;
             }
 
-            setIsSaving(true);
             try {
+                // Volver a verificar el último número de pallet desde GitHub para evitar duplicados.
+                const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_LOTE_LOGISTICO}`;
+                const response = await fetch(url, { cache: "no-store" });
+                if (!response.ok) throw new Error('No se pudo verificar el último número de pallet desde GitHub.');
+                
+                const text = await response.text();
+                const ultimoPalletGuardado = parseInt(text.trim(), 10);
+
+                if (isNaN(ultimoPalletGuardado)) throw new Error('El contenido del archivo de pallet no es un número.');
+
+                if (palletNum <= ultimoPalletGuardado) {
+                    const nuevoNumeroSugerido = ultimoPalletGuardado + 1;
+                    showToast(`Error: El Nº de Pallet ${palletNum} ya fue utilizado. Se actualizará al siguiente número disponible: ${nuevoNumeroSugerido}.`, 'error');
+                    setNumeroDePallet(nuevoNumeroSugerido);
+                    // No continuamos, el usuario debe volver a generar la vista previa y guardar.
+                    return; 
+                }
+
                 const data = getLabelData();
                 const lineaCsv = `${data.qrString};FALSE;`;
                 const historySaved = await appendToHistoryFile(lineaCsv);
