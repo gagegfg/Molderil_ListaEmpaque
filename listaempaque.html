@@ -194,7 +194,7 @@
       const [isShareApiSupported, setIsShareApiSupported] = useState(false);
       const [editingItemId, setEditingItemId] = useState(null);
       const [editingQuantity, setEditingQuantity] = useState('');
-      const [isListSaved, setIsListSaved] = useState(false); // <-- NUEVO ESTADO PARA BLOQUEAR LA LISTA
+      const [isListSaved, setIsListSaved] = useState(false);
 
       const [clientList, setClientList] = useState([]);
       const [skuList, setSkuList] = useState([]);
@@ -354,7 +354,7 @@
             const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${LOCK_FILE_PATH}`;
             let currentSha = null;
             try {
-                const response = await fetch(`${url}?t=${new Date().getTime()}`, {
+                const response = await fetch(`${url}?t=${new Date().getTime()}`, { 
                     headers: { 'Authorization': `token ${apiToken}` }, cache: 'no-store'
                 });
 
@@ -404,7 +404,7 @@
         const releaseLock = async () => {
             const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${LOCK_FILE_PATH}`;
             try {
-                const response = await fetch(`${url}?t=${new Date().getTime()}`, {
+                const response = await fetch(`${url}?t=${new Date().getTime()}`, { 
                     headers: { 'Authorization': `token ${apiToken}` }, cache: 'no-store'
                 });
         
@@ -671,7 +671,7 @@
         if (!skuList.includes(sku)) {
             setModalContent({
                 title: 'Error de Artículo',
-                message: `El SKU "${sku}" no se encuentra en la lista de artículos válidos.`,
+                message: `El SKU "${sku}" no se encuentra en la lista de artículos válidos.`, 
                 errorData: value
             });
             setShowInfoModal(true);
@@ -733,6 +733,10 @@
 
       const handleDelete = (id) => setItems(items.filter(item => item.id !== id));
 
+      const handleToggleExpand = (id) => {
+        setItems(prev => prev.map(item => item.id === id ? { ...item, isExpanded: !item.isExpanded } : item));
+      };
+
       const handleControlCheck = (id) => setItems(prev => prev.map(item => item.id === id ? { ...item, controlado: !item.controlado } : item));
 
       const handleStartEdit = (item) => {
@@ -783,7 +787,7 @@
       const handleDeleteLote = (itemId, loteToDelete) => {
         setConfirmationModalContent({
             title: 'Confirmar Eliminación',
-            message: `¿Estás seguro de que deseas eliminar el lote "${loteToDelete}" de este pallet? Esta acción no se puede deshacer.`,
+            message: `¿Estás seguro de que deseas eliminar el lote "${loteToDelete}" de este pallet? Esta acción no se puede deshacer.`, 
             onConfirm: () => {
                  setItems(prevItems =>
                     prevItems.map(item => {
@@ -1353,7 +1357,7 @@
                           ref={manualInputRef} 
                           value={mockQrValue} 
                           onChange={(e) => setMockQrValue(e.target.value)} 
-                          className="w-full rounded-md p-2 border text-lg sm:text-xl" 
+                          className="w-full rounded-md p-2 border text-lg sm:text-xl"
                           placeholder="Ingresar QR manual o con pistola"
                         />
                         <button 
