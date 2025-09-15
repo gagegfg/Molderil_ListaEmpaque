@@ -1288,28 +1288,28 @@
           {showHelpModal && <HelpModal onClose={() => setShowHelpModal(false)} />}
           {showConfirmationModal && <ConfirmationModal {...confirmationModalContent} />}
           {feedbackMessage && <div className="fixed top-5 right-5 bg-green-500 text-white py-2 px-4 rounded-lg shadow-lg z-50">{feedbackMessage}</div>}
-          <div className="bg-white p-6 rounded-xl shadow-lg flex-grow">
+          <div className="bg-white p-2 sm:p-6 rounded-xl shadow-lg flex-grow flex flex-col">
 
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6 shadow-sm">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h1 className="text-4xl font-extrabold text-gray-900">MOLDERIL S.A.</h1>
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start">
+                <div className="mb-4 sm:mb-0">
+                  <h1 className="text-2xl sm:text-4xl font-extrabold text-gray-900">MOLDERIL S.A.</h1>
                   <p className="text-xs text-gray-500 mt-1">AV. Hermanos Lescano 550 - Rio Primero (Cordoba)</p>
                   <p className="text-xs text-gray-500">Tel/Fax: 03574-420768</p>
                 </div>
-                <div className="flex items-start space-x-4">
-                    <div className="text-right space-y-2">
+                <div className="flex items-start space-x-4 w-full sm:w-auto">
+                    <div className="text-right space-y-2 flex-grow">
                       <div className="flex items-center justify-end">
                         <div className="text-right mr-3">
                           <p className="text-xs text-gray-500">Operario (Legajo)</p>
-                          <p className="font-semibold text-gray-800 text-lg">{operarioLegajo}</p>
+                          <p className="font-semibold text-gray-800 text-base sm:text-lg">{operarioLegajo}</p>
                         </div>
                         <i className="fas fa-user-circle text-gray-400 text-2xl"></i>
                       </div>
                       <div className="flex items-center justify-end">
                          <div className="text-right mr-3">
                           <p className="text-xs text-gray-500">Cliente</p>
-                          <p className="font-semibold text-gray-800 text-lg">{clienteNombre}</p>
+                          <p className="font-semibold text-gray-800 text-base sm:text-lg">{clienteNombre}</p>
                         </div>
                         <i className="fas fa-building text-gray-400 text-2xl"></i>
                       </div>
@@ -1352,7 +1352,7 @@
                           ref={manualInputRef} 
                           value={mockQrValue} 
                           onChange={(e) => setMockQrValue(e.target.value)} 
-                          className="w-full rounded-md p-2 border text-xl" 
+                          className="w-full rounded-md p-2 border text-lg sm:text-xl" 
                           placeholder="Ingresar QR manual o con pistola"
                         />
                         <button 
@@ -1371,105 +1371,212 @@
                   </div>
                 )}
 
+                {/* --- INICIO DE LA TABLA RESPONSIVA --- */}
+                <div className="flex-grow overflow-y-auto mb-4">
+                  {/* Vista de Tabla para Escritorio (lg y superior) */}
+                  <div className="hidden lg:block border rounded-lg shadow-md">
+                    <table className="min-w-full divide-y divide-gray-200 table-auto">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
+                          <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Descripción</th>
+                          <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nº Pallet</th>
+                          <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lotes Prod.</th>
+                          <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">F. Prod</th>
+                          <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cant.</th>
+                          <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">U.M.</th>
+                          <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase">Control</th>
+                          <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase">Acción</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {items.length === 0 ? (
+                          <tr><td colSpan="9" className="px-2 py-4 text-center text-sm text-gray-500 italic">Aún no hay registros.</td></tr>
+                        ) : (
+                          items.map((item) => (
+                            <tr 
+                              key={item.id} 
+                              className={`group ${item.tieneNota ? 'bg-yellow-100 hover:bg-yellow-200' : 'hover:bg-gray-50'}`}
+                              onDoubleClick={() => {
+                                  if (item.tieneNota) {
+                                      setModalContent({ title: 'Nota del Pallet', message: item.nota });
+                                      setShowInfoModal(true);
+                                  }
+                              }}
+                            >
+                              <td className="px-2 py-4 whitespace-nowrap text-sm">{item.sku}</td>
+                              <td className="px-2 py-4 whitespace-nowrap text-sm">{item.descripcion}</td>
+                              <td className="px-2 py-4 whitespace-nowrap text-sm font-semibold">
+                                  {item.numeroDePallet} {item.tieneNota && '(*)'}
+                              </td>
+                              <td className="px-2 py-4 whitespace-nowrap text-sm">
+                                  <div className="flex flex-wrap gap-1">
+                                      {item.lotesProduccion.map(lote => (
+                                      <span key={lote} className="bg-gray-200 text-gray-800 text-xs font-semibold px-2.5 py-1 rounded-full flex items-center">
+                                          {lote}
+                                          {item.cantidadEditada && item.lotesProduccion.length > 1 && !isListSaved && (
+                                          <button
+                                              onClick={() => handleDeleteLote(item.id, lote)}
+                                              className="ml-2 text-red-500 hover:text-red-800 font-bold"
+                                              title={`Eliminar lote ${lote}`}
+                                          >
+                                              &times;
+                                          </button>
+                                          )}
+                                      </span>
+                                      ))}
+                                  </div>
+                              </td>
+                              <td className="px-2 py-4 whitespace-nowrap text-sm">{item.fechaProduccion}</td>
+                              <td className="px-2 py-4 whitespace-nowrap text-sm">
+                                {editingItemId === item.id ? (
+                                  <input
+                                    type="text"
+                                    value={editingQuantity}
+                                    onChange={(e) => handleQuantityChange(e.target.value)}
+                                    onBlur={handleSaveEdit}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') { e.preventDefault(); handleSaveEdit(); }
+                                      if (e.key === 'Escape') { e.preventDefault(); setEditingItemId(null); }
+                                    }}
+                                    className="w-20 rounded-md border-gray-400 shadow-sm p-1 border text-base"
+                                    autoFocus
+                                  />
+                                ) : (
+                                  <div onClick={() => !isListSaved && handleStartEdit(item)} className={`${!isListSaved ? 'cursor-pointer' : ''} p-1 rounded flex justify-between items-center`}>
+                                    <span>{item.cantidad}</span>
+                                    {!isListSaved && <i className="fas fa-pencil-alt ml-2 text-gray-300 group-hover:text-gray-600 transition-colors"></i>}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="px-2 py-4 whitespace-nowrap text-sm">{item.unidadMedida}</td>
+                              <td className="px-2 py-4 text-center"><input type="checkbox" checked={item.controlado} onChange={() => handleControlCheck(item.id)} className="h-4 w-4"/></td>
+                              <td className="px-2 py-4 text-center">
+                                  <button 
+                                      onClick={() => handleDelete(item.id)} 
+                                      className={`text-red-600 ${isListSaved ? 'opacity-50 cursor-not-allowed' : 'hover:text-red-900'}`}
+                                      disabled={isListSaved}
+                                  >
+                                      <i className="fas fa-trash"></i>
+                                  </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                        <tr className="bg-gray-100 font-bold">
+                          <td colSpan="8" className="px-2 py-4 text-right text-sm">Total de bultos:</td>
+                          <td className="px-2 py-4 text-sm">{items.length}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
 
-                <div className="overflow-x-auto rounded-lg shadow-md mb-6 border">
-                  <table className="min-w-full divide-y divide-gray-200 table-auto">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
-                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Descripción</th>
-                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nº Pallet</th>
-                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lotes Prod.</th>
-                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">F. Prod</th>
-                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cant.</th>
-                        <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">U.M.</th>
-                        <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase">Control</th>
-                        <th className="px-2 py-3 text-center text-xs font-medium text-gray-500 uppercase">Acción</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {items.length === 0 ? (
-                        <tr><td colSpan="9" className="px-2 py-4 text-center text-sm text-gray-500 italic">Aún no hay registros.</td></tr>
-                      ) : (
-                        items.map((item) => (
-                          <tr 
-                            key={item.id} 
-                            className={`group ${item.tieneNota ? 'bg-yellow-100 hover:bg-yellow-200' : 'hover:bg-gray-50'}`}
-                            onDoubleClick={() => {
-                                if (item.tieneNota) {
-                                    setModalContent({ title: 'Nota del Pallet', message: item.nota });
-                                    setShowInfoModal(true);
-                                }
-                            }}
-                          >
-                            <td className="px-2 py-4 whitespace-nowrap text-sm">{item.sku}</td>
-                            <td className="px-2 py-4 whitespace-nowrap text-sm">{item.descripcion}</td>
-                            <td className="px-2 py-4 whitespace-nowrap text-sm font-semibold">
-                                {item.numeroDePallet} {item.tieneNota && '(*)'}
-                            </td>
-                            <td className="px-2 py-4 whitespace-nowrap text-sm">
-                                <div className="flex flex-wrap gap-1">
-                                    {item.lotesProduccion.map(lote => (
-                                    <span key={lote} className="bg-gray-200 text-gray-800 text-xs font-semibold px-2.5 py-1 rounded-full flex items-center">
-                                        {lote}
-                                        {item.cantidadEditada && item.lotesProduccion.length > 1 && !isListSaved && (
-                                        <button
-                                            onClick={() => handleDeleteLote(item.id, lote)}
-                                            className="ml-2 text-red-500 hover:text-red-800 font-bold"
-                                            title={`Eliminar lote ${lote}`}
+                  {/* Vista de Tarjetas para Móvil (hasta lg) */}
+                  <div className="lg:hidden space-y-3">
+                    {items.length === 0 ? (
+                        <div className="px-2 py-4 text-center text-sm text-gray-500 italic">Aún no hay registros.</div>
+                    ) : (
+                        items.map(item => (
+                            <div key={item.id} className={`p-4 rounded-lg border shadow-sm ${item.tieneNota ? 'bg-yellow-50 border-yellow-200' : 'bg-white'}`}>
+                                <div className="grid grid-cols-3 gap-x-4 gap-y-2">
+                                    {/* Fila 1: SKU y Acciones Principales */}
+                                    <div className="col-span-2">
+                                        <p className="text-xs text-gray-500">SKU</p>
+                                        <p className="font-bold text-gray-800">{item.sku}</p>
+                                    </div>
+                                    <div className="flex items-center justify-end space-x-4">
+                                        <input type="checkbox" checked={item.controlado} onChange={() => handleControlCheck(item.id)} className="h-5 w-5"/>
+                                        <button 
+                                            onClick={() => handleDelete(item.id)} 
+                                            className={`text-red-500 ${isListSaved ? 'opacity-50 cursor-not-allowed' : 'hover:text-red-700'}`}
+                                            disabled={isListSaved}
                                         >
-                                            &times;
+                                            <i className="fas fa-trash fa-lg"></i>
                                         </button>
-                                        )}
-                                    </span>
-                                    ))}
-                                </div>
-                            </td>
-                            <td className="px-2 py-4 whitespace-nowrap text-sm">{item.fechaProduccion}</td>
-                            <td className="px-2 py-4 whitespace-nowrap text-sm">
-                              {editingItemId === item.id ? (
-                                <input
-                                  type="text"
-                                  value={editingQuantity}
-                                  onChange={(e) => handleQuantityChange(e.target.value)}
-                                  onBlur={handleSaveEdit}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') { e.preventDefault(); handleSaveEdit(); }
-                                    if (e.key === 'Escape') { e.preventDefault(); setEditingItemId(null); }
-                                  }}
-                                  className="w-20 rounded-md border-gray-400 shadow-sm p-1 border text-base"
-                                  autoFocus
-                                />
-                              ) : (
-                                <div onClick={() => !isListSaved && handleStartEdit(item)} className={`${!isListSaved ? 'cursor-pointer' : ''} p-1 rounded flex justify-between items-center`}>
-                                  <span>{item.cantidad}</span>
-                                  {!isListSaved && <i className="fas fa-pencil-alt ml-2 text-gray-300 group-hover:text-gray-600 transition-colors"></i>}
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-2 py-4 whitespace-nowrap text-sm">{item.unidadMedida}</td>
-                            <td className="px-2 py-4 text-center"><input type="checkbox" checked={item.controlado} onChange={() => handleControlCheck(item.id)} className="h-4 w-4"/></td>
-                            <td className="px-2 py-4 text-center">
-                                <button 
-                                    onClick={() => handleDelete(item.id)} 
-                                    className={`text-red-600 ${isListSaved ? 'opacity-50 cursor-not-allowed' : 'hover:text-red-900'}`}
-                                    disabled={isListSaved}
-                                >
-                                    <i className="fas fa-trash"></i>
-                                </button>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                      <tr className="bg-gray-100 font-bold">
-                        <td colSpan="8" className="px-2 py-4 text-right text-sm">Total de bultos:</td>
-                        <td className="px-2 py-4 text-sm">{items.length}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
+                                    </div>
 
-                <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4">
+                                    {/* Fila 2: Descripción */}
+                                    <div className="col-span-3">
+                                        <p className="text-xs text-gray-500">Descripción</p>
+                                        <p className="text-sm text-gray-700">{item.descripcion}</p>
+                                    </div>
+
+                                    {/* Fila 3: Cantidad y Pallet */}
+                                    <div className="col-span-2">
+                                        <p className="text-xs text-gray-500">Cantidad ({item.unidadMedida})</p>
+                                        {editingItemId === item.id ? (
+                                            <input
+                                                type="text"
+                                                value={editingQuantity}
+                                                onChange={(e) => handleQuantityChange(e.target.value)}
+                                                onBlur={handleSaveEdit}
+                                                onKeyDown={(e) => { if (e.key === 'Enter') handleSaveEdit(); if (e.key === 'Escape') setEditingItemId(null); }}
+                                                className="w-full rounded-md border-gray-400 shadow-sm p-1 border text-base"
+                                                autoFocus
+                                            />
+                                        ) : (
+                                            <div onClick={() => !isListSaved && handleStartEdit(item)} className={`font-bold text-lg text-gray-800 ${!isListSaved ? 'cursor-pointer' : ''} flex items-center`}>
+                                                {item.cantidad}
+                                                {!isListSaved && <i className="fas fa-pencil-alt ml-2 text-gray-400 text-xs"></i>}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-gray-500">Nº Pallet</p>
+                                        <p 
+                                            className={`font-semibold text-gray-800 ${item.tieneNota ? 'cursor-pointer' : ''}`}
+                                            onClick={() => item.tieneNota && setModalContent({ title: 'Nota del Pallet', message: item.nota }) & setShowInfoModal(true)}
+                                        >
+                                            {item.numeroDePallet} {item.tieneNota && <span className="text-yellow-500">(*)</span>}
+                                        </p>
+                                    </div>
+
+                                    {/* Contenido expandible */}
+                                    {item.isExpanded && (
+                                        <>
+                                            <div className="col-span-3"><hr/></div>
+                                            <div className="col-span-2">
+                                                <p className="text-xs text-gray-500">Lotes de Producción</p>
+                                                <div className="flex flex-wrap gap-1 mt-1">
+                                                    {item.lotesProduccion.map(lote => (
+                                                        <span key={lote} className="bg-gray-200 text-gray-800 text-xs font-semibold px-2 py-0.5 rounded-full flex items-center">
+                                                            {lote}
+                                                            {item.cantidadEditada && item.lotesProduccion.length > 1 && !isListSaved && (
+                                                                <button onClick={() => handleDeleteLote(item.id, lote)} className="ml-1.5 text-red-500 hover:text-red-800 font-bold">&times;</button>
+                                                            )}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs text-gray-500">F. Prod.</p>
+                                                <p className="text-sm text-gray-700">{item.fechaProduccion}</p>
+                                            </div>
+                                        </>
+                                    )}
+
+                                    {/* Botón para expandir */}
+                                    <div className="col-span-3 text-center">
+                                        <button onClick={() => handleToggleExpand(item.id)} className="text-sm text-indigo-600 hover:text-indigo-800 font-semibold pt-2">
+                                            {item.isExpanded ? (
+                                                <><i className="fas fa-chevron-up mr-1"></i> Ocultar detalles</>
+                                            ) : (
+                                                <><i className="fas fa-chevron-down mr-1"></i> Ver más</>
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                    <div className="bg-gray-100 font-bold text-right p-2 rounded-lg">
+                        Total de bultos: {items.length}
+                    </div>
+                  </div>
+                </div>
+                {/* --- FIN DE LA TABLA RESPONSIVA --- */}
+
+                <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4 mt-auto pt-4">
                   <div className="relative w-full sm:w-auto flex-grow" ref={actionsMenuRef}>
                     <div className="flex rounded-md shadow-sm">
                         <button
