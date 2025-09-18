@@ -69,6 +69,10 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+        .icon-state-idle { color: #3b82f6; } /* Tailwind blue-500 */
+        .icon-state-loading { color: #ef4444; animation: spin 1s linear infinite; } /* Tailwind red-500 */
+        .icon-state-success { color: #22c55e; } /* Tailwind green-500 */
+        .icon-state-error { color: #ef4444; } /* Tailwind red-500 */
     </style>
 </head>
 <body class="bg-gray-100 font-sans">
@@ -202,8 +206,11 @@
         const [observacion, setObservacion] = useState('');
         const articuloInputRef = useRef(null);
         const loteInputRefs = useRef([]);
+        const [refreshState, setRefreshState] = useState('idle'); // idle, loading, error, success
         
         const handleRefreshPalletNumber = async (isSilent = false) => {
+            if (!isSilent) setRefreshState('loading');
+            
             const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_LOTE_LOGISTICO}?t=${new Date().getTime()}`;
             try {
                 const response = await fetch(url, { cache: "no-store" });
@@ -220,17 +227,26 @@
                     if (!isSilent) {
                         showToast(`Nº de pallet actualizado al siguiente disponible: ${proximoNumero}.`, 'info');
                     }
-                    // Si la vista previa ya existe, la regeneramos con el número nuevo
                     if (previewPdfUrl) {
-                         // Pequeño delay para asegurar que el estado se actualice antes de regenerar
-                        setTimeout(() => handleGeneratePreview(true), 100);
+                        setPreviewPdfUrl(null);
+                        showToast('El Nº de pallet cambió. Por favor, genere una nueva vista previa.', 'info');
                     }
+                } else {
+                    if (!isSilent) {
+                         showToast('El número de pallet ya está actualizado.', 'success');
+                    }
+                }
+                if (!isSilent) {
+                    setRefreshState('success');
+                    setTimeout(() => setRefreshState('idle'), 2000);
                 }
                 return proximoNumero;
             } catch (error) {
                 console.error("Error al refrescar número de pallet:", error);
                 if (!isSilent) {
                     showToast(error.message, 'error');
+                    setRefreshState('error');
+                    setTimeout(() => setRefreshState('idle'), 3000); // Reset error state after 3s
                 }
                 return null;
             }
@@ -247,7 +263,7 @@
             }, Math.floor(Math.random() * (5 * 60 * 1000 - 1 * 60 * 1000 + 1)) + 1 * 60 * 1000); // Entre 1 y 5 minutos
 
             return () => clearInterval(interval);
-        }, [numeroDePallet]); // Depende de numeroDePallet para tener el valor actual en el closure
+        }, [numeroDePallet, previewPdfUrl]); // Dependencias para tener valores actualizados
 
 
         const acquireLock = async (operationName) => {
@@ -443,7 +459,7 @@
         useEffect(() => {
             if (selectedArticulo) {
                 const specialTypes = ['TULIPAS', 'PIROTINES', 'MADALENAS', 'FUNDAS'];
-                if (specialTypes.includes(selectedArticulo.tipo)) { setUom('Millar'); }
+                if (specialTypes.includes(selectedArticulo.tipo)) { setUom('Millar'); } 
                 else { setUom('Unidad'); }
             }
         }, [selectedArticulo]);
@@ -889,13 +905,23 @@
                                         <input type="number" value={numeroDePallet} readOnly={!isPalletNumEditable} onChange={e => setNumeroDePallet(e.target.value)} className={`block w-full rounded-none rounded-l-md border-gray-300 p-2 border ${!isPalletNumEditable ? 'bg-gray-100' : ''}`} />
                                         <button 
                                             type="button"
-                                            onClick={handleRefreshPalletNumber}
-                                            className="relative -ml-px inline-flex items-center space-x-2 rounded-r-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100"
+                                            onClick={() => handleRefreshPalletNumber(false)}
+                                            disabled={refreshState === 'loading'}
+                                            className="relative -ml-px inline-flex items-center space-x-2 rounded-r-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-50"
                                             title="Verificar último número de pallet"
                                         >
-                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-                                                <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.204 4.352l-1.31.524a.75.75 0 01-.924-.924l.524-1.31a5.5 5.5 0 017.802-7.802l1.31-.524a.75.75 0 01.924.924l-.524 1.31zM11.75 9a.75.75 0 00-1.5 0v1.546l.323.323a.75.75 0 001.06-1.06l-.53-.53V9z" clipRule="evenodd" />
-                                                <path d="M18 9.5a8.5 8.5 0 11-17 0 8.5 8.5 0 0117 0zM9.5 17a7.5 7.5 0 100-15 7.5 7.5 0 000 15z" />
+                                            <svg 
+                                                xmlns="http://www.w3.org/2000/svg" 
+                                                viewBox="0 0 20 20" 
+                                                fill="currentColor" 
+                                                className={`h-5 w-5 ${ 
+                                                    refreshState === 'loading' ? 'icon-state-loading' :
+                                                    refreshState === 'success' ? 'icon-state-success' :
+                                                    refreshState === 'error' ? 'icon-state-error' :
+                                                    'icon-state-idle'
+                                                }`}
+                                            >
+                                                <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.899 2.186l-1.5-1.5a1 1 0 111.414-1.414l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414l1.5-1.5A5.002 5.002 0 005 9.101V11a1 1 0 11-2 0V3a1 1 0 011-1zm12 14a1 1 0 01-1-1v-2.101a7.002 7.002 0 01-11.899-2.186l1.5 1.5a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 111.414 1.414l-1.5 1.5A5.002 5.002 0 0015 10.899V9a1 1 0 112 0v7a1 1 0 01-1 1z" clipRule="evenodd" />
                                             </svg>
                                             <span>Refrescar</span>
                                         </button>
