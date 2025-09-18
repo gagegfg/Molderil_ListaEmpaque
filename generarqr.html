@@ -203,6 +203,53 @@
         const articuloInputRef = useRef(null);
         const loteInputRefs = useRef([]);
         
+        const handleRefreshPalletNumber = async (isSilent = false) => {
+            const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_LOTE_LOGISTICO}?t=${new Date().getTime()}`;
+            try {
+                const response = await fetch(url, { cache: "no-store" });
+                if (!response.ok) throw new Error('No se pudo verificar el Nº de pallet.');
+                const text = await response.text();
+                const numeroBase = parseInt(text.trim(), 10);
+                if (isNaN(numeroBase)) throw new Error('El archivo de pallet está corrupto.');
+                
+                const proximoNumero = numeroBase + 1;
+                const numeroActual = parseInt(numeroDePallet, 10);
+
+                if (numeroActual !== proximoNumero) {
+                    setNumeroDePallet(proximoNumero);
+                    if (!isSilent) {
+                        showToast(`Nº de pallet actualizado al siguiente disponible: ${proximoNumero}.`, 'info');
+                    }
+                    // Si la vista previa ya existe, la regeneramos con el número nuevo
+                    if (previewPdfUrl) {
+                         // Pequeño delay para asegurar que el estado se actualice antes de regenerar
+                        setTimeout(() => handleGeneratePreview(true), 100);
+                    }
+                }
+                return proximoNumero;
+            } catch (error) {
+                console.error("Error al refrescar número de pallet:", error);
+                if (!isSilent) {
+                    showToast(error.message, 'error');
+                }
+                return null;
+            }
+        };
+
+        useEffect(() => {
+            const interval = setInterval(() => {
+                const now = new Date();
+                const hour = now.getHours();
+                if (hour >= 5 && hour < 22) {
+                    console.log("Verificación periódica de número de pallet...");
+                    handleRefreshPalletNumber(true); // silent = true
+                }
+            }, Math.floor(Math.random() * (5 * 60 * 1000 - 1 * 60 * 1000 + 1)) + 1 * 60 * 1000); // Entre 1 y 5 minutos
+
+            return () => clearInterval(interval);
+        }, [numeroDePallet]); // Depende de numeroDePallet para tener el valor actual en el closure
+
+
         const acquireLock = async (operationName) => {
             const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${LOCK_FILE_PATH}`;
             let currentSha = null;
@@ -644,7 +691,16 @@
             };
         }
 
-        const handleGeneratePreview = async () => {
+        const handleGeneratePreview = async (isRegeneration = false) => {
+            if (!isRegeneration) {
+                const updatedPalletNum = await handleRefreshPalletNumber(true);
+                if (updatedPalletNum && parseInt(numeroDePallet, 10) !== updatedPalletNum) {
+                    // El número de pallet fue actualizado, el usuario debe estar al tanto.
+                    // La invalidación de la preview ya la hace handleRefreshPalletNumber.
+                    return;
+                }
+            }
+
             const lotesValidos = lotesProduccion.some(lote => lote.trim() !== '');
             if (!selectedArticulo || !cantidad || !lotesValidos) {
                 showToast("Complete Artículo, Cantidad y al menos un Lote.", 'error');
@@ -659,10 +715,10 @@
         
         const handleGenerateAndPrintPDF = async () => {
             if (isSaving) return;
-            setIsSaving(true); // Feedback inmediato para el usuario
+            setIsSaving(true);
 
             const numCopias = parseInt(cantidadCopias, 10);
-            const palletNum = parseInt(numeroDePallet, 10);
+            let palletNum = parseInt(numeroDePallet, 10);
 
             if (isNaN(numCopias) || numCopias < 1 || isNaN(palletNum) || !previewPdfUrl) {
                 showToast("Genere una vista previa y verifique los datos.", 'error');
@@ -675,8 +731,6 @@
                 return;
             }
 
-            // Se elimina la confirmación del usuario para un proceso directo.
-
             const lock = await acquireLock('generateLabel');
             if (!lock.success) {
                 showToast(`No se pudo guardar. ${lock.error}. Intente de nuevo.`, 'error');
@@ -685,10 +739,9 @@
             }
 
             try {
-                // Volver a verificar el último número de pallet desde GitHub para evitar duplicados.
-                const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_LOTE_LOGISTICO}`;
+                const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_LOTE_LOGISTICO}?t=${new Date().getTime()}`;
                 const response = await fetch(url, { cache: "no-store" });
-                if (!response.ok) throw new Error('No se pudo verificar el último número de pallet desde GitHub.');
+                if (!response.ok) throw new Error('No se pudo verificar el último número de pallet.');
                 
                 const text = await response.text();
                 const ultimoPalletGuardado = parseInt(text.trim(), 10);
@@ -697,9 +750,11 @@
 
                 if (palletNum <= ultimoPalletGuardado) {
                     const nuevoNumeroSugerido = ultimoPalletGuardado + 1;
-                    showToast(`Error: El Nº de Pallet ${palletNum} ya fue utilizado. Se actualizará al siguiente número disponible: ${nuevoNumeroSugerido}.`, 'error');
+                    showToast(`¡Conflicto! El Pallet ${palletNum} ya fue usado. Se actualizó al Nº ${nuevoNumeroSugerido}. Por favor, revise la nueva vista previa y guarde de nuevo.`, 'error');
                     setNumeroDePallet(nuevoNumeroSugerido);
-                    // No continuamos, el usuario debe volver a generar la vista previa y guardar.
+                    
+                    // Forzar regeneración de la vista previa con el número correcto
+                    setTimeout(() => handleGeneratePreview(true), 100);
                     return; 
                 }
 
@@ -830,7 +885,21 @@
                                 </div>
                                 <div>
                                     <label className="block text-base font-bold text-black">Número de Pallet (Automático)</label>
-                                    <input type="number" value={numeroDePallet} readOnly={!isPalletNumEditable} onChange={e => setNumeroDePallet(e.target.value)} className={`mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border ${!isPalletNumEditable ? 'bg-gray-100' : ''}`} />
+                                    <div className="mt-1 flex rounded-md shadow-sm">
+                                        <input type="number" value={numeroDePallet} readOnly={!isPalletNumEditable} onChange={e => setNumeroDePallet(e.target.value)} className={`block w-full rounded-none rounded-l-md border-gray-300 p-2 border ${!isPalletNumEditable ? 'bg-gray-100' : ''}`} />
+                                        <button 
+                                            type="button"
+                                            onClick={handleRefreshPalletNumber}
+                                            className="relative -ml-px inline-flex items-center space-x-2 rounded-r-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100"
+                                            title="Verificar último número de pallet"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+                                                <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.204 4.352l-1.31.524a.75.75 0 01-.924-.924l.524-1.31a5.5 5.5 0 017.802-7.802l1.31-.524a.75.75 0 01.924.924l-.524 1.31zM11.75 9a.75.75 0 00-1.5 0v1.546l.323.323a.75.75 0 001.06-1.06l-.53-.53V9z" clipRule="evenodd" />
+                                                <path d="M18 9.5a8.5 8.5 0 11-17 0 8.5 8.5 0 0117 0zM9.5 17a7.5 7.5 0 100-15 7.5 7.5 0 000 15z" />
+                                            </svg>
+                                            <span>Refrescar</span>
+                                        </button>
+                                    </div>
                                 </div>
                                 <div>
                                     <label className="block text-base font-bold text-black">Cantidad de Copias</label>
