@@ -10,6 +10,7 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
         body {
           background-image: url('fondo.jpg');
@@ -69,10 +70,6 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
-        .icon-state-idle { color: #3b82f6; } /* Tailwind blue-500 */
-        .icon-state-loading { color: #ef4444; animation: spin 1s linear infinite; } /* Tailwind red-500 */
-        .icon-state-success { color: #22c55e; } /* Tailwind green-500 */
-        .icon-state-error { color: #ef4444; } /* Tailwind red-500 */
     </style>
 </head>
 <body class="bg-gray-100 font-sans">
@@ -910,19 +907,12 @@
                                             className="relative -ml-px inline-flex items-center space-x-2 rounded-r-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-50"
                                             title="Verificar último número de pallet"
                                         >
-                                            <svg 
-                                                xmlns="http://www.w3.org/2000/svg" 
-                                                viewBox="0 0 20 20" 
-                                                fill="currentColor" 
-                                                className={`h-5 w-5 ${ 
-                                                    refreshState === 'loading' ? 'icon-state-loading' :
-                                                    refreshState === 'success' ? 'icon-state-success' :
-                                                    refreshState === 'error' ? 'icon-state-error' :
-                                                    'icon-state-idle'
-                                                }`}
-                                            >
-                                                <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.899 2.186l-1.5-1.5a1 1 0 111.414-1.414l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414l1.5-1.5A5.002 5.002 0 005 9.101V11a1 1 0 11-2 0V3a1 1 0 011-1zm12 14a1 1 0 01-1-1v-2.101a7.002 7.002 0 01-11.899-2.186l1.5 1.5a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 111.414 1.414l-1.5 1.5A5.002 5.002 0 0015 10.899V9a1 1 0 112 0v7a1 1 0 01-1 1z" clipRule="evenodd" />
-                                            </svg>
+                                            <i className={`fas fa-sync-alt h-5 w-5 ${ 
+                                                refreshState === 'loading' ? 'animate-spin text-red-500' :
+                                                refreshState === 'success' ? 'text-green-500' :
+                                                refreshState === 'error' ? 'text-red-500' :
+                                                'text-blue-500'
+                                            }`}></i>
                                             <span>Refrescar</span>
                                         </button>
                                     </div>
