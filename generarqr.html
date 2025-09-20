@@ -851,6 +851,67 @@
             }
         };
         
+        const handleManualPalletOverride = async () => {
+            const password = prompt("Ingrese la contraseña para la corrección manual:");
+            if (!password) return;
+
+            try {
+                const pswUrl = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/pswsku.txt?t=${new Date().getTime()}`;
+                const pswResponse = await fetch(pswUrl, { cache: "no-store" });
+                if (!pswResponse.ok) throw new Error("No se pudo verificar la contraseña.");
+                const correctPassword = await pswResponse.text();
+
+                if (password.trim() !== correctPassword.trim()) {
+                    showToast("Contraseña incorrecta.", "error");
+                    return;
+                }
+
+                const newPalletNumStr = prompt(`El número de pallet actual es ${numeroDePallet}. Ingrese el nuevo número de pallet base:`);
+                if (!newPalletNumStr) return;
+
+                const newPalletNum = parseInt(newPalletNumStr.trim(), 10);
+                const currentPalletNum = parseInt(numeroDePallet, 10);
+
+                if (isNaN(newPalletNum) || newPalletNum <= 0) {
+                    showToast("El número de pallet debe ser un entero positivo.", "error");
+                    return;
+                }
+
+                if (newPalletNum <= currentPalletNum) {
+                    showToast(`El nuevo número de pallet (${newPalletNum}) debe ser mayor que el número de pallet actual (${currentPalletNum}).`, "error");
+                    return;
+                }
+
+                const confirmed = confirm(`¿Confirma que desea establecer el número de pallet base a ${newPalletNum}? El próximo pallet a generar será el ${newPalletNum + 1}.`);
+                if (!confirmed) return;
+
+                setIsSaving(true);
+                const lock = await acquireLock('manualOverride');
+                if (!lock.success) {
+                    showToast(`No se pudo bloquear el sistema. ${lock.error}.`, 'error');
+                    setIsSaving(false);
+                    return;
+                }
+
+                try {
+                    const palletNumSaved = await updateLoteFile(newPalletNum);
+                    if (!palletNumSaved) throw new Error("Fallo al actualizar el número de pallet.");
+
+                    const nextPallet = newPalletNum + 1;
+                    setNumeroDePallet(nextPallet);
+                    setPreviewPdfUrl(null);
+                    showToast(`Número de pallet actualizado. El próximo pallet será ${nextPallet}.`, "success");
+                } finally {
+                    await releaseLock();
+                    setIsSaving(false);
+                }
+
+            } catch (error) {
+                showToast(`Error en la corrección manual: ${error.message}`, "error");
+                setIsSaving(false);
+            }
+        };
+        
         if (appIsLoading) {
             return null;
         }
@@ -904,7 +965,7 @@
                                             type="button"
                                             onClick={() => handleRefreshPalletNumber(false)}
                                             disabled={refreshState === 'loading'}
-                                            className="relative -ml-px inline-flex items-center space-x-2 rounded-r-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                                            className="relative -ml-px inline-flex items-center space-x-2 border border-gray-300 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-50"
                                             title="Verificar último número de pallet"
                                         >
                                             <i className={`fas fa-sync-alt h-5 w-5 ${ 
@@ -914,6 +975,14 @@
                                                 'text-blue-500'
                                             }`}></i>
                                             <span>Refrescar</span>
+                                        </button>
+                                        <button 
+                                            type="button"
+                                            onClick={handleManualPalletOverride}
+                                            className="relative -ml-px inline-flex items-center space-x-2 rounded-r-md border border-gray-300 bg-yellow-400 px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-yellow-500"
+                                            title="Corrección manual del número de pallet"
+                                        >
+                                            <i className="fas fa-wrench h-5 w-5"></i>
                                         </button>
                                     </div>
                                 </div>
