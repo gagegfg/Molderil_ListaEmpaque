@@ -376,17 +376,19 @@
             const loaderProgress = document.getElementById('loader-progress');
 
             const fetchInitialData = async () => {
-                const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_LOTE_LOGISTICO}`;
                 try {
-                    const response = await fetch(url, { cache: "no-store" });
-                    if (!response.ok) throw new Error('No se pudo obtener el número de pallet desde GitHub.');
-                    const text = await response.text();
-                    const numeroBase = parseInt(text.trim(), 10);
-                    if (isNaN(numeroBase)) throw new Error('El contenido del archivo no es un número.');
+                    const response = await fetch('/api/getPalletNumber');
+                    const data = await response.json();
+                    if (!data.success) throw new Error('No se pudo obtener el número de pallet desde la base de datos.');
+                    
+                    const numeroBase = parseInt(data.palletNumber, 10);
+                    if (isNaN(numeroBase)) throw new Error('El número de pallet recibido no es válido.');
+                    
                     setNumeroDePallet(numeroBase + 1);
                 } catch (error) {
                     console.error("Error al cargar número de pallet:", error);
-                    showToast(`Error: ${error.message}\nIngrese el número de pallet manualmente.`, 'error');
+                    showToast(`Error: ${error.message}
+Ingrese el número de pallet manualmente.`, 'error');
                     setNumeroDePallet('');
                     setIsPalletNumEditable(true);
                 }
