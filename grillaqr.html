@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MOLDERIL - Histórico de Lotes (Serverless)</title>
+    <title>MOLDERIL - Histórico de Lotes (Sincronizado)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -42,9 +42,23 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef, useCallback, useMemo } = React;
+        const { useState, useEffect, useRef, useCallback } = React;
         const { createRoot } = ReactDOM;
         const { jsPDF } = window.jspdf;
+
+        // --- CONFIGURACIÓN DE GITHUB ---
+        const GITHUB_USER = 'gagegfg';
+        const GITHUB_REPO = 'Molderil_ListaEmpaque';
+        const CSV_PATH_LOTES = 'detallelotes.csv';
+        const CSV_PATH_NOTAS = 'notasskulote.csv';
+        const CSV_PATH_ALMACENADO = 'nropalletalmacenado.csv';
+        const AUTH_TIMEOUT = 5 * 60 * 1000; // 5 minutos en milisegundos
+
+        // --- CONFIGURACIÓN DEL SISTEMA DE BLOQUEO ---
+        const LOCK_FILE_PATH = 'lock.json';
+        const LOCK_TIMEOUT = 45 * 1000; // 45 segundos
+        const SESSION_ID = Date.now().toString(36) + Math.random().toString(36).substr(2);
+
 
         const useLocalStorage = (key, initialValue) => {
             const [storedValue, setStoredValue] = useState(() => {
@@ -52,6 +66,7 @@
                     const item = window.localStorage.getItem(key);
                     return item ? JSON.parse(item) : initialValue;
                 } catch (error) {
+                    console.log(error);
                     return initialValue;
                 }
             });
@@ -70,14 +85,22 @@
         
         const App = () => {
             const [allData, setAllData] = useState([]);
-            const [clientList, setClientList] = useState([]);
+            const [notesData, setNotesData] = useState([]);
+            const [storedData, setStoredData] = useState(new Set());
+            const [articulosMap, setArticulosMap] = useState(new Map());
             const [filteredData, setFilteredData] = useState([]);
             const [isLoading, setIsLoading] = useState(true);
             const [isSaving, setIsSaving] = useState(false);
-            
+            const [apiToken, setApiToken] = useState(null);
+            const [clientList, setClientList] = useState([]);
+            const [authTimestamp, setAuthTimestamp] = useState(null);
+
             const [modalState, setModalState] = useState({ isOpen: false, type: null, title: '', message: '', onConfirm: null });
             const [observationModal, setObservationModal] = useState({ isOpen: false, text: '' });
+            // --- INICIO: Funcionalidad de Notas ---
             const [noteModal, setNoteModal] = useState({ isOpen: false, item: null, text: '' });
+            // --- FIN: Funcionalidad de Notas ---
+            const [reprintModal, setReprintModal] = useState({ isOpen: false, pdfUrl: null, printablePdfUrl: null, palletId: null });
             const [showHelpModal, setShowHelpModal] = useState(false);
             const [showPendingModal, setShowPendingModal] = useState(false);
             const [activeActionMenu, setActiveActionMenu] = useState(null);
@@ -88,7 +111,7 @@
             const [isTransferMode, setIsTransferMode] = useState(false);
             const [transferSelection, setTransferSelection] = useState({});
             
-            const [columnFilters, setColumnFilters] = useLocalStorage('grillaqr_columnFilters_v4', {
+            const [columnFilters, setColumnFilters] = useLocalStorage('grillaqr_columnFilters_v3', {
                 sku: '',
                 descripcion: '',
                 numeroDePallet: '',
@@ -96,69 +119,409 @@
                 despachado: '',
                 cliente: ''
             });
-            const [fechaDesde, setFechaDesde] = useLocalStorage('grillaqr_fechaDesde_v2', '');
-            const [fechaHasta, setFechaHasta] = useLocalStorage('grillaqr_fechaHasta_v2', '');
+            const [fechaDesde, setFechaDesde] = useLocalStorage('grillaqr_fechaDesde', '');
+            const [fechaHasta, setFechaHasta] = useLocalStorage('grillaqr_fechaHasta', '');
             
             const [isExportOpen, setIsExportOpen] = useState(false);
             const exportMenuRef = useRef(null);
+            
+            const longPressTimer = useRef(null);
+            const touchDuration = 500; 
+
+            const handlePressStart = (callback) => {
+                longPressTimer.current = setTimeout(() => {
+                    callback();
+                }, touchDuration);
+            };
+
+            const handlePressEnd = () => {
+                clearTimeout(longPressTimer.current);
+            };
+
+            const getApiToken = async (file) => {
+                try {
+                    const response = await fetch(file + '?t=' + new Date().getTime());
+                    if (!response.ok) throw new Error(`No se pudo cargar ${file}.`);
+                    let rawText = await response.text();
+                    return rawText.replace(/aaaa/g, '').replace(/bbbb/g, '').replace(/cccc/g, '').trim();
+                } catch (error) {
+                    console.error(`Error al obtener ${file}:`, error);
+                    return null;
+                }
+            };
+            
+            // --- FUNCIONES DEL SISTEMA DE BLOQUEO ---
+            const acquireLock = async (operationName) => {
+                const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${LOCK_FILE_PATH}`;
+                let currentSha = null;
+                try {
+                    const response = await fetch(`${url}?t=${new Date().getTime()}`, {
+                        headers: { 'Authorization': `token ${apiToken}` }, cache: 'no-store'
+                    });
+
+                    if (response.ok) {
+                        const fileData = await response.json();
+                        currentSha = fileData.sha;
+                        const content = atob(fileData.content);
+
+                        if (!content.trim()) {
+                           // El archivo está vacío, se considera desbloqueado.
+                        } else {
+                            const lock = JSON.parse(content);
+                            const isLockedByOther = lock.sessionId && lock.sessionId !== SESSION_ID;
+                            const isExpired = Date.now() - lock.timestamp > LOCK_TIMEOUT;
+
+                            if (isLockedByOther && !isExpired) {
+                                return { success: false, error: `Sistema bloqueado por otra sesión. Operación en curso: ${lock.operation || 'N/A'}` };
+                            }
+                        }
+                    } else if (response.status !== 404) {
+                        throw new Error(`Error al leer el archivo de bloqueo: ${response.statusText}`);
+                    }
+
+                    const lockContent = { sessionId: SESSION_ID, timestamp: Date.now(), operation: operationName };
+                    const updateResponse = await fetch(url, {
+                        method: 'PUT',
+                        headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            message: `Locking for operation: ${operationName}`,
+                            content: btoa(JSON.stringify(lockContent)),
+                            sha: currentSha,
+                        }),
+                    });
+
+                    if (!updateResponse.ok) throw new Error(`No se pudo adquirir el bloqueo: ${updateResponse.statusText}`);
+                    
+                    return { success: true };
+
+                } catch (error) {
+                    if (error instanceof SyntaxError) {
+                        console.warn("lock.json contenía JSON inválido, se procederá a sobreescribir.");
+                        return { success: true };
+                    }
+                    console.error("Error en acquireLock:", error);
+                    return { success: false, error: error.message };
+                }
+            };
+
+            const releaseLock = async () => {
+                const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${LOCK_FILE_PATH}`;
+                try {
+                    const response = await fetch(`${url}?t=${new Date().getTime()}`, {
+                        headers: { 'Authorization': `token ${apiToken}` }, cache: 'no-store'
+                    });
+            
+                    if (response.ok) {
+                        const fileData = await response.json();
+                        const content = atob(fileData.content);
+                        if (content) {
+                            const lock = JSON.parse(content);
+                            if (lock.sessionId && lock.sessionId !== SESSION_ID) {
+                                console.warn("Intento de liberar un bloqueo que no pertenece a esta sesión. Se omite.");
+                                return;
+                            }
+                        }
+
+                        const updateResponse = await fetch(url, {
+                            method: 'PUT',
+                            headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                message: 'Releasing lock',
+                                content: btoa(''),
+                                sha: fileData.sha,
+                            }),
+                        });
+                        if (!updateResponse.ok) console.error("Error al liberar el bloqueo, puede expirar automáticamente.");
+                    }
+                } catch (error) {
+                    console.error("Error en releaseLock:", error);
+                }
+            };
+
+
+            const fetchCsvFromGithub = useCallback(async (path) => {
+                const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}?t=${new Date().getTime()}`;
+                try {
+                    const headers = apiToken ? { 'Authorization': `token ${apiToken}` } : {};
+                    const response = await fetch(url, { headers, cache: 'no-store' });
+                    if (response.status === 404) {
+                        console.log(`El archivo ${path} no existe. Se devolverá un array vacío.`);
+                        return [];
+                    }
+                    if (!response.ok) throw new Error(`No se pudo cargar ${path} (Estado: ${response.status})`);
+                    const fileData = await response.json();
+                    return atob(fileData.content).split('\n').filter(Boolean);
+                } catch (error) {
+                    console.error(`Error cargando ${path}:`, error);
+                    alert(`Error al cargar datos desde GitHub: ${error.message}`);
+                    return [];
+                }
+            }, [apiToken]);
 
             const loadData = useCallback(async () => {
                 setIsLoading(true);
-                try {
-                    const response = await fetch('/api/getGrillaData', { cache: 'no-store' });
-                    if (!response.ok) throw new Error(`Error del servidor: ${response.status}`);
-                    const data = await response.json();
-                    if (!data.success) throw new Error(data.message);
+                const [lotesRows, notasRows, almacenadoRows] = await Promise.all([
+                    fetchCsvFromGithub(CSV_PATH_LOTES),
+                    fetchCsvFromGithub(CSV_PATH_NOTAS),
+                    fetchCsvFromGithub(CSV_PATH_ALMACENADO)
+                ]);
 
-                    setAllData(data.grillaData || []);
-                    setClientList(data.clientList || []);
-                } catch (error) {
-                    alert(`Error fatal al cargar los datos: ${error.message}`);
-                } finally {
-                    setIsLoading(false);
+                const storedSet = new Set(almacenadoRows);
+                setStoredData(storedSet);
+
+                const notesMap = new Map();
+                const parsedNotes = notasRows.map(row => {
+                    const [sku, numeroDePallet, observacion] = row.split(';');
+                    const key = `${sku};${numeroDePallet}`;
+                    notesMap.set(key, observacion);
+                    return { sku, numeroDePallet, observacion };
+                });
+                setNotesData(parsedNotes);
+
+                const parsedLotes = lotesRows.map((row, index) => {
+                    const [sku, originalDescription, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida, despachado, cliente] = row.split(';');
+                    
+                    const articuloInfo = articulosMap.get(sku.trim());
+                    const descripcion = (articuloInfo && articuloInfo.larga) ? articuloInfo.larga : originalDescription;
+
+                    const noteKey = `${sku};${numeroDePallet}`;
+                    const storedKey = `${sku};${numeroDePallet}`;
+                    const hasNote = notesMap.has(noteKey);
+                    const noteText = hasNote ? notesMap.get(noteKey) : '';
+                    const isStored = storedSet.has(storedKey);
+                    return { id: index, sku, descripcion, numeroDePallet, lotesProduccion, fechaProduccion, cantidad, unidadMedida, despachado, cliente, hasNote, noteText, isStored };
+                });
+                
+                setAllData(parsedLotes);
+                setIsLoading(false);
+            }, [fetchCsvFromGithub, articulosMap]);
+            
+            const saveCsvToGithub = async (path, dataToSave, formatRow) => {
+                if (!apiToken) {
+                    alert("Error: El token de API no está disponible.");
+                    return false;
                 }
-            }, []);
+                const csvContent = dataToSave.map(formatRow).join('\n');
+                const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}`;
+                try {
+                    const fileResponse = await fetch(`${url}?t=${new Date().getTime()}`, {
+                        headers: { 'Authorization': `token ${apiToken}` },
+                        cache: 'no-store'
+                    });
 
-            const executeActionWithAuth = async (actionCallback) => {
-                const password = prompt("Por seguridad, ingrese la contraseña de administrador para continuar.");
-                if (!password) return;
+                    let currentSha = null;
+                    if (fileResponse.ok) {
+                        const fileData = await fileResponse.json();
+                        currentSha = fileData.sha;
+                    } else if (fileResponse.status !== 404) {
+                        const errorData = await fileResponse.json();
+                        throw new Error(`Error ${fileResponse.status} al obtener SHA: ${errorData.message}`);
+                    }
+
+                    const updateResponse = await fetch(url, {
+                        method: 'PUT',
+                        headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            message: `Actualización de ${path} desde grilla web`,
+                            content: btoa(unescape(encodeURIComponent(csvContent))),
+                            sha: currentSha,
+                        }),
+                    });
+
+                    if (!updateResponse.ok) {
+                        const errorData = await updateResponse.json();
+                        throw new Error(`Error ${updateResponse.status}: ${errorData.message || 'Falló la actualización del archivo.'}`);
+                    }
+                    return true;
+                } catch (e) {
+                    console.error(e);
+                    return e.message; 
+                }
+            };
+
+            const appendCsvToGithub = async (path, stringToAppend) => {
+                if (!apiToken) {
+                    alert("Error: El token de API no está disponible.");
+                    return { success: false, error: "Token no disponible." };
+                }
+                if (!stringToAppend) {
+                    return { success: true };
+                }
+                const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}`;
+                let currentSha = null;
+                let newContent = stringToAppend;
+                try {
+                    const fileResponse = await fetch(`${url}?t=${new Date().getTime()}`, {
+                        headers: { 'Authorization': `token ${apiToken}` },
+                        cache: 'no-store'
+                    });
+                    if (fileResponse.ok) {
+                        const fileData = await fileResponse.json();
+                        currentSha = fileData.sha;
+                        const existingContent = atob(fileData.content).trim();
+                        newContent = existingContent ? `${existingContent}\n${stringToAppend}` : stringToAppend;
+                    } else if (fileResponse.status !== 404) {
+                        const errorData = await fileResponse.json();
+                        throw new Error(`Error ${fileResponse.status} al obtener archivo para añadir: ${errorData.message}`);
+                    }
+                    const updateResponse = await fetch(url, {
+                        method: 'PUT',
+                        headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            message: `Añadir a ${path} desde grilla web`,
+                            content: btoa(unescape(encodeURIComponent(newContent))),
+                            sha: currentSha,
+                        }),
+                    });
+                    if (!updateResponse.ok) {
+                        const errorData = await updateResponse.json();
+                        throw new Error(`Error ${updateResponse.status}: ${errorData.message || 'Falló la actualización del archivo.'}`);
+                    }
+                    return { success: true };
+                } catch (e) {
+                    console.error(e);
+                    return { success: false, error: e.message };
+                }
+            };
+            
+            const saveData = async (updatedLotes, updatedNotes) => {
+                const lock = await acquireLock('saveData');
+                if (!lock.success) {
+                    alert(`No se pudo guardar. ${lock.error}. Por favor, intente de nuevo en unos momentos.`);
+                    return;
+                }
 
                 setIsSaving(true);
+                let lotesResult = false;
+                let notesResult = false;
                 try {
-                    await actionCallback(password);
-                } catch (error) {
-                    alert(`Error en la operación: ${error.message}`);
+                    // 1. Guardar Lotes
+                    lotesResult = await saveCsvToGithub(CSV_PATH_LOTES, updatedLotes, item => 
+                        [item.sku, item.descripcion, item.numeroDePallet, item.lotesProduccion, item.fechaProduccion, item.cantidad, item.unidadMedida, item.despachado || 'FALSE', item.cliente || ''].join(';')
+                    );
+
+                    // 2. Guardar Notas
+                    if (lotesResult === true) {
+                        notesResult = await saveCsvToGithub(CSV_PATH_NOTAS, updatedNotes, item => 
+                            [item.sku, item.numeroDePallet, item.observacion].join(';')
+                        );
+                    }
+                    
+                    const success = lotesResult === true && notesResult === true;
+
+                    if (success) {
+                        alert("¡Operación exitosa! Los datos se han guardado correctamente.");
+                    } else {
+                        const errorMessage = `Ocurrió un error al guardar:\n- Lotes: ${lotesResult === true ? 'OK' : lotesResult}\n- Notas: ${notesResult === true ? 'OK' : notesResult}\n\nSe recargarán los datos para asegurar la consistencia.`;
+                        alert(errorMessage);
+                    }
                 } finally {
+                    await releaseLock();
                     setIsSaving(false);
-                    // No recargamos datos aquí, la UI se actualiza localmente y luego se sincroniza.
+                    await loadData();
+                }
+            };
+
+            const verifyPasswordAndExecute = async (actionCallback, password) => {
+                if (!password) {
+                    alert("Por favor, ingrese la contraseña.");
+                    return;
+                }
+                const correctPassword = await getApiToken('pswsku.txt');
+                if (password.trim() === correctPassword) {
+                    setAuthTimestamp(Date.now());
+                    setModalState({ isOpen: false });
+                    actionCallback();
+                } else {
+                    alert("Contraseña incorrecta.");
+                }
+            };
+
+            const executeActionWithAuth = (actionCallback) => {
+                const now = Date.now();
+                if (authTimestamp && (now - authTimestamp < AUTH_TIMEOUT)) {
+                    actionCallback();
+                } else {
+                    setModalState({
+                        isOpen: true,
+                        type: 'password',
+                        title: 'Autorización Requerida',
+                        message: 'Por seguridad, ingrese la contraseña de administrador para continuar.',
+                        onConfirm: (password) => verifyPasswordAndExecute(actionCallback, password)
+                    });
                 }
             };
             
             useEffect(() => {
-                const loaderStatus = document.getElementById('loader-status');
-                const loaderProgress = document.getElementById('loader-progress');
-                const staticLoader = document.getElementById('static-loader');
-                
-                loaderStatus.textContent = "Cargando datos desde el servidor...";
-                loaderProgress.style.width = '50%';
-
-                loadData().then(() => {
-                    if (!fechaDesde && !fechaHasta) {
-                        const today = new Date();
-                        const firstDayOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-                        setFechaHasta(today.toISOString().split('T')[0]);
-                        setFechaDesde(firstDayOfLastMonth.toISOString().split('T')[0]);
+                const initializeApp = async () => {
+                    const loaderStatus = document.getElementById('loader-status');
+                    const loaderProgress = document.getElementById('loader-progress');
+                    loaderStatus.textContent = "Verificando acceso...";
+                    loaderProgress.style.width = '20%';
+                    const token = await getApiToken('cls.txt');
+                    if (token) {
+                        setApiToken(token); 
+                        loaderStatus.textContent = "Cargando lista de clientes...";
+                        loaderProgress.style.width = '40%';
+                        try {
+                            const clientResponse = await fetch('clientes.txt?t=' + new Date().getTime(), { cache: 'no-store' });
+                            const clientText = await clientResponse.text();
+                            setClientList(clientText.split('\n').map(c => c.trim().toUpperCase()).filter(Boolean));
+                        } catch (e) { console.error("No se pudo cargar la lista de clientes."); }
+                        loaderStatus.textContent = "Cargando descripciones de artículos...";
+                        loaderProgress.style.width = '60%';
+                        try {
+                            const articulosResponse = await fetch('articulos.csv?t=' + new Date().getTime(), { cache: 'no-store' });
+                            const articulosText = await articulosResponse.text();
+                            const newArticulosMap = new Map();
+                            articulosText.split('\n').slice(1).forEach(row => {
+                                const [tipo, sku, descLarga, descCorta] = row.split(';');
+                                if (sku) { 
+                                    newArticulosMap.set(sku.trim(), {
+                                        larga: (descLarga || '').trim(),
+                                        corta: (descCorta || '').trim()
+                                    }); 
+                                }
+                            });
+                            setArticulosMap(newArticulosMap);
+                        } catch (e) { console.error("No se pudo cargar la lista de artículos."); }
+                    } else {
+                        loaderStatus.textContent = "Error de autenticación. No se pudo iniciar.";
+                        loaderProgress.style.width = '100%';
+                        loaderProgress.classList.remove('bg-amber-400');
+                        loaderProgress.classList.add('bg-red-500');
                     }
-                    loaderStatus.textContent = "¡Listo!";
-                    loaderProgress.style.width = '100%';
-                    setTimeout(() => {
-                         if (staticLoader) {
-                            staticLoader.classList.add('opacity-0');
-                            setTimeout(() => staticLoader.remove(), 500);
+                };
+                initializeApp();
+            }, []);
+
+            useEffect(() => {
+                if(apiToken && articulosMap.size > 0) {
+                    const loadInitialData = async () => {
+                        const loaderStatus = document.getElementById('loader-status');
+                        const loaderProgress = document.getElementById('loader-progress');
+                        const staticLoader = document.getElementById('static-loader');
+                        if (loaderStatus) loaderStatus.textContent = "Cargando histórico y notas...";
+                        if (loaderProgress) loaderProgress.style.width = '80%';
+                        await loadData();
+                        if (!fechaDesde && !fechaHasta) {
+                            const today = new Date();
+                            const firstDayOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+                            setFechaHasta(today.toISOString().split('T')[0]);
+                            setFechaDesde(firstDayOfLastMonth.toISOString().split('T')[0]);
                         }
-                    }, 500);
-                });
-            }, [loadData]);
+                        if (loaderStatus) loaderStatus.textContent = "¡Listo!";
+                        if (loaderProgress) loaderProgress.style.width = '100%';
+                        setTimeout(() => {
+                             if (staticLoader) {
+                                staticLoader.classList.add('opacity-0');
+                                setTimeout(() => staticLoader.remove(), 500);
+                            }
+                        }, 500);
+                    };
+                    loadInitialData();
+                }
+            }, [apiToken, articulosMap, loadData]);
 
             useEffect(() => {
                 let data = [...allData];
@@ -188,7 +551,9 @@
                     if(hasta) hasta.setMinutes(hasta.getMinutes() + hasta.getTimezoneOffset());
                     data = data.filter(item => {
                         if (!item.fechaProduccion) return false;
-                        const itemDate = new Date(item.fechaProduccion);
+                        const [day, month, year] = item.fechaProduccion.split('/');
+                        if (!day || !month || !year) return false;
+                        const itemDate = new Date(year, month - 1, day);
                         return (!desde || itemDate >= desde) && (!hasta || itemDate <= hasta);
                     });
                 }
@@ -212,54 +577,185 @@
                 setFechaHasta('');
             };
 
-            const handleDeleteRow = (itemToDelete) => {
-                if (!confirm(`¿Seguro que quieres eliminar la fila para el SKU ${itemToDelete.sku} en el Pallet ${itemToDelete.numeroDePallet}? Esta acción es irreversible.`)) return;
-
-                executeActionWithAuth(async (password) => {
-                    const response = await fetch('/api/deleteGrillaRow', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
-                        body: JSON.stringify({ sku: itemToDelete.sku, numeroDePallet: itemToDelete.numeroDePallet })
-                    });
-                    const result = await response.json();
-                    if (!result.success) throw new Error(result.message);
-                    
-                    setAllData(prev => prev.filter(item => item.id !== itemToDelete.id));
-                    alert("Fila eliminada con éxito.");
+            const handleDeleteRow = (rowId) => {
+                setModalState({ 
+                    isOpen: true, type: 'confirm', title: `Confirmar Eliminación`,
+                    message: `¿Seguro que quieres eliminar la fila? Si tiene una nota asociada, también se eliminará. Esta acción es irreversible.`,
+                    onConfirm: () => {
+                        setModalState({ isOpen: false });
+                        executeActionWithAuth(() => {
+                            const itemToDelete = allData.find(item => item.id === rowId);
+                            const newLotesData = allData.filter(item => item.id !== rowId);
+                            let newNotesData = [...notesData];
+                            if (itemToDelete && itemToDelete.hasNote) {
+                                newNotesData = notesData.filter(note => 
+                                    !(note.sku === itemToDelete.sku && note.numeroDePallet === itemToDelete.numeroDePallet)
+                                );
+                            }
+                            saveData(newLotesData, newNotesData);
+                        });
+                    }
                 });
             };
             
-            const handleSaveNote = (item, text) => {
-                executeActionWithAuth(async (password) => {
-                    const response = await fetch('/api/saveNote', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
-                        body: JSON.stringify({ sku: item.sku, palletNumber: item.numeroDePallet, text })
-                    });
-                    const result = await response.json();
-                    if (!result.success) throw new Error(result.message);
-
-                    setAllData(prev => prev.map(d => d.id === item.id ? { ...d, hasNote: !!text, noteText: text } : d));
-                    setNoteModal({ isOpen: false, item: null, text: '' });
-                    alert("Nota guardada con éxito.");
+            const handleAddClient = (rowId) => {
+                 setModalState({
+                    isOpen: true, type: 'textInputWithSuggestions', title: 'Añadir Nuevo Cliente',
+                    message: 'Ingrese el nombre del nuevo cliente para este lote.',
+                    onConfirm: (newClient) => {
+                        if (!newClient || !clientList.includes(newClient.toUpperCase())) {
+                            alert(`El cliente "${newClient || ''}" no es válido. Por favor, seleccione uno de la lista.`);
+                            return;
+                        }
+                        setModalState({ isOpen: false });
+                        executeActionWithAuth(() => {
+                            const newData = allData.map(item => {
+                                if (item.id === rowId) {
+                                    const existingClients = item.cliente ? item.cliente.split('#').filter(Boolean) : [];
+                                    if (existingClients.includes(newClient.toUpperCase())) {
+                                        alert("Este cliente ya está asignado a este lote."); return item;
+                                    }
+                                    const updatedClients = [...existingClients, newClient.toUpperCase()].join('#');
+                                    return { ...item, cliente: updatedClients, despachado: 'TRUE' };
+                                }
+                                return item;
+                            });
+                            saveData(newData, notesData);
+                        });
+                    }
                 });
             };
 
-            const handleUpdateClient = (item, clientName, action) => {
-                executeActionWithAuth(async (password) => {
-                    const response = await fetch('/api/updatePalletClient', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
-                        body: JSON.stringify({ palletNumber: item.numeroDePallet, clientName, action })
-                    });
-                    const result = await response.json();
-                    if (!result.success) throw new Error(result.message);
-
-                    // Optimistically update UI
-                    await loadData(); // Simple reload for now
-                    alert("Cliente actualizado con éxito.");
+            // --- INICIO: Funcionalidad de Notas ---
+            const handleOpenNoteModal = (item) => {
+                setNoteModal({
+                    isOpen: true,
+                    item: item,
+                    text: item.noteText || ''
                 });
-            }
+            };
+
+            const handleSaveNote = () => {
+                const { item, text } = noteModal;
+                const updatedText = text.trim();
+
+                // Cerrar el modal inmediatamente
+                setNoteModal({ isOpen: false, item: null, text: '' });
+
+                executeActionWithAuth(() => {
+                    let newNotesData = [...notesData];
+                    const noteIndex = newNotesData.findIndex(n => n.sku === item.sku && n.numeroDePallet === item.numeroDePallet);
+
+                    if (updatedText) { // Guardar o actualizar nota
+                        if (noteIndex > -1) {
+                            newNotesData[noteIndex].observacion = updatedText;
+                        } else {
+                            newNotesData.push({ sku: item.sku, numeroDePallet: item.numeroDePallet, observacion: updatedText });
+                        }
+                    } else if (noteIndex > -1) { // Eliminar nota si el texto está vacío
+                        newNotesData.splice(noteIndex, 1);
+                    }
+                    
+                    // Actualizar UI instantáneamente
+                    const newAllData = allData.map(d => {
+                        if (d.id === item.id) {
+                            return { ...d, hasNote: !!updatedText, noteText: updatedText };
+                        }
+                        return d;
+                    });
+                    setAllData(newAllData);
+
+                    // Guardar los cambios en GitHub (se guarda el archivo de notas completo)
+                    // Se pasa `allData` sin modificar, ya que el archivo detallelotes.csv no cambia
+                    saveData(allData, newNotesData);
+                });
+            };
+
+            const NoteModal = ({ isOpen, text, onTextChange, onClose, onSave }) => {
+                if (!isOpen) return null;
+                return (
+                    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-lg">
+                            <h3 className="text-lg font-bold text-gray-800 mb-4">Agregar/Editar Nota</h3>
+                            <textarea
+                                value={text}
+                                onChange={e => onTextChange(e.target.value)}
+                                className="w-full h-40 p-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                                placeholder="Escriba su nota aquí... Deje el campo vacío para eliminar la nota."
+                            />
+                            <div className="flex justify-end space-x-3 mt-6">
+                                <button onClick={onClose} className="bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300">Cancelar</button>
+                                <button onClick={onSave} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Guardar Nota</button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+            // --- FIN: Funcionalidad de Notas ---
+
+            const handleChangeClientName = (rowId, oldClient, newClient) => {
+                if (!newClient || !clientList.includes(newClient.toUpperCase())) {
+                    alert(`El cliente "${newClient || ''}" no es válido. Por favor, seleccione un cliente de la lista.`); return;
+                }
+                setModalState({ isOpen: false });
+                executeActionWithAuth(() => {
+                    const newData = allData.map(item => {
+                        if (item.id === rowId) {
+                            const clients = item.cliente.split('#');
+                            const clientIndex = clients.indexOf(oldClient);
+                            if(clientIndex > -1) clients[clientIndex] = newClient.toUpperCase();
+                            return { ...item, cliente: clients.join('#') };
+                        }
+                        return item;
+                    });
+                    saveData(newData, notesData);
+                });
+            };
+
+            const handleDeleteClient = (rowId, clientToDelete) => {
+                setModalState({ isOpen: false });
+                executeActionWithAuth(() => {
+                    const newData = allData.map(item => {
+                        if (item.id === rowId) {
+                            let clients = item.cliente.split('#').filter(c => c !== clientToDelete);
+                            return { ...item, cliente: clients.join('#'), despachado: clients.length > 0 ? 'TRUE' : 'FALSE' };
+                        }
+                        return item;
+                    });
+                    saveData(newData, notesData);
+                });
+            };
+
+            const openChangeClientModal = (rowId, oldClient) => {
+                setActiveClientMenu({rowId: null, client: null});
+                setModalState({
+                    isOpen: true, type: 'textInputWithSuggestions', title: `Cambiar Nombre de "${oldClient}"`,
+                    message: 'Ingrese el nuevo nombre para este cliente.', onConfirm: (newClient) => handleChangeClientName(rowId, oldClient, newClient)
+                });
+            };
+
+            const openDeleteClientConfirm = (rowId, clientToDelete) => {
+                setActiveClientMenu({rowId: null, client: null});
+                 setModalState({
+                    isOpen: true, type: 'confirm', title: 'Confirmar Eliminación',
+                    message: `¿Seguro que quieres eliminar a "${clientToDelete}" de este lote?`,
+                    onConfirm: () => handleDeleteClient(rowId, clientToDelete)
+                });
+            };
+            
+            const handleEnterTransferMode = () => {
+                setIsTransferMode(true);
+                setTransferSelection({});
+            };
+            
+            const handleCancelTransferMode = () => {
+                setIsTransferMode(false);
+                setTransferSelection({});
+            };
+
+            const handleToggleTransferSelection = (itemId) => {
+                setTransferSelection(prev => ({...prev, [itemId]: !prev[itemId]}));
+            };
 
             const handleConfirmTransfer = () => {
                 const selectedItems = allData.filter(item => transferSelection[item.id]);
@@ -267,31 +763,113 @@
                     alert("No ha seleccionado ningún lote para transferir.");
                     return;
                 }
-                if (!confirm(`Está a punto de transferir ${selectedItems.length} lote(s) al depósito. ¿Desea continuar?`)) return;
-
-                executeActionWithAuth(async (password) => {
-                    const palletNumbersToTransfer = [...new Set(selectedItems.map(item => item.numeroDePallet))];
-                    
-                    const response = await fetch('/api/transferPallets', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
-                        body: JSON.stringify({ palletNumbers: palletNumbersToTransfer })
-                    });
-                    const result = await response.json();
-                    if (!result.success) throw new Error(result.message);
-
-                    generateTransferPDF(selectedItems);
-                    alert("Transferencia registrada y PDF generado correctamente.");
-                    setIsTransferMode(false);
-                    setTransferSelection({});
-                    await loadData();
+                setModalState({
+                    isOpen: true, type: 'confirm', title: 'Confirmar Transferencia',
+                    message: `Está a punto de transferir ${selectedItems.length} lote(s) al depósito. ¿Desea continuar?`,
+                    onConfirm: () => {
+                        setModalState({ isOpen: false });
+                        executeActionWithAuth(() => processTransfer(selectedItems));
+                    }
                 });
+            };
+
+            const processTransfer = async (itemsToTransfer) => {
+                const lock = await acquireLock('processTransfer');
+                if (!lock.success) {
+                    alert(`No se pudo transferir. ${lock.error}. Por favor, intente de nuevo en unos momentos.`);
+                    return;
+                }
+
+                setIsSaving(true);
+                try {
+                    const newStoredEntries = itemsToTransfer.map(item => `${item.sku};${item.numeroDePallet}`).join('\n');
+                    const result = await appendCsvToGithub(CSV_PATH_ALMACENADO, newStoredEntries);
+                    
+                    if (result.success) {
+                        generateTransferPDF(itemsToTransfer);
+                        alert("Transferencia registrada y PDF generado correctamente.");
+                        handleCancelTransferMode();
+                    } else {
+                        alert(`Ocurrió un error al registrar la transferencia: ${result.error}`);
+                    }
+                } finally {
+                    await releaseLock();
+                    setIsSaving(false);
+                    await loadData();
+                }
             };
 
             const generateTransferPDF = (transferredItems) => {
                 const doc = new jsPDF({ orientation: 'landscape' });
-                // ... (PDF generation logic remains the same)
-                doc.save(`transferencia.pdf`);
+                const now = new Date();
+                const pageW = doc.internal.pageSize.getWidth();
+                const formattedDateTime = `${now.toLocaleDateString('es-AR')} ${now.toLocaleTimeString('es-AR')}`;
+                doc.setFontSize(20);
+                doc.text("Reporte de Transferencia a Depósito", pageW / 2, 15, { align: 'center' });
+                doc.setFontSize(12);
+                doc.text(`Fecha y Hora: ${formattedDateTime}`, pageW / 2, 22, { align: 'center' });
+                doc.setFontSize(16);
+                doc.text("Detalle de Lotes Transferidos", 14, 35);
+                const detailColumns = ["SKU", "Descripción", "Nº Pallet", "Lote Prod.", "Cantidad", "U.M."];
+                const detailRows = transferredItems.map(item => [
+                    item.sku, item.descripcion, item.numeroDePallet,
+                    item.lotesProduccion.replace(/#/g, ', '), item.cantidad, item.unidadMedida
+                ]);
+                doc.autoTable({
+                    head: [detailColumns], body: detailRows, startY: 40,
+                    headStyles: { fillColor: [41, 128, 185], textColor: 255 },
+                    alternateRowStyles: { fillColor: [245, 245, 245] }
+                });
+
+                let finalY = doc.lastAutoTable.finalY;
+                if (finalY > 150) {
+                    doc.addPage();
+                    finalY = 0;
+                }
+
+                doc.setFontSize(16);
+                doc.text("Resumen por SKU", 14, finalY + 15);
+                const summary = transferredItems.reduce((acc, item) => {
+                    const key = `${item.sku};${item.unidadMedida}`;
+                    const qty = parseFloat(item.cantidad.replace('.', '').replace(',', '.'));
+                    if (!acc[key]) {
+                        acc[key] = { sku: item.sku, total: 0, um: item.unidadMedida };
+                    }
+                    acc[key].total += isNaN(qty) ? 0 : qty;
+                    return acc;
+                }, {});
+                
+                const summaryColumns = ["SKU", "Cantidad Total", "Unidad de Medida"];
+                const summaryRows = Object.values(summary).map(s => [
+                    s.sku,
+                    s.total.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+                    s.um
+                ]);
+                doc.autoTable({
+                    head: [summaryColumns], body: summaryRows, startY: finalY + 20,
+                    headStyles: { fillColor: [39, 174, 96], textColor: 255 }
+                });
+                doc.save(`transferencia_${now.toISOString().split('T')[0]}.pdf`);
+            };
+
+            const exportToPDF = () => {
+                const doc = new jsPDF({ orientation: 'landscape' });
+                doc.setFontSize(18);
+                doc.text("Histórico de Lotes Generados", 14, 16);
+                const tableColumn = ["SKU", "Descripción", "Nº Pallet", "Lotes Prod.", "Despachado", "Cliente", "F. Prod.", "Cantidad", "U.M."];
+                const tableRows = [];
+                filteredData.forEach(item => {
+                    const despachadoText = (item.despachado && item.despachado.toUpperCase() === 'TRUE') ? 'Sí' : 'No';
+                    const palletText = item.hasNote ? `${item.numeroDePallet} (*)` : item.numeroDePallet;
+                    const rowData = [
+                        item.sku, item.descripcion, palletText, item.lotesProduccion,
+                        despachadoText, item.cliente ? item.cliente.replace(/#/g, ', ') : '', item.fechaProduccion, item.cantidad, item.unidadMedida
+                    ];
+                    tableRows.push(rowData);
+                });
+                doc.autoTable({ head: [tableColumn], body: tableRows, startY: 22, theme: 'grid', headStyles: { fillColor: [22, 160, 133] } });
+                doc.save("historico_lotes.pdf");
+                setIsExportOpen(false);
             };
 
             const exportToExcel = () => {
@@ -313,19 +891,228 @@
                 XLSX.writeFile(workbook, "historico_lotes.xlsx");
                 setIsExportOpen(false);
             };
+            
+            const drawLabelOnDoc = async (doc, data) => {
+                const pageW = 210; const margin = 8; const contentW = pageW - (margin * 2); let currentY = margin;
+                doc.setFontSize(24); doc.setFont("helvetica", "bold"); doc.text("MOLDERIL S.A.", pageW / 2, currentY + 8, { align: "center" });
+                currentY += 15; doc.line(margin, currentY, pageW - margin, currentY); currentY += 10;
+                doc.setFontSize(84); doc.setFont("helvetica", "bold");
+                const descLines = doc.splitTextToSize(data.descripcion, contentW);
+                doc.text(descLines, pageW / 2, currentY + 28, { align: "center", lineHeightFactor: 1 });
+                currentY += (descLines.length * 28) + 10;
+                doc.line(margin, currentY, pageW - margin, currentY); currentY += 2;
+                doc.setFontSize(20); doc.setFont("helvetica", "bold"); doc.text(`SKU: ${data.sku}`, margin, currentY + 12);
+                let lotesProdString = data.lotes.join(' / ');
+                if (data.hasNote) { lotesProdString += ' (*)'; }
+                if(lotesProdString) { doc.setFontSize(18); doc.setFont("helvetica", "normal"); doc.text(`Lotes: ${lotesProdString}`, pageW - margin, currentY + 12, { align: "right" }); }
+                currentY += 18; doc.line(margin, currentY, pageW - margin, currentY); currentY += 8;
+                const formatNumberES = (numStr) => { if (!numStr) return ''; const [integerPart, decimalPart] = numStr.split(','); const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, "."); return decimalPart !== undefined ? `${formattedInteger},${decimalPart}` : formattedInteger; };
+                const formattedCantidad = formatNumberES(data.cantidad);
+                const uomText = data.uom === 'Unidad' ? 'Unidades' : 'Millares';
+                const cantidadString = `${formattedCantidad} ${uomText}`;
+                doc.setFont("helvetica", "bold"); doc.setFontSize(44);
+                const cantidadWidth = doc.getStringUnitWidth(cantidadString) * doc.getFontSize() / doc.internal.scaleFactor;
+                doc.text(cantidadString, (pageW - cantidadWidth) / 2, currentY + 12); currentY += 20;
+                const qrSize = 90; const qrX = (pageW - qrSize) / 2; const qrY = currentY;
+                const qrImageData = await QRCode.toDataURL(data.qrString, { width: 400, margin: 2, errorCorrectionLevel: 'M' });
+                doc.addImage(qrImageData, 'PNG', qrX, qrY, qrSize, qrSize); currentY += qrSize + 5;
+                doc.line(margin, currentY, pageW - margin, currentY); currentY += 5;
+                doc.setFontSize(22); doc.setFont("helvetica", "bold"); doc.text("Nº de Pallet", margin, currentY + 10); doc.text("Fabricación", pageW - margin, currentY + 10, { align: "right" });
+                doc.setFontSize(36); doc.text(String(data.palletId), margin, currentY + 22);
+                doc.setFontSize(22);
+                const [day, month, year] = data.fechaProd.split('/');
+                doc.text(new Date(year, month - 1, day).toLocaleDateString('es-ES'), pageW - margin, currentY + 22, { align: "right" });
+            };
 
-            // Render logic and modals would go here, mostly unchanged from the original file
-            // but adapted to the new data flow and state.
-            // This is a simplified representation for brevity.
+            const handleReprint = async (item) => {
+                const cantidadParaQR = item.cantidad.replace(',', '.');
+                const qrString = [ item.sku, item.descripcion, item.numeroDePallet, item.lotesProduccion, item.fechaProduccion, cantidadParaQR, item.unidadMedida ].join(';');
+                
+                const articuloInfo = articulosMap.get(item.sku);
+                const descripcionParaEtiqueta = (articuloInfo && articuloInfo.corta) ? articuloInfo.corta : item.descripcion;
+
+                const data = { sku: item.sku, descripcion: descripcionParaEtiqueta, lotes: item.lotesProduccion.split('#').filter(Boolean), cantidad: item.cantidad, uom: item.unidadMedida, fechaProd: item.fechaProduccion, palletId: item.numeroDePallet, qrString: qrString, hasNote: item.hasNote };
+                const previewDoc = new jsPDF('p', 'mm', 'a4'); await drawLabelOnDoc(previewDoc, data);
+                const printDoc = new jsPDF('p', 'mm', 'a4'); await drawLabelOnDoc(printDoc, data);
+                printDoc.autoPrint();
+                setReprintModal({ isOpen: true, pdfUrl: previewDoc.output('datauristring'), printablePdfUrl: printDoc.output('bloburl'), palletId: item.numeroDePallet });
+            };
+
+            const ActionModal = ({ isOpen, type, title, message, onConfirm, onClose, suggestions }) => {
+                if (!isOpen) return null;
+                const [inputValue, setInputValue] = useState('');
+                const [showSuggestions, setShowSuggestions] = useState(false);
+                const inputRef = useRef(null);
+                const modalContentRef = useRef(null);
+                useEffect(() => { if (isOpen) setTimeout(() => inputRef.current?.focus(), 100); }, [isOpen]);
+                useEffect(() => {
+                    const handleClickOutside = (e) => { if (modalContentRef.current && !modalContentRef.current.contains(e.target)) setShowSuggestions(false); };
+                    document.addEventListener('mousedown', handleClickOutside);
+                    return () => document.removeEventListener('mousedown', handleClickOutside);
+                }, []);
+                const handleConfirm = () => onConfirm(inputValue);
+                const filteredSuggestions = suggestions ? suggestions.filter(s => s.toLowerCase().includes(inputValue.toLowerCase())) : [];
+                return (
+                    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
+                        <div ref={modalContentRef} className="bg-white p-6 rounded-xl shadow-lg w-full max-w-sm">
+                            <h3 className="text-lg font-bold text-gray-800 mb-4">{title}</h3>
+                            <p className="text-sm text-gray-600 mb-4">{message}</p>
+                            {type !== 'confirm' && (
+                                <div className="relative">
+                                    <input ref={inputRef} type={type === 'password' ? 'password' : 'text'} value={inputValue} onChange={e => { setInputValue(e.target.value); if (type === 'textInputWithSuggestions') setShowSuggestions(true); }} onKeyDown={e => e.key === 'Enter' && handleConfirm()} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" autoComplete="off" />
+                                    {type === 'textInputWithSuggestions' && showSuggestions && filteredSuggestions.length > 0 && (
+                                        <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">
+                                            {filteredSuggestions.map(client => ( <li key={client} className="p-2 hover:bg-indigo-100 cursor-pointer" onClick={() => { setInputValue(client); setShowSuggestions(false); }}>{client}</li> ))}
+                                        </ul>
+                                    )}
+                                </div>
+                            )}
+                            <div className="flex justify-end space-x-3 mt-6">
+                                <button onClick={onClose} className="bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300">Cancelar</button>
+                                <button onClick={handleConfirm} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Aceptar</button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            const ObservationModal = ({ isOpen, text, onClose }) => {
+                if (!isOpen) return null;
+                return (
+                    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-md">
+                            <h3 className="text-lg font-bold text-gray-800 mb-4">Observación del Lote</h3>
+                            <p className="text-base text-gray-700 mb-6 whitespace-pre-wrap">{text}</p>
+                            <div className="flex justify-end"><button onClick={onClose} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Cerrar</button></div>
+                        </div>
+                    </div>
+                );
+            };
+
+            const ReprintModal = ({ isOpen, pdfUrl, printablePdfUrl, palletId, onClose }) => {
+                if (!isOpen) return null;
+                const handlePrint = () => { if (printablePdfUrl) { window.open(printablePdfUrl, '_blank'); } };
+                return (
+                    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-2xl h-5/6 flex flex-col">
+                            <h3 className="text-lg font-bold text-gray-800 mb-4">Reimprimir Etiqueta - Pallet Nº {palletId}</h3>
+                            <div className="flex-grow border rounded-lg overflow-hidden"><iframe src={pdfUrl} className="w-full h-full" title={`Etiqueta Pallet ${palletId}`}></iframe></div>
+                            <div className="flex justify-end space-x-3 mt-6">
+                                <button onClick={onClose} className="bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300">Cancelar</button>
+                                <button onClick={handlePrint} className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 flex items-center"><i className="fas fa-print mr-2"></i>Imprimir</button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            const PendingModal = ({ isOpen, onClose, data }) => {
+                if (!isOpen) return null;
+                const pendingItems = data.filter(item => !item.isStored);
+                return (
+                    <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
+                         <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-md h-4/6 flex flex-col">
+                            <h3 className="text-lg font-bold text-gray-800 mb-4">Pallets Pendientes de Transferencia</h3>
+                            <div className="flex-grow border rounded-lg overflow-y-auto p-2">
+                                <ul className="divide-y divide-gray-200">
+                                    {pendingItems.length > 0 ? pendingItems.map(item => (
+                                        <li key={item.id} className="py-2 px-3 text-sm">
+                                            <span className="font-semibold text-gray-800">Pallet Nº: {item.numeroDePallet}</span>
+                                            <span className="text-gray-600"> - SKU: {item.sku}</span>
+                                        </li>
+                                    )) : <p className="text-gray-500 p-4 text-center">No hay pallets pendientes.</p>}
+                                </ul>
+                            </div>
+                            <div className="flex justify-end mt-4">
+                                <button onClick={onClose} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Cerrar</button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+            
+            const HelpModal = ({ onClose }) => ( 
+                <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-3xl h-5/6 flex flex-col">
+                        <h3 className="text-xl font-bold text-gray-800 mb-4 border-b pb-2">Guía de Usuario</h3>
+                        <div className="flex-grow overflow-y-auto pr-2 space-y-6 text-gray-700">
+                            <div>
+                                <h4 className="font-bold text-lg text-indigo-700">Funciones Básicas</h4>
+                                <ul className="list-disc list-inside mt-2 space-y-1">
+                                    <li><strong>Filtrado:</strong> Puedes filtrar los datos por cualquier columna usando los campos de texto debajo de los encabezados. También puedes filtrar por rango de fechas.</li>
+                                    <li><strong>Limpiar Filtros:</strong> El botón "Limpiar Filtros" borra todas las búsquedas y fechas.</li>
+                                    <li><strong>Refrescar:</strong> Recarga todos los datos directamente desde el repositorio de GitHub.</li>
+                                    <li><strong>Exportar:</strong> Permite descargar la vista actual de la tabla en formato PDF o Excel.</li>
+                                    <li><strong>Observaciones:</strong> Las filas resaltadas en amarillo claro tienen una nota. Haz doble clic o una pulsación larga en la fila para ver la observación.</li>
+                                </ul>
+                            </div>
+                             {/* --- INICIO: Funcionalidad de Notas (Ayuda) --- */}
+                            <div>
+                                <h4 className="font-bold text-lg text-indigo-700">Gestión de Notas</h4>
+                                <ul className="list-disc list-inside mt-2 space-y-1">
+                                    <li><strong>Agregar/Editar:</strong> En el menú de acciones (<i className="fas fa-ellipsis-v"></i>), selecciona "Agregar Nota" o "Editar/Ver Nota". Se abrirá una ventana para que escribas.</li>
+                                    <li><strong>Visualizar:</strong> Las filas con notas aparecen resaltadas en amarillo y el número de pallet tiene un asterisco (*). Puedes ver la nota haciendo doble clic en la fila.</li>
+                                    <li><strong>Eliminar:</strong> Para borrar una nota, ábrela para editarla y simplemente guarda el campo de texto vacío.</li>
+                                </ul>
+                            </div>
+                            {/* --- FIN: Funcionalidad de Notas (Ayuda) --- */}
+                            <div>
+                                <h4 className="font-bold text-lg text-indigo-700">Gestión de Clientes</h4>
+                                <ul className="list-disc list-inside mt-2 space-y-1">
+                                    <li><strong>Añadir Cliente:</strong> En el menú de acciones (<i className="fas fa-ellipsis-v"></i>) de una fila, selecciona "Añadir Cliente" para asignar un cliente a ese lote. El lote se marcará como "Despachado".</li>
+                                    <li><strong>Modificar Cliente:</strong> Haz clic en el nombre de un cliente ya asignado para abrir un menú que te permitirá cambiar su nombre o eliminarlo del lote.</li>
+                                </ul>
+                            </div>
+                             <div>
+                                <h4 className="font-bold text-lg text-indigo-700">Módulo de Transferencia a Depósito</h4>
+                                <p className="mt-2">Esta sección te permite gestionar qué pallets han sido físicamente movidos al depósito final.</p>
+                                <ul className="list-disc list-inside mt-2 space-y-2">
+                                    <li><strong>Columna "ALMACENADO":</strong> Indica con un check si un lote (SKU + Pallet) ya ha sido registrado en el archivo <strong>nropalletalmacenado.csv</strong>.</li>
+                                    <li><strong>Botón "Pendientes de Transferencia":</strong> Ubicado en la cabecera, este botón te muestra una lista rápida de todos los números de pallet que aún no han sido transferidos.</li>
+                                    <li><strong>Activar "Modo Transferencia":</strong>
+                                        <ul className="list-disc list-inside ml-5 mt-1">
+                                            <li>Haz clic en el botón <strong>"Modo Transferencia"</strong>, ubicado arriba de la columna "ALMACENADO".</li>
+                                            <li>La grilla se filtrará para mostrar solo los lotes pendientes.</li>
+                                            <li>Los checkboxes se activarán para que puedas seleccionar los lotes que vas a transferir.</li>
+                                        </ul>
+                                    </li>
+                                    <li><strong>Realizar la Transferencia:</strong>
+                                        <ul className="list-disc list-inside ml-5 mt-1">
+                                            <li>Una vez seleccionados los lotes, haz clic en <strong>"Transferir a Depósito"</strong>.</li>
+                                            <li>Se te pedirá confirmación y luego la contraseña de administrador.</li>
+                                            <li>Si todo es correcto, se generará un PDF del remito y se guardarán los cambios en la base de datos de GitHub.</li>
+                                        </ul>
+                                    </li>
+                                     <li><strong>Cancelar:</strong> Si activaste el "Modo Transferencia" por error, presiona <strong>"Cancelar"</strong> para volver a la vista normal sin hacer cambios.</li>
+                                </ul>
+                            </div>
+                        </div>
+                        <div className="flex justify-end mt-6"><button onClick={onClose} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Cerrar</button></div>
+                    </div>
+                </div>
+            );
 
             return (
                 <div className="min-h-screen p-4 sm:p-6 bg-black bg-opacity-50">
                     {isSaving && (
                         <div className="fixed inset-0 bg-white bg-opacity-80 flex items-center justify-center z-50">
-                            <div className="flex items-center space-x-3 text-xl font-semibold text-gray-700"><i className="fas fa-sync-alt animate-spin"></i><span>Guardando...</span></div>
+                            <div className="flex items-center space-x-3 text-xl font-semibold text-gray-700"><i className="fas fa-sync-alt animate-spin"></i><span>Guardando en GitHub...</span></div>
                         </div>
                     )}
-                    {/* Modals would be here */}
+                    <ActionModal isOpen={modalState.isOpen} type={modalState.type} title={modalState.title} message={modalState.message} onClose={() => setModalState({ isOpen: false })} onConfirm={modalState.onConfirm} suggestions={clientList}/>
+                    <ObservationModal isOpen={observationModal.isOpen} text={observationModal.text} onClose={() => setObservationModal({ isOpen: false, text: '' })} />
+                    {/* --- INICIO: Funcionalidad de Notas --- */}
+                    <NoteModal 
+                        isOpen={noteModal.isOpen}
+                        text={noteModal.text}
+                        onTextChange={(text) => setNoteModal(prev => ({ ...prev, text }))}
+                        onClose={() => setNoteModal({ isOpen: false, item: null, text: '' })}
+                        onSave={handleSaveNote}
+                    />
+                    {/* --- FIN: Funcionalidad de Notas --- */}
+                    <ReprintModal isOpen={reprintModal.isOpen} pdfUrl={reprintModal.pdfUrl} printablePdfUrl={reprintModal.printablePdfUrl} palletId={reprintModal.palletId} onClose={() => setReprintModal({ isOpen: false, pdfUrl: null, printablePdfUrl: null, palletId: null })} />
+                    <PendingModal isOpen={showPendingModal} onClose={() => setShowPendingModal(false)} data={allData} />
+                    {showHelpModal && <HelpModal onClose={() => setShowHelpModal(false)} />}
                     
                     <div className="bg-white p-6 rounded-2xl shadow-xl">
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b pb-4 border-gray-200">
@@ -334,11 +1121,14 @@
                                 <button onClick={() => setShowHelpModal(true)} title="Ayuda" className="text-gray-400 hover:text-indigo-600 transition-colors"><i className="fas fa-question-circle text-2xl"></i></button>
                             </div>
                             <div className="flex items-center space-x-3 mt-4 sm:mt-0">
+                                <button onClick={() => setShowPendingModal(true)} className="bg-yellow-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-yellow-600 transition-colors shadow-sm flex items-center"><i className="fas fa-pallet mr-2"></i>Pendientes de Transferencia</button>
+                                <a href="posiciones3d.html" className="bg-teal-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-teal-700 transition-colors shadow-sm flex items-center"><i className="fas fa-cubes mr-2"></i>Ubicaciones 3D</a>
+                                <a href="histolistaempaque.html" className="bg-purple-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-purple-700 transition-colors shadow-sm flex items-center"><i className="fas fa-history mr-2"></i>Histórico Empaque</a>
+                                <a href="generarqr.html" className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 transition-colors shadow-sm flex items-center"><i className="fas fa-plus mr-2"></i>Generar Nuevo</a>
                                 <a href="index.html" className="bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">Volver al Menú</a>
                             </div>
                         </div>
                         
-                        {/* Filters and buttons */}
                         <div className="mb-6 p-4 border rounded-lg bg-gray-50 space-y-4">
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
@@ -359,11 +1149,20 @@
                             <p className="text-gray-600 font-semibold">{filteredData.length} registro(s) encontrado(s)</p>
                             <div className="flex space-x-2 mt-4 sm:mt-0">
                                 <button onClick={loadData} disabled={isLoading || isSaving} className="bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-gray-700 disabled:opacity-50 flex items-center"><i className={`fas fa-sync-alt ${isLoading ? 'animate-spin' : ''} mr-2`}></i>Refrescar</button>
-                                <button onClick={exportToExcel} disabled={filteredData.length === 0} className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-green-700 disabled:opacity-50 flex items-center"><i className="fas fa-file-excel mr-2"></i>Exportar a Excel</button>
+                                <div className="relative" ref={exportMenuRef}>
+                                    <button onClick={() => setIsExportOpen(prev => !prev)} disabled={filteredData.length === 0} className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-blue-700 disabled:opacity-50 flex items-center"><i className="fas fa-download mr-2"></i>Exportar<i className={`fas fa-chevron-down ml-2 transition-transform ${isExportOpen ? 'rotate-180' : ''}`}></i></button>
+                                    {isExportOpen && (
+                                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg border z-20">
+                                            <ul className="text-gray-700">
+                                                <li><button onClick={exportToPDF} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-file-pdf w-6 mr-2 text-red-500"></i>Exportar a PDF</button></li>
+                                                <li><button onClick={exportToExcel} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-file-excel w-6 mr-2 text-green-500"></i>Exportar a Excel</button></li>
+                                            </ul>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
 
-                        {/* Table */}
                         <div className="overflow-x-auto rounded-lg shadow-md border pb-40" style={{ maxHeight: '60vh' }}>
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="bg-gray-800 text-white sticky top-0 z-10">
@@ -376,11 +1175,11 @@
                                     <tr className="bg-gray-200">
                                         <th className="p-1 align-middle text-center">
                                             {!isTransferMode ? (
-                                                <button onClick={() => setIsTransferMode(true)} className="bg-blue-500 text-white text-xs font-bold py-1 px-2 rounded-md hover:bg-blue-600 whitespace-nowrap">Modo Transferencia</button>
+                                                <button onClick={handleEnterTransferMode} className="bg-blue-500 text-white text-xs font-bold py-1 px-2 rounded-md hover:bg-blue-600 whitespace-nowrap">Modo Transferencia</button>
                                             ) : (
                                                 <div className="flex items-center justify-center space-x-1">
-                                                    <button onClick={handleConfirmTransfer} className="bg-green-500 text-white text-xs font-bold py-1 px-2 rounded-md hover:bg-green-600 whitespace-nowrap">Transferir</button>
-                                                    <button onClick={() => setIsTransferMode(false)} className="bg-red-500 text-white text-xs font-bold py-1 px-2 rounded-md hover:bg-red-600">Cancelar</button>
+                                                    <button onClick={handleConfirmTransfer} className="bg-green-500 text-white text-xs font-bold py-1 px-2 rounded-md hover:bg-green-600 whitespace-nowrap">Transferir a Depósito</button>
+                                                    <button onClick={handleCancelTransferMode} className="bg-red-500 text-white text-xs font-bold py-1 px-2 rounded-md hover:bg-red-600">Cancelar</button>
                                                 </div>
                                             )}
                                         </th>
@@ -405,12 +1204,14 @@
                                             if (isTransferMode && transferSelection[item.id]) { rowClassName += ' bg-blue-100'; }
 
                                             return (
-                                            <tr key={item.id} className={rowClassName} onDoubleClick={handleRowDoubleClick}>
+                                            <tr key={item.id} className={rowClassName} 
+                                                onDoubleClick={handleRowDoubleClick} onTouchStart={() => handlePressStart(handleRowDoubleClick)} onTouchEnd={handlePressEnd}
+                                                onMouseDown={() => handlePressStart(handleRowDoubleClick)} onMouseUp={handlePressEnd} onMouseLeave={handlePressEnd}>
                                                 <td className="px-1 py-2 text-center align-middle">
                                                     <input type="checkbox" className="h-5 w-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-50"
                                                         checked={isTransferMode ? !!transferSelection[item.id] : item.isStored}
                                                         disabled={!isTransferMode}
-                                                        onChange={() => setTransferSelection(prev => ({...prev, [item.id]: !prev[item.id]}))}
+                                                        onChange={() => handleToggleTransferSelection(item.id)}
                                                     />
                                                 </td>
                                                 <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">{item.sku}</td>
@@ -426,23 +1227,47 @@
                                                 <td className="px-4 py-2 whitespace-nowrap text-sm font-semibold"><span className={isDespachado ? 'text-green-600' : 'text-red-600'}>{isDespachado ? 'Sí' : 'No'}</span></td>
                                                 <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">
                                                     <div className="flex flex-wrap gap-1">{clients.map(client => (
-                                                        <button key={client} onClick={() => handleUpdateClient(item, client, 'DELETE')} className="px-2.5 py-0.5 text-xs font-semibold bg-indigo-100 text-indigo-800 rounded-full hover:bg-red-200 hover:text-red-800">{client} &times;</button>
-                                                    ))}
+                                                        <div key={client} className="relative">
+                                                            <button 
+                                                                onClick={() => setActiveClientMenu({rowId: item.id, client: client})} 
+                                                                disabled={isSaving}
+                                                                className="px-2.5 py-0.5 text-xs font-semibold bg-indigo-100 text-indigo-800 rounded-full hover:bg-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                            >
+                                                                {client}
+                                                            </button>
+                                                            {activeClientMenu.rowId === item.id && activeClientMenu.client === client && (
+                                                                <div ref={clientMenuRef} className="absolute left-0 mt-2 w-48 bg-white rounded-md shadow-lg border z-30">
+                                                                    <ul className="text-gray-700 text-left">
+                                                                        <li><button onClick={() => openChangeClientModal(item.id, client)} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-user-edit w-6 mr-2 text-blue-500"></i>Cambiar Nombre</button></li>
+                                                                        <li><button onClick={() => openDeleteClientConfirm(item.id, client)} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-trash-alt w-6 mr-2 text-red-500"></i>Eliminar Cliente</button></li>
+                                                                    </ul>
+                                                                </div>
+                                                            )}
+                                                        </div>))}
                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{item.fechaProduccion}</td>
                                                 <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{item.cantidad}</td>
                                                 <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{item.unidadMedida}</td>
                                                 <td className="px-4 py-2 text-center">
-                                                    <div className="relative">
-                                                        <button onClick={() => setActiveActionMenu(activeActionMenu === item.id ? null : item.id)} className="text-gray-500 hover:text-blue-600 p-2 rounded-full"><i className="fas fa-ellipsis-v"></i></button>
+                                                    <div className="relative" ref={activeActionMenu === item.id ? actionMenuRef : null}>
+                                                        <button 
+                                                            onClick={() => setActiveActionMenu(activeActionMenu === item.id ? null : item.id)} 
+                                                            disabled={isSaving}
+                                                            className="text-gray-500 hover:text-blue-600 p-2 rounded-full disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        >
+                                                            <i className="fas fa-ellipsis-v"></i>
+                                                        </button>
                                                         {activeActionMenu === item.id && (
-                                                            <div ref={actionMenuRef} className="absolute right-0 mt-2 w-56 bg-white rounded-md shadow-lg border z-30">
+                                                            <div className="absolute right-0 mt-2 w-56 bg-white rounded-md shadow-lg border z-30">
                                                                 <ul className="text-gray-700 text-left">
-                                                                    <li><button onClick={() => { setNoteModal({ isOpen: true, item: item, text: item.noteText }); setActiveActionMenu(null); }} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-sticky-note w-6 mr-2 text-yellow-500"></i>{item.hasNote ? 'Editar/Ver Nota' : 'Agregar Nota'}</button></li>
-                                                                    <li><button onClick={() => { handleUpdateClient(item, prompt('Nuevo cliente:'), 'ADD'); setActiveActionMenu(null); }} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-user-plus w-6 mr-2 text-green-500"></i>Añadir Cliente</button></li>
+                                                                    {/* --- INICIO: Funcionalidad de Notas --- */}
+                                                                    <li><button onClick={() => { handleOpenNoteModal(item); setActiveActionMenu(null); }} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-sticky-note w-6 mr-2 text-yellow-500"></i>{item.hasNote ? 'Editar/Ver Nota' : 'Agregar Nota'}</button></li>
+                                                                    {/* --- FIN: Funcionalidad de Notas --- */}
+                                                                    <li><button onClick={() => { handleReprint(item); setActiveActionMenu(null); }} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-print w-6 mr-2 text-blue-500"></i>Reimprimir Etiqueta</button></li>
+                                                                    <li><button onClick={() => { handleAddClient(item.id); setActiveActionMenu(null); }} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-user-plus w-6 mr-2 text-green-500"></i>Añadir Cliente</button></li>
                                                                     <li><hr className="my-1"/></li>
-                                                                    <li><button onClick={() => { handleDeleteRow(item); setActiveActionMenu(null); }} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-trash-alt w-6 mr-2 text-red-500"></i>Eliminar Fila</button></li>
+                                                                    <li><button onClick={() => { handleDeleteRow(item.id); setActiveActionMenu(null); }} className="w-full text-left hover:bg-gray-100 p-3 flex items-center"><i className="fas fa-trash-alt w-6 mr-2 text-red-500"></i>Eliminar Fila</button></li>
                                                                 </ul>
                                                             </div>
                                                         )}
