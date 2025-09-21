@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MOLDERIL - Generar Etiqueta QR (v6 - Carga Directa)</title>
+    <title>MOLDERIL - Generar Etiqueta QR (v6 - Serverless)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -156,24 +156,18 @@
         const [previewPdfUrl, setPreviewPdfUrl] = useState(null);
         const [isSaving, setIsSaving] = useState(false);
         const [observacion, setObservacion] = useState('');
-        const [legajo, setLegajo] = useState('');
-        const [cliente, setCliente] = useState('');
-        const [transporte, setTransporte] = useState('');
-        const [remito, setRemito] = useState('');
-        const [ordenDeCompra, setOrdenDeCompra] = useState('');
-        const [bultos, setBultos] = useState('');
-
         const articuloInputRef = useRef(null);
         const loteInputRefs = useRef([]);
+        const [refreshState, setRefreshState] = useState('idle'); // idle, loading, error, success
         
         const handleRefreshPalletNumber = async () => {
             try {
-                const response = await fetch('/api/getPalletNumber', { cache: "no-store" });
+                const response = await fetch('/api/getInitialData', { cache: "no-store" });
                 const data = await response.json();
                 if (!data.success) throw new Error(data.message);
                 const nextPallet = data.palletNumber + 1;
                 setNumeroDePallet(nextPallet);
-                showToast(`Número de pallet actualizado: ${nextPallet}`, 'success');
+                showToast(`Número de pallet actualizado: ${nextPallet}.`, 'success');
             } catch (error) {
                 showToast(`Error al refrescar pallet: ${error.message}`, 'error');
             }
@@ -186,19 +180,14 @@
 
             const fetchInitialData = async () => {
                 try {
-                    loaderStatus.textContent = "Cargando número de pallet...";
-                    loaderProgress.style.width = '33%';
-                    const palletResponse = await fetch('/api/getPalletNumber', { cache: "no-store" });
-                    const palletData = await palletResponse.json();
-                    if (!palletData.success) throw new Error(palletData.message);
-                    setNumeroDePallet(palletData.palletNumber + 1);
-
-                    loaderStatus.textContent = "Cargando lista de artículos...";
-                    loaderProgress.style.width = '66%';
-                    const articulosResponse = await fetch('/api/getArticulos', { cache: "no-store" });
-                    const articulosData = await articulosResponse.json();
-                    if (!articulosData.success) throw new Error(articulosData.message);
-                    setArticulos(articulosData.articles);
+                    loaderStatus.textContent = "Cargando datos iniciales...";
+                    loaderProgress.style.width = '50%';
+                    const response = await fetch('/api/getInitialData', { cache: "no-store" });
+                    const data = await response.json();
+                    if (!data.success) throw new Error(data.message);
+                    
+                    setNumeroDePallet(data.palletNumber + 1);
+                    setArticulos(data.articles);
 
                     loaderStatus.textContent = "¡Listo!";
                     loaderProgress.style.width = '100%';
@@ -289,7 +278,11 @@
             doc.setFontSize(20); doc.setFont("helvetica", "bold"); doc.text(`SKU: ${data.sku}`, margin, currentY + 12);
             const lotesProdString = data.lotes.join(' / ');
             const lotesDisplayString = data.observacion ? `${lotesProdString} (*)` : lotesProdString;
-            if (lotesProdString) { doc.setFontSize(18); doc.setFont("helvetica", "normal"); doc.text(`Lotes: ${lotesDisplayString}`, pageW - margin, currentY + 12, { align: "right" }); }
+            if (lotesProdString) {
+                doc.setFontSize(18);
+                doc.setFont("helvetica", "normal");
+                doc.text(`Lotes: ${lotesDisplayString}`, pageW - margin, currentY + 12, { align: "right" });
+            }
             currentY += 18; doc.line(margin, currentY, pageW - margin, currentY); currentY += 8;
             const formattedCantidad = formatNumberES(data.cantidad);
             const uomText = data.uom === 'Unidad' ? 'Unidades' : 'Millares';
@@ -301,54 +294,65 @@
             const qrImageData = await QRCode.toDataURL(data.qrString, { width: 400, margin: 2, errorCorrectionLevel: 'M' });
             doc.addImage(qrImageData, 'PNG', qrX, qrY, qrSize, qrSize); currentY += qrSize + 5;
             doc.line(margin, currentY, pageW - margin, currentY); currentY += 5;
-            doc.setFontSize(22); doc.setFont("helvetica", "bold"); doc.text("Nº de Pallet", margin, currentY + 10); doc.text("Fabricación", pageW - margin, currentY + 10, { align: "right" });
+            doc.setFontSize(22); doc.setFont("helvetica", "bold"); doc.text("Nº de Pallet", margin, currentY + 10);
+            doc.text("Fabricación", pageW - margin, currentY + 10, { align: "right" });
             doc.setFontSize(36); doc.text(String(data.palletId), margin, currentY + 22);
             doc.setFontSize(22); doc.text(new Date(data.fechaProd + 'T00:00:00').toLocaleDateString('es-ES'), pageW - margin, currentY + 22, { align: "right" });
         };
 
         const getLabelData = () => {
+            const formatQrDate = (dateString) => {
+                if (!dateString) return '';
+                const date = new Date(dateString + 'T00:00:00');
+                const day = String(date.getDate()).padStart(2, '0');
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const year = date.getFullYear();
+                return `${day}/${month}/${year}`;
+            };
+            const cantidadParaQR = cantidad.replace(',', '.');
             const lotesProduccionFiltrados = lotesProduccion.filter(lote => lote.trim() !== '');
-            const items = [{
-                sku: selectedArticulo.sku,
-                description: selectedArticulo.desc_larga,
-                quantity: cantidad,
-                uom: uom
-            }];
+            const lotesParaQR = lotesProduccionFiltrados.join('#');
+            const qrString = [
+                selectedArticulo.sku || '',
+                selectedArticulo.descripcionLarga || '',
+                String(numeroDePallet) || '',
+                lotesParaQR,
+                formatQrDate(fechaProd),
+                cantidadParaQR || '',
+                uom || '',
+            ].join(';');
             return {
                 palletNumber: numeroDePallet,
-                legajo,
-                customer: cliente,
-                transport,
-                remito,
-                ordenDeCompra,
-                bultos,
+                sku: selectedArticulo.sku,
+                description: selectedArticulo.descripcionLarga,
                 lotes: lotesProduccionFiltrados,
                 fechaProduccion: fechaProd,
+                quantity: cantidad,
+                uom: uom,
                 notes: observacion.trim(),
-                items: items,
                 // For label drawing only
-                labelDesc: selectedArticulo.desc_corta || selectedArticulo.desc_larga,
+                labelDesc: selectedArticulo.descripcionCorta || selectedArticulo.descripcionLarga,
+                qrString: qrString
             };
         }
 
         const handleGeneratePreview = async () => {
             const lotesValidos = lotesProduccion.some(lote => lote.trim() !== '');
-            if (!selectedArticulo || !cantidad || !lotesValidos || !legajo || !cliente) {
-                showToast("Complete todos los campos obligatorios (*).", 'error');
+            if (!selectedArticulo || !cantidad || !lotesValidos) {
+                showToast("Complete Artículo, Cantidad y al menos un Lote.", 'error');
                 return;
             }
             const data = getLabelData();
             const doc = new jsPDF('p', 'mm', 'a4');
-            const qrString = `${data.items[0].sku};${data.items[0].description};${data.palletNumber};${data.lotes.join('#')};${data.fechaProduccion};${data.items[0].quantity.replace(',', '.')};${data.items[0].uom}`;
             await drawLabelOnDoc(doc, { 
                 ...data, 
                 descripcion: data.labelDesc, 
                 palletId: data.palletNumber,
                 fechaProd: data.fechaProduccion,
-                cantidad: data.items[0].quantity,
-                uom: data.items[0].uom,
+                cantidad: data.quantity,
+                uom: data.uom,
                 observacion: data.notes,
-                qrString
+                qrString: data.qrString
             });
             const pdfDataUrl = doc.output('datauristring');
             setPreviewPdfUrl(pdfDataUrl);
@@ -386,10 +390,10 @@
                         descripcion: saveData.labelDesc, 
                         palletId: saveData.palletNumber,
                         fechaProd: saveData.fechaProduccion,
-                        cantidad: saveData.items[0].quantity,
-                        uom: saveData.items[0].uom,
+                        cantidad: saveData.quantity,
+                        uom: saveData.uom,
                         observacion: saveData.notes,
-                        qrString
+                        qrString: saveData.qrString
                     });
                 }
                 
@@ -402,12 +406,6 @@
                 setLotesProduccion(['']);
                 setCantidad('');
                 setObservacion('');
-                setLegajo('');
-                setCliente('');
-                setTransporte('');
-                setRemito('');
-                setOrdenDeCompra('');
-                setBultos('');
                 setPreviewPdfUrl(null);
 
             } catch (error) {
@@ -420,16 +418,34 @@
             }
         };
         
+        const handleManualPalletOverride = async () => {
+            const password = prompt("Ingrese la contraseña para la corrección manual:");
+            if (!password) return;
+
+            try {
+                const response = await fetch('/api/updatePalletNumber', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
+                    body: JSON.stringify({ newPalletNumber: parseInt(numeroDePallet, 10) }),
+                });
+
+                const result = await response.json();
+                if (!response.ok) {
+                    throw new Error(result.message || `Error del servidor: ${response.status}`);
+                }
+
+                showToast(`Número de pallet actualizado. El próximo pallet será ${parseInt(numeroDePallet, 10) + 1}.`, "success");
+                setNumeroDePallet(parseInt(numeroDePallet, 10) + 1);
+                setPreviewPdfUrl(null);
+
+            } catch (error) {
+                showToast(`Error en la corrección manual: ${error.message}`, "error");
+            }
+        };
+        
         if (appIsLoading) {
             return null;
         }
-
-        const FormInput = ({ label, value, onChange, required = false, ...props }) => (
-            <div>
-                <label className="block text-base font-bold text-black">{label} {required && <span className="text-red-500">*</span>}</label>
-                <input {...props} value={value} onChange={onChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
-            </div>
-        );
 
         return (
             <Fragment>
@@ -440,10 +456,9 @@
                             <a href="index.html" className="bg-green-600 text-white font-semibold py-2 px-4 rounded-md shadow-md border-b-4 border-green-800 hover:bg-green-700 active:translate-y-px active:border-b-2 transition-all duration-150 flex items-center">🏠 Volver</a>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {/* Columna Izquierda: Formulario */}
                             <div className="space-y-4">
                                 <div className="relative">
-                                    <label className="block text-base font-bold text-black">Artículo (SKU o Descripción) <span className="text-red-500">*</span></label>
+                                    <label className="block text-base font-bold text-black">Artículo (Buscar por SKU o Descripción)</label>
                                     <input type="text" ref={articuloInputRef} value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setSelectedArticulo(null); setPreviewPdfUrl(null); }} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
                                     {searchTerm && filteredArticulos.length > 0 && (
                                         <ul className="absolute z-10 w-full bg-white border rounded-md mt-1 max-h-40 overflow-y-auto shadow-lg">
@@ -455,59 +470,87 @@
                                         </ul>
                                     )}
                                 </div>
-                                
-                                <FormInput label="Legajo" value={legajo} onChange={e => setLegajo(e.target.value)} required />
-                                <FormInput label="Cliente" value={cliente} onChange={e => setCliente(e.target.value)} required />
-
                                 <div>
-                                    <label className="block text-base font-bold text-black">Lotes de Producción <span className="text-red-500">*</span></label>
+                                    <label className="block text-base font-bold text-black">Lotes de Producción</label>
                                     {lotesProduccion.map((lote, index) => (
-                                        <input key={index} ref={el => loteInputRefs.current[index] = el} type="text" value={lote} onChange={e => handleLoteProdChange(index, e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
+                                        <input 
+                                            key={index}
+                                            ref={el => loteInputRefs.current[index] = el}
+                                            type="text" 
+                                            value={lote} 
+                                            onChange={e => handleLoteProdChange(index, e.target.value)} 
+                                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" 
+                                        />
                                     ))}
-                                    {lotesProduccion.length < 4 && (<button onClick={addLoteProdField} className="mt-2 text-sm font-semibold text-blue-600 hover:text-blue-800">+ Añadir lote</button>)}
+                                    {lotesProduccion.length < 4 && (
+                                        <button onClick={addLoteProdField} className="mt-2 text-sm font-semibold text-blue-600 hover:text-blue-800 flex items-center">
+                                            <span className="text-lg mr-1">+</span> Añadir otro lote
+                                        </button>
+                                    )}
                                 </div>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                    <FormInput label="Cantidad" value={cantidad} onChange={handleCantidadChange} required placeholder="Ej: 1234,56" />
-                                    <div>
-                                        <label className="block text-base font-bold text-black">U.M. <span className="text-red-500">*</span></label>
-                                        <select value={uom} onChange={e => setUom(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border">
-                                            <option>Unidad</option>
-                                            <option>Millar</option>
-                                        </select>
+                                <div>
+                                    <label className="block text-base font-bold text-black">Número de Pallet (Automático)</label>
+                                    <div className="mt-1 flex rounded-md shadow-sm">
+                                        <input type="number" value={numeroDePallet} readOnly={!isPalletNumEditable} onChange={e => setNumeroDePallet(e.target.value)} className={`block w-full rounded-none rounded-l-md border-gray-300 p-2 border ${!isPalletNumEditable ? 'bg-gray-100' : ''}`} />
+                                        <button 
+                                            type="button"
+                                            onClick={() => handleRefreshPalletNumber(false)}
+                                            disabled={refreshState === 'loading'}
+                                            className="relative -ml-px inline-flex items-center space-x-2 rounded-r-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                                            title="Verificar último número de pallet"
+                                        >
+                                            <i className={`fas fa-sync-alt h-5 w-5 ${ 
+                                                refreshState === 'loading' ? 'animate-spin text-red-500' :
+                                                refreshState === 'success' ? 'text-green-500' :
+                                                refreshState === 'error' ? 'text-red-500' :
+                                                'text-blue-500'
+                                            }`}></i>
+                                            <span>Refrescar</span>
+                                        </button>
                                     </div>
                                 </div>
-
-                                <FormInput label="Fecha de Producción" value={fechaProd} onChange={e => setFechaProd(e.target.value)} type="date" required />
-                                
-                                <div className="grid grid-cols-2 gap-4">
-                                    <FormInput label="Transporte" value={transporte} onChange={e => setTransporte(e.target.value)} />
-                                    <FormInput label="Bultos" value={bultos} onChange={e => setBultos(e.target.value)} />
-                                    <FormInput label="Remito" value={remito} onChange={e => setRemito(e.target.value)} />
-                                    <FormInput label="Orden de Compra" value={ordenDeCompra} onChange={e => setOrdenDeCompra(e.target.value)} />
-                                </div>
-
                                 <div>
-                                    <label className="block text-base font-bold text-black">Observaciones</label>
-                                    <textarea value={observacion} onChange={e => setObservacion(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" rows="2"></textarea>
+                                    <label className="block text-base font-bold text-black">Cantidad de Copias</label>
+                                    <input type="number" min="1" value={cantidadCopias} onChange={e => setCantidadCopias(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
                                 </div>
-                                
-                                <div className="grid grid-cols-2 gap-4">
-                                    <FormInput label="Nº de Pallet" value={numeroDePallet} onChange={() => {}} readOnly />
-                                    <FormInput label="Copias" value={cantidadCopias} onChange={e => setCantidadCopias(e.target.value)} type="number" min="1" />
+                                <div>
+                                    <label className="block text-base font-bold text-black">Fecha de Producción</label>
+                                    <input type="date" value={fechaProd} onChange={e => setFechaProd(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" />
                                 </div>
-
-                                <button onClick={handleGeneratePreview} className="w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-blue-700 text-xl flex items-center justify-center">Generar Vista Previa</button>
+                                <div>
+                                    <label className="block text-base font-bold text-black">Cantidad (por etiqueta)</label>
+                                    <input type="text" value={cantidad} onChange={handleCantidadChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" placeholder="Ej: 1234,56"/>
+                                </div>
+                                <div>
+                                    <label className="block text-base font-bold text-black">Unidad de Medida</label>
+                                    <select value={uom} onChange={e => setUom(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border">
+                                        <option>Unidad</option>
+                                        <option>Millar</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-base font-bold text-black">Observaciones (Opcional)</label>
+                                    <textarea
+                                        value={observacion}
+                                        onChange={e => setObservacion(e.target.value)}
+                                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
+                                        rows="2"
+                                        placeholder="Información adicional para el registro interno..."
+                                    ></textarea>
+                                </div>
+                                <button onClick={handleGeneratePreview} className="w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-blue-700 text-xl flex items-center justify-center">
+                                    Generar Vista Previa
+                                </button>
                             </div>
-
-                            {/* Columna Derecha: Vista Previa */}
                             <div>
                                 <h3 className="text-lg font-medium text-gray-900 mb-2">Vista Previa de Etiqueta</h3>
                                 <div id="preview-container" className="border-2 border-dashed border-gray-400 w-full" style={{height: '65vh'}}>
                                     {previewPdfUrl ? (
                                         <iframe id="preview-iframe" src={previewPdfUrl} title="Vista Previa de Etiqueta"></iframe>
                                     ) : (
-                                        <div className="text-center text-gray-500 flex items-center justify-center h-full"><p>Complete el formulario y genere la vista previa</p></div>
+                                        <div className="text-center text-gray-500 flex items-center justify-center h-full">
+                                            <p>Complete el formulario y genere la vista previa</p>
+                                        </div>
                                     )}
                                 </div>
                                 {previewPdfUrl && (
@@ -528,5 +571,3 @@
     root.render(<App />);
 
 </script>
-</body>
-</html>
