@@ -41,17 +41,6 @@
         const { useState, useEffect, useMemo, useRef } = React;
         const { createRoot } = ReactDOM;
 
-        // =================================================================
-        // ### CONFIGURACIÓN Y SISTEMA DE BLOQUEO ###
-        // =================================================================
-        const USUARIO_GITHUB = 'gagegfg';
-        const REPO_NOMBRE = 'Molderil_ListaEmpaque';
-        const RUTA_ARTICULOS_CSV = 'articulos.csv';
-        const LOCK_FILE_PATH = 'lock.json';
-        const LOCK_TIMEOUT = 45 * 1000; // 45 segundos
-        const SESSION_ID = Date.now().toString(36) + Math.random().toString(36).substr(2);
-        // =================================================================
-
         // Hook personalizado para manejar el estado con localStorage
         const useLocalStorage = (key, initialValue) => {
             const [storedValue, setStoredValue] = useState(() => {
@@ -77,106 +66,59 @@
         };
 
         const App = () => {
-            const [isAuthenticated, setIsAuthenticated] = useState(false);
-            const [password, setPassword] = useState('');
-            const [error, setError] = useState('');
             const [isLoading, setIsLoading] = useState(true);
             const [isAppReady, setIsAppReady] = useState(false);
-            const [apiToken, setApiToken] = useState(null);
-            
             const [allData, setAllData] = useState([]);
             const [filteredData, setFilteredData] = useState([]);
-            const [hasChanges, setHasChanges] = useState(false);
-
+            
             const [columnFilters, setColumnFilters] = useLocalStorage('editarsku_columnFilters', {
                 tipo: '',
                 sku: '',
-                descLarga: ''
+                descripcion: '' // Cambiado de descLarga a descripcion
             });
 
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [editingArticle, setEditingArticle] = useState(null);
 
-            const passwordInputRef = useRef(null);
-
-            // --- Carga inicial y autenticación ---
+            // --- Carga inicial de la aplicación ---
             useEffect(() => {
                 const staticLoader = document.getElementById('static-loader');
                 const loaderStatus = document.getElementById('loader-status');
                 const loaderProgress = document.getElementById('loader-progress');
 
-                const fetchToken = async () => {
-                    try {
-                        const response = await fetch('cls.txt');
-                        if (!response.ok) {
-                            console.warn('Advertencia: No se pudo cargar el archivo de clave (cls.txt).');
-                            return;
-                        }
-                        let rawToken = await response.text();
-                        rawToken = rawToken.replace(/aaaa/g, '').replace(/bbbb/g, '').replace(/cccc/g, '');
-                        setApiToken(rawToken.trim());
-                    } catch (error) {
-                        console.error("Error al obtener el token:", error);
-                    }
-                };
+                loaderStatus.textContent = 'Cargando artículos...';
+                loaderProgress.style.width = '50%';
 
-                const loadingTasks = [
-                    { status: "Inicializando...", duration: 500, progress: 50, action: fetchToken },
-                    { status: "¡Listo!", duration: 500, progress: 100 }
-                ];
-
-                let currentTask = 0;
-                const runLoadingTask = () => {
-                    if (currentTask < loadingTasks.length) {
-                        const task = loadingTasks[currentTask];
-                        if (loaderStatus) loaderStatus.textContent = task.status;
-                        if (loaderProgress) loaderProgress.style.width = `${task.progress}%`;
-                        if(task.action) task.action();
+                fetchData().then(() => {
+                    loaderStatus.textContent = '¡Listo!';
+                    loaderProgress.style.width = '100%';
+                    setTimeout(() => {
+                        staticLoader.classList.add('opacity-0');
                         setTimeout(() => {
-                            currentTask++;
-                            runLoadingTask();
-                        }, task.duration);
-                    } else {
-                        if (staticLoader) {
-                            staticLoader.classList.add('opacity-0');
-                            setTimeout(() => {
-                                staticLoader.remove();
-                                setIsAppReady(true);
-                                setTimeout(() => passwordInputRef.current?.focus(), 100);
-                            }, 500);
-                        }
-                    }
-                };
-                runLoadingTask();
+                            staticLoader.remove();
+                            setIsAppReady(true);
+                        }, 500);
+                    }, 500);
+                });
             }, []);
 
             // --- Lógica de datos y filtros ---
             const fetchData = async () => {
                 setIsLoading(true);
                 try {
-                    const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_ARTICULOS_CSV}?timestamp=${new Date().getTime()}`;
-                    const response = await fetch(url);
-                    if (!response.ok) throw new Error('No se pudo cargar el archivo de artículos.');
-                    const text = await response.text();
-                    const rows = text.split('\n').filter(Boolean);
-                    const parsedData = rows.map((row, index) => {
-                        const [tipo, sku, descLarga, descCorta] = row.split(';');
-                        return { id: sku || `temp-${index}`, tipo, sku, descLarga, descCorta: descCorta || '' };
-                    });
+                    const response = await fetch('/api/getArticulos');
+                    const data = await response.json();
+                    if (!data.success) throw new Error(data.message);
+                    
+                    // Mapeamos _id a id para compatibilidad con el resto del código
+                    const parsedData = data.articulos.map(a => ({...a, id: a._id}));
                     setAllData(parsedData);
-                    setHasChanges(false);
                 } catch (e) {
                     alert(`Error al cargar artículos: ${e.message}`);
                 } finally {
                     setIsLoading(false);
                 }
             };
-
-            useEffect(() => {
-                if (isAuthenticated) {
-                    fetchData();
-                }
-            }, [isAuthenticated]);
 
             useEffect(() => {
                 let data = [...allData];
@@ -191,167 +133,49 @@
                 setFilteredData(data);
             }, [columnFilters, allData]);
             
-            // --- Manejo de cambios y guardado ---
-            const handleDescriptionChange = (sku, newDescription) => {
-                setAllData(prevData => prevData.map(item => 
-                    item.sku === sku ? { ...item, descCorta: newDescription } : item
-                ));
-                setHasChanges(true);
-            };
-
-            const handleSaveArticle = (article) => {
-                if (editingArticle && editingArticle.id) { // Editando
-                    setAllData(prev => prev.map(item => item.id === article.id ? article : item));
-                } else { // Agregando
-                    const newArticle = { ...article, id: article.sku };
-                    setAllData(prev => [...prev, newArticle]);
-                }
-                setHasChanges(true);
-                setIsModalOpen(false);
-                setEditingArticle(null);
-            };
-
-            // --- FUNCIONES DEL SISTEMA DE BLOQUEO ---
-            const acquireLock = async (operationName) => {
-                const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${LOCK_FILE_PATH}`;
-                let currentSha = null;
-                try {
-                    const response = await fetch(`${url}?t=${new Date().getTime()}`, {
-                        headers: { 'Authorization': `token ${apiToken}` }, cache: 'no-store'
-                    });
-
-                    if (response.ok) {
-                        const fileData = await response.json();
-                        currentSha = fileData.sha;
-                        const content = atob(fileData.content);
-
-                        if (content && content.trim()) {
-                            const lock = JSON.parse(content);
-                            const isLockedByOther = lock.sessionId && lock.sessionId !== SESSION_ID;
-                            const isExpired = Date.now() - lock.timestamp > LOCK_TIMEOUT;
-
-                            if (isLockedByOther && !isExpired) {
-                                return { success: false, error: `Sistema bloqueado por otra sesión. Operación en curso: ${lock.operation || 'N/A'}` };
-                            }
-                        }
-                    } else if (response.status !== 404) {
-                        throw new Error(`Error al leer el archivo de bloqueo: ${response.statusText}`);
-                    }
-
-                    const lockContent = { sessionId: SESSION_ID, timestamp: Date.now(), operation: operationName };
-                    const updateResponse = await fetch(url, {
-                        method: 'PUT',
-                        headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            message: `Locking for operation: ${operationName}`,
-                            content: btoa(JSON.stringify(lockContent)),
-                            sha: currentSha,
-                        }),
-                    });
-
-                    if (!updateResponse.ok) throw new Error(`No se pudo adquirir el bloqueo: ${updateResponse.statusText}`);
-                    
-                    return { success: true };
-
-                } catch (error) {
-                    if (error instanceof SyntaxError) {
-                        console.warn("lock.json contenía JSON inválido, se procederá a sobreescribir.");
-                        return { success: true };
-                    }
-                    console.error("Error en acquireLock:", error);
-                    return { success: false, error: error.message };
-                }
-            };
-
-            const releaseLock = async () => {
-                const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${LOCK_FILE_PATH}`;
-                try {
-                    const response = await fetch(`${url}?t=${new Date().getTime()}`, {
-                        headers: { 'Authorization': `token ${apiToken}` }, cache: 'no-store'
-                    });
-            
-                    if (response.ok) {
-                        const fileData = await response.json();
-                        const content = atob(fileData.content);
-                        if (content) {
-                            const lock = JSON.parse(content);
-                            if (lock.sessionId && lock.sessionId !== SESSION_ID) {
-                                console.warn("Intento de liberar un bloqueo que no pertenece a esta sesión. Se omite.");
-                                return;
-                            }
-                        }
-
-                        const updateResponse = await fetch(url, {
-                            method: 'PUT',
-                            headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                message: 'Releasing lock',
-                                content: btoa(''),
-                                sha: fileData.sha,
-                            }),
-                        });
-                        if (!updateResponse.ok) console.error("Error al liberar el bloqueo, puede expirar automáticamente.");
-                    }
-                } catch (error) {
-                    console.error("Error en releaseLock:", error);
-                }
-            };
-
-            const saveToGitHub = async () => {
-                if (!apiToken) {
-                    alert("Error: El token de API no está disponible. No se puede guardar.");
-                    return;
-                }
-                if (!hasChanges) {
-                    alert("No hay cambios para guardar.");
-                    return;
-                }
-                if (!confirm("¿Estás seguro de que quieres guardar todos los cambios en GitHub? Esta acción sobrescribirá el archivo de artículos.")) {
+            // --- Manejo de guardado ---
+            const handleSaveArticle = async (article) => {
+                const psw = prompt("Para guardar los cambios, por favor ingrese la contraseña:");
+                if (!psw) {
+                    alert("Guardado cancelado.");
                     return;
                 }
 
-                const lock = await acquireLock('updateArticles');
-                if (!lock.success) {
-                    alert(`No se pudo guardar. ${lock.error}. Intente de nuevo.`);
-                    return;
-                }
-                
                 setIsLoading(true);
                 try {
-                    const csvContent = allData.map(item => `${item.tipo};${item.sku};${item.descLarga};${item.descCorta || ''}`).join('\n');
-                    const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${RUTA_ARTICULOS_CSV}`;
-                    
-                    const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${apiToken}` }, cache: 'no-store' });
-                    if (!fileResponse.ok) throw new Error(`Error ${fileResponse.status}: No se pudo obtener info del archivo.`);
-                    const fileData = await fileResponse.json();
+                    // El ID para la API es el _id de MongoDB
+                    const payload = {
+                        id: article._id,
+                        sku: article.sku,
+                        descripcion: article.descripcion,
+                        cliente: article.cliente,
+                        nota: article.nota,
+                        psw: psw
+                    };
 
-                    const updateResponse = await fetch(url, {
-                        method: 'PUT',
-                        headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            message: 'Actualización de maestro de artículos',
-                            content: btoa(unescape(encodeURIComponent(csvContent))),
-                            sha: fileData.sha,
-                        }),
+                    const response = await fetch('/api/updateArticulo', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
                     });
 
-                    if (!updateResponse.ok) throw new Error(`Error ${updateResponse.status}: Falló la actualización.`);
-                    alert("¡Archivo de artículos guardado correctamente en GitHub!");
-                    setHasChanges(false);
+                    const result = await response.json();
+                    if (!result.success) {
+                        throw new Error(result.message);
+                    }
+
+                    alert('¡Artículo actualizado con éxito!');
+                    setIsModalOpen(false);
+                    setEditingArticle(null);
+                    await fetchData(); // Recargar datos para ver el cambio
                 } catch (e) {
-                    alert(`ERROR al guardar en GitHub: ${e.message}`);
+                    alert(`ERROR al guardar: ${e.message}`);
                 } finally {
-                    await releaseLock();
                     setIsLoading(false);
                 }
             };
             
             const handleRefresh = () => {
-                if (hasChanges) {
-                    if (!confirm("Tienes cambios sin guardar. ¿Estás seguro de que quieres refrescar y perder los cambios?")) {
-                        return;
-                    }
-                }
                 fetchData();
             };
 
@@ -360,71 +184,11 @@
             };
 
             const clearFilters = () => {
-                setColumnFilters({ tipo: '', sku: '', descLarga: '' });
+                setColumnFilters({ tipo: '', sku: '', descripcion: '' });
             };
-
-            // --- Autenticación ---
-            const handleLogin = async () => {
-                try {
-                    const response = await fetch('pswsku.txt');
-                    if (!response.ok) throw new Error('No se encontró el archivo de contraseña.');
-                    const correctPassword = await response.text();
-                    if (password.trim() === correctPassword.trim()) {
-                        setIsAuthenticated(true);
-                    } else {
-                        setError("Contraseña incorrecta.");
-                    }
-                } catch (e) {
-                    setError(`Error: ${e.message}`);
-                }
-            };
-            
-            // --- Aviso de cambios sin guardar ---
-            useEffect(() => {
-                const handleBeforeUnload = (e) => {
-                    if (hasChanges) {
-                        e.preventDefault();
-                        e.returnValue = '';
-                    }
-                };
-                window.addEventListener('beforeunload', handleBeforeUnload);
-                return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-            }, [hasChanges]);
-
 
             // --- Renderizado ---
             if (!isAppReady) return null;
-
-            if (!isAuthenticated) {
-                return (
-                    <div className="min-h-screen flex items-center justify-center bg-black bg-opacity-50 p-4">
-                        <div className="relative bg-[#D2B48C]/20 backdrop-blur-lg border border-[#D2B48C]/30 p-8 rounded-xl shadow-2xl w-full max-w-sm text-center">
-                            <img src="logo.jpg" alt="Logo Molderil" className="mx-auto mb-6 h-32 [filter:drop-shadow(2px_2px_4px_rgba(0,0,0,0.4))_drop_shadow(-2px_-2px_4px_rgba(255,255,255,0.6))]"/>
-                            <h2 className="text-3xl font-bold text-white mb-6 [text-shadow:_1px_1px_4px_rgba(0,0,0,0.7)]">Acceso Restringido</h2>
-                            <div className="space-y-4 text-left">
-                                <div>
-                                    <label className="block text-xl font-medium text-white [text-shadow:_1px_1px_2px_rgba(0,0,0,0.5)]">Contraseña</label>
-                                    <input 
-                                        type="password"
-                                        ref={passwordInputRef}
-                                        value={password}
-                                        onChange={e => setPassword(e.target.value)}
-                                        onKeyDown={e => { if (e.key === 'Enter') handleLogin(); }}
-                                        className="mt-1 block w-full rounded-md bg-white/10 border-white/30 text-white placeholder-white/50 shadow-sm p-2 border text-2xl focus:ring-amber-400 focus:border-amber-400"
-                                    />
-                                </div>
-                                {error && <p className="text-red-400 text-sm mt-1 [text-shadow:_1px_1px_2px_rgba(0,0,0,0.7)]">{error}</p>}
-                                <button onClick={handleLogin} className="w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-blue-700 text-xl transition-transform transform hover:scale-105">
-                                    Ingresar
-                                </button>
-                                <a href="index.html" className="w-full block text-center bg-gray-600 text-white font-semibold py-3 px-4 rounded-md shadow-md hover:bg-gray-700 text-xl transition-transform transform hover:scale-105">
-                                    Volver al Menú
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                );
-            }
 
             return (
                 <div className="min-h-screen p-4 sm:p-6 bg-black bg-opacity-50">
@@ -434,7 +198,7 @@
                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b pb-4 border-gray-200">
                                 <div>
                                     <h1 className="text-3xl font-extrabold text-gray-800">Editor de Artículos</h1>
-                                    <p className="text-gray-500 mt-1">Modifica las descripciones cortas o añade nuevos artículos.</p>
+                                    <p className="text-gray-500 mt-1">Modifica los datos de los artículos.</p>
                                 </div>
                                 <a href="index.html" className="mt-4 sm:mt-0 bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">Volver al Menú</a>
                             </div>
@@ -448,13 +212,11 @@
                                     <button onClick={handleRefresh} className="bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-gray-700 flex items-center">
                                         <i className={`fas fa-sync-alt ${isLoading ? 'animate-spin' : ''} mr-2`}></i>Refrescar
                                     </button>
+                                    {/* El botón de añadir ahora se maneja en el modal, este botón ya no es necesario 
                                     <button onClick={() => { setEditingArticle(null); setIsModalOpen(true); }} className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg shadow-md hover:bg-green-700 flex items-center">
                                         <i className="fas fa-plus mr-2"></i>Añadir
                                     </button>
-                                    <button onClick={saveToGitHub} disabled={isLoading} className={`font-semibold py-2 px-4 rounded-lg shadow-md flex items-center ${hasChanges ? 'bg-orange-500 hover:bg-orange-600 text-white' : 'bg-gray-600 text-white'} disabled:opacity-50 disabled:cursor-wait`}>
-                                        {isLoading && hasChanges ? <i className="fas fa-spinner animate-spin mr-2"></i> : <i className="fab fa-github mr-2"></i>}
-                                        {isLoading && hasChanges ? 'Guardando...' : 'Guardar'}
-                                    </button>
+                                    */}
                                 </div>
                             </div>
                         </div>
@@ -465,30 +227,37 @@
                                     <tr>
                                         <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Tipo</th>
                                         <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">SKU</th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Descripción Larga</th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Descripción Corta (Editable)</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Descripción</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Cliente</th>
+                                        <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider">Nota</th>
                                         <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider">Acción</th>
                                     </tr>
                                     <tr className="bg-gray-200">
                                         <th className="p-1"><input type="text" placeholder="Filtrar..." value={columnFilters.tipo} onChange={e => handleColumnFilterChange('tipo', e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
                                         <th className="p-1"><input type="text" placeholder="Filtrar..." value={columnFilters.sku} onChange={e => handleColumnFilterChange('sku', e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
-                                        <th className="p-1"><input type="text" placeholder="Filtrar..." value={columnFilters.descLarga} onChange={e => handleColumnFilterChange('descLarga', e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
+                                        <th className="p-1"><input type="text" placeholder="Filtrar..." value={columnFilters.descripcion} onChange={e => handleColumnFilterChange('descripcion', e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
+                                        <th className="p-1"></th>
                                         <th className="p-1"></th>
                                         <th className="p-1"></th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {isLoading && !filteredData.length ? (
-                                        <tr><td colSpan="5" className="p-8 text-center text-gray-500">Cargando datos...</td></tr>
+                                        <tr><td colSpan="6" className="p-8 text-center text-gray-500">Cargando datos...</td></tr>
                                     ) : (
                                         filteredData.map((item, index) => (
-                                            <ArticleRow
-                                                key={item.id}
-                                                item={item}
-                                                isEven={index % 2 === 0}
-                                                onDescriptionChange={handleDescriptionChange}
-                                                onEditClick={() => { setEditingArticle(item); setIsModalOpen(true); }}
-                                            />
+                                            <tr key={item.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{item.tipo}</td>
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">{item.sku}</td>
+                                                <td className="px-4 py-2 text-sm text-gray-600">{item.descripcion}</td>
+                                                <td className="px-4 py-2 text-sm text-gray-600">{item.cliente}</td>
+                                                <td className="px-4 py-2 text-sm text-gray-600">{item.nota}</td>
+                                                <td className="px-4 py-2 text-center">
+                                                    <button onClick={() => { setEditingArticle(item); setIsModalOpen(true); }} className="text-blue-600 hover:text-blue-900">
+                                                        <i className="fas fa-pencil-alt"></i>
+                                                    </button>
+                                                </td>
+                                            </tr>
                                         ))
                                     )}
                                 </tbody>
@@ -498,50 +267,9 @@
                 </div>
             );
         };
-        
-        // --- NUEVO: Componente de Fila para solucionar problema de cursor ---
-        const ArticleRow = ({ item, isEven, onDescriptionChange, onEditClick }) => {
-            const [descCorta, setDescCorta] = useState(item.descCorta || '');
-
-            useEffect(() => {
-                setDescCorta(item.descCorta || '');
-            }, [item.descCorta]);
-
-            const handleLocalChange = (e) => {
-                setDescCorta(e.target.value);
-            };
-
-            const handleBlur = () => {
-                if (descCorta !== item.descCorta) {
-                    onDescriptionChange(item.sku, descCorta);
-                }
-            };
-            
-            return (
-                <tr className={isEven ? 'bg-white' : 'bg-gray-50'}>
-                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{item.tipo}</td>
-                    <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">{item.sku}</td>
-                    <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{item.descLarga}</td>
-                    <td className="px-4 py-2 text-sm text-gray-600">
-                        <input 
-                            type="text"
-                            value={descCorta}
-                            onChange={handleLocalChange}
-                            onBlur={handleBlur}
-                            className="w-full p-1 border border-gray-300 rounded"
-                        />
-                    </td>
-                    <td className="px-4 py-2 text-center">
-                        <button onClick={onEditClick} className="text-blue-600 hover:text-blue-900">
-                            <i className="fas fa-pencil-alt"></i>
-                        </button>
-                    </td>
-                </tr>
-            );
-        };
 
         const ArticleModal = ({ article, onSave, onClose }) => {
-            const [formData, setFormData] = useState(article || { tipo: '', sku: '', descLarga: '', descCorta: '' });
+            const [formData, setFormData] = useState(article);
 
             const handleChange = (e) => {
                 const { name, value } = e.target;
@@ -556,27 +284,27 @@
             return (
                 <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 p-4">
                     <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-lg">
-                        <h2 className="text-2xl font-bold text-gray-800 mb-4">{article ? 'Editar' : 'Añadir'} Artículo</h2>
+                        <h2 className="text-2xl font-bold text-gray-800 mb-4">Editar Artículo</h2>
                         <form onSubmit={handleSubmit} className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700">Tipo de Artículo</label>
-                                <input type="text" name="tipo" value={formData.tipo} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md" required />
-                            </div>
-                            <div>
                                 <label className="block text-sm font-medium text-gray-700">SKU</label>
-                                <input type="text" name="sku" value={formData.sku} onChange={handleChange} disabled={!!article} className="mt-1 block w-full p-2 border border-gray-300 rounded-md disabled:bg-gray-100" required />
+                                <input type="text" name="sku" value={formData.sku} disabled className="mt-1 block w-full p-2 border border-gray-300 rounded-md disabled:bg-gray-100" />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700">Descripción Larga</label>
-                                <input type="text" name="descLarga" value={formData.descLarga} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md" required />
+                                <label className="block text-sm font-medium text-gray-700">Descripción</label>
+                                <input type="text" name="descripcion" value={formData.descripcion} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md" required />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700">Descripción Corta</label>
-                                <input type="text" name="descCorta" value={formData.descCorta} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md" />
+                                <label className="block text-sm font-medium text-gray-700">Cliente</label>
+                                <input type="text" name="cliente" value={formData.cliente} onChange={handleChange} className="mt-1 block w-full p-2 border border-gray-300 rounded-md" />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Nota</label>
+                                <textarea name="nota" value={formData.nota} onChange={handleChange} rows="3" className="mt-1 block w-full p-2 border border-gray-300 rounded-md"></textarea>
                             </div>
                             <div className="flex justify-end space-x-4 pt-4">
                                 <button type="button" onClick={onClose} className="bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300">Cancelar</button>
-                                <button type="submit" className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Aceptar</button>
+                                <button type="submit" className="bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700">Guardar Cambios</button>
                             </div>
                         </form>
                     </div>
