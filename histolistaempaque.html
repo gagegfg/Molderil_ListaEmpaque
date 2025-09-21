@@ -53,140 +53,75 @@
         const { createRoot } = ReactDOM;
         const { jsPDF } = window.jspdf;
 
-        // --- CONFIGURACIÓN ---
-        const GITHUB_USER = 'gagegfg';
-        const GITHUB_REPO = 'Molderil_ListaEmpaque';
-        const CSV_PATH_HISTO = 'listaempaque.csv';
-
         const App = () => {
-            const [apiToken, setApiToken] = useState(null);
             const [allData, setAllData] = useState([]);
             const [filteredData, setFilteredData] = useState([]);
-            const [headers, setHeaders] = useState([]);
             const [isLoading, setIsLoading] = useState(true);
 
             const [columnFilters, setColumnFilters] = useState({});
             const [globalFilter, setGlobalFilter] = useState('');
             const [fechaDesde, setFechaDesde] = useState('');
             const [fechaHasta, setFechaHasta] = useState('');
-            const [sortConfig, setSortConfig] = useState({ key: null, direction: 'ascending' });
+            const [sortConfig, setSortConfig] = useState({ key: 'idlista', direction: 'descending' });
             
             const [isExportOpen, setIsExportOpen] = useState(false);
             const exportMenuRef = useRef(null);
-            
-            const displayHeaders = useMemo(() => {
-                if (headers.length === 0) return [];
-                
-                // Usamos toLowerCase para la comparación y así asegurar el orden
-                const preferredOrder = [
-                    'idlista', 'legajo', 'fecha creacion lista', 'cliente', 
-                    'transporte', 'lotes de produccion', 'bultos', 'remito', 
-                    'orden de compra'
-                ];
-                
-                return [...headers].sort((a, b) => {
-                    const lowerA = a.toLowerCase();
-                    const lowerB = b.toLowerCase();
-                    const indexA = preferredOrder.indexOf(lowerA);
-                    const indexB = preferredOrder.indexOf(lowerB);
-                    if (indexA === -1 && indexB === -1) return 0;
-                    if (indexA === -1) return 1;
-                    if (indexB === -1) return -1;
-                    return indexA - indexB;
-                });
-            }, [headers]);
 
-            const getApiToken = async (file) => {
-                try {
-                    const response = await fetch(file + '?t=' + new Date().getTime());
-                    if (!response.ok) throw new Error(`No se pudo cargar ${file}.`);
-                    let rawText = await response.text();
-                    return rawText.replace(/aaaa/g, '').replace(/bbbb/g, '').replace(/cccc/g, '').trim();
-                } catch (error) {
-                    console.error(`Error al obtener ${file}:`, error);
-                    return null;
-                }
-            };
-            
-            const fetchCsvFromGithub = useCallback(async (path) => {
-                const url = `https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}/contents/${path}?t=${new Date().getTime()}`;
-                try {
-                    const headers = apiToken ? { 'Authorization': `token ${apiToken}` } : {};
-                    const response = await fetch(url, { headers, cache: 'no-store' });
-                    if (response.status === 404) {
-                        alert(`Error: El archivo ${path} no fue encontrado.`);
-                        return [];
-                    }
-                    if (!response.ok) throw new Error(`No se pudo cargar ${path} (Estado: ${response.status})`);
-                    const fileData = await response.json();
-                    return atob(fileData.content).split('\n').filter(Boolean);
-                } catch (error) {
-                    console.error(`Error cargando ${path}:`, error);
-                    alert(`Error al cargar datos desde GitHub: ${error.message}`);
-                    return [];
-                }
-            }, [apiToken]);
+            const headers = useMemo(() => [
+                'idlista', 'legajo', 'fecha creacion lista', 'cliente', 
+                'transporte', 'lotes de produccion', 'bultos', 'remito', 
+                'orden de compra'
+            ], []);
 
             const loadData = useCallback(async () => {
-                if (!apiToken) return;
                 setIsLoading(true);
-                const csvRows = await fetchCsvFromGithub(CSV_PATH_HISTO);
+                try {
+                    const response = await fetch('/api/getHistorialPallets', { cache: 'no-store' });
+                    if (!response.ok) throw new Error(`Error del servidor: ${response.status}`);
+                    const data = await response.json();
 
-                if (csvRows.length > 0) {
-                    const headerRow = csvRows.shift();
-                    const parsedHeaders = headerRow.split(';').map(h => h.trim().replace(/\r/g, ''));
-                    setHeaders(parsedHeaders);
-
-                    const initialFilters = {};
-                    parsedHeaders.forEach(h => initialFilters[h] = '');
-                    setColumnFilters(initialFilters);
-
-                    const parsedData = csvRows.map((row, index) => {
-                        const values = row.split(';');
-                        const rowData = { id: `row-${index}` };
-                        parsedHeaders.forEach((header, i) => {
-                            rowData[header] = (values[i] || '').trim().replace(/\r/g, '');
-                        });
-                        return rowData;
-                    });
-                    setAllData(parsedData);
-                }
-                setIsLoading(false);
-            }, [fetchCsvFromGithub, apiToken]);
-
-            useEffect(() => {
-                const initializeApp = async () => {
-                    document.getElementById('loader-status').textContent = "Verificando acceso...";
-                    document.getElementById('loader-progress').style.width = '33%';
-                    const token = await getApiToken('cls.txt');
-                    if (token) setApiToken(token);
-                    else {
-                        document.getElementById('loader-status').textContent = "Error de autenticación.";
-                        document.getElementById('loader-progress').classList.add('bg-red-500');
+                    if (data.success) {
+                        const parsedData = data.pallets.map((pallet, index) => ({
+                            id: `row-${index}`,
+                            'idlista': pallet.palletNumber,
+                            'legajo': pallet.legajo,
+                            'fecha creacion lista': pallet.creationDate,
+                            'cliente': pallet.customer,
+                            'transporte': pallet.transport,
+                            'lotes de produccion': Array.isArray(pallet.lotes) ? pallet.lotes.join(' # ') : '',
+                            'bultos': pallet.bultos,
+                            'remito': pallet.remito,
+                            'orden de compra': pallet.ordenDeCompra
+                        }));
+                        setAllData(parsedData);
+                        const initialFilters = {};
+                        headers.forEach(h => initialFilters[h] = '');
+                        setColumnFilters(initialFilters);
                     }
-                };
-                initializeApp();
-            }, []);
+                } catch (error) {
+                    console.error("Error cargando el historial:", error);
+                    alert(`No se pudo cargar el historial: ${error.message}`);
+                } finally {
+                    setIsLoading(false);
+                }
+            }, [headers]);
 
             useEffect(() => {
-                if(apiToken) {
-                    const loadInitialData = async () => {
-                        const loader = document.getElementById('static-loader');
-                        document.getElementById('loader-status').textContent = "Cargando histórico...";
-                        document.getElementById('loader-progress').style.width = '66%';
-                        await loadData();
-                        document.getElementById('loader-status').textContent = "¡Listo!";
-                        document.getElementById('loader-progress').style.width = '100%';
-                        setTimeout(() => {
-                            if (loader) {
-                                loader.classList.add('opacity-0');
-                                setTimeout(() => loader.remove(), 500);
-                            }
-                        }, 500);
-                    };
-                    loadInitialData();
-                }
-            }, [apiToken, loadData]);
+                const loader = document.getElementById('static-loader');
+                document.getElementById('loader-status').textContent = "Cargando histórico desde la base de datos...";
+                document.getElementById('loader-progress').style.width = '50%';
+                
+                loadData().then(() => {
+                    document.getElementById('loader-status').textContent = "¡Listo!";
+                    document.getElementById('loader-progress').style.width = '100%';
+                    setTimeout(() => {
+                        if (loader) {
+                            loader.classList.add('opacity-0');
+                            setTimeout(() => loader.remove(), 500);
+                        }
+                    }, 500);
+                });
+            }, [loadData]);
 
             useEffect(() => {
                 let data = [...allData];
@@ -208,8 +143,8 @@
                     }
                 });
 
-                const dateColumn = headers.find(h => h.toLowerCase() === 'fecha creacion lista');
-                if (dateColumn && (fechaDesde || fechaHasta)) {
+                const dateColumn = 'fecha creacion lista';
+                if (fechaDesde || fechaHasta) {
                     const desde = fechaDesde ? new Date(fechaDesde) : null;
                     const hasta = fechaHasta ? new Date(fechaHasta) : null;
                     if(desde) desde.setMinutes(desde.getMinutes() + desde.getTimezoneOffset());
@@ -233,6 +168,18 @@
                     sortableItems.sort((a, b) => {
                         const valA = a[sortConfig.key] || '';
                         const valB = b[sortConfig.key] || '';
+                        
+                        // Smart sorting for numbers
+                        const isNumeric = !isNaN(parseFloat(valA)) && isFinite(valA) && !isNaN(parseFloat(valB)) && isFinite(valB);
+                        const numA = isNumeric ? parseFloat(valA) : null;
+                        const numB = isNumeric ? parseFloat(valB) : null;
+
+                        if (isNumeric) {
+                             if (numA < numB) return sortConfig.direction === 'ascending' ? -1 : 1;
+                             if (numA > numB) return sortConfig.direction === 'ascending' ? 1 : -1;
+                             return 0;
+                        }
+
                         if (valA < valB) return sortConfig.direction === 'ascending' ? -1 : 1;
                         if (valA > valB) return sortConfig.direction === 'ascending' ? 1 : -1;
                         return 0;
@@ -271,7 +218,7 @@
             const exportToPDF = () => {
                 const doc = new jsPDF({ orientation: 'landscape' });
                 doc.text("Histórico de Listas de Empaque", 14, 16);
-                doc.autoTable({ head: [displayHeaders], body: sortedData.map(item => displayHeaders.map(header => item[header] || '')), startY: 22 });
+                doc.autoTable({ head: [headers], body: sortedData.map(item => headers.map(header => item[header] || '')), startY: 22 });
                 doc.save("historico_listas_empaque.pdf");
                 setIsExportOpen(false);
             };
@@ -279,7 +226,7 @@
             const exportToExcel = () => {
                 const excelData = sortedData.map(item => {
                     const rowObject = {};
-                    displayHeaders.forEach(header => { rowObject[header] = item[header]; });
+                    headers.forEach(header => { rowObject[header] = item[header]; });
                     return rowObject;
                 });
                 const worksheet = XLSX.utils.json_to_sheet(excelData);
@@ -291,7 +238,7 @@
             
             const getColumnClasses = (header) => {
                 let classes = 'px-3 py-2 text-sm text-gray-700 align-middle';
-                switch(header.toLowerCase()) { // Usar toLowerCase para consistencia
+                switch(header.toLowerCase()) {
                     case 'idlista':
                     case 'legajo':
                         return `${classes} w-20 font-semibold text-gray-900 whitespace-nowrap`;
@@ -355,19 +302,19 @@
                         <div className="overflow-x-auto rounded-lg shadow-md border" style={{ maxHeight: '65vh' }}>
                             <table className="min-w-full divide-y divide-gray-200 table-auto">
                                 <thead className="bg-gray-800 text-white sticky top-0 z-10">
-                                    <tr>{displayHeaders.map(header => (<th key={header} className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider" onClick={() => handleSort(header)}>
+                                    <tr>{headers.map(header => (<th key={header} className="px-3 py-3 text-left text-xs font-medium uppercase tracking-wider" onClick={() => handleSort(header)}>
                                         <div className="flex items-center">{header}<i className={`fas ${sortConfig.key === header ? (sortConfig.direction === 'ascending' ? 'fa-sort-up' : 'fa-sort-down') : 'fa-sort'} ml-2 sort-icon`}></i></div>
                                     </th>))}</tr>
                                     <tr className="bg-gray-200">
-                                        {displayHeaders.map(header => (<th key={`filter-${header}`} className="p-1"><input type="text" placeholder="Filtrar..." value={columnFilters[header] || ''} onChange={e => handleColumnFilterChange(header, e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
+                                        {headers.map(header => (<th key={`filter-${header}`} className="p-1"><input type="text" placeholder="Filtrar..." value={columnFilters[header] || ''} onChange={e => handleColumnFilterChange(header, e.target.value)} className="w-full p-1 text-sm text-gray-700 border rounded"/></th>
                                         ))}
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
-                                    {isLoading ? (<tr><td colSpan={displayHeaders.length} className="p-8 text-center text-gray-500">Cargando datos...</td></tr>) 
+                                    {isLoading ? (<tr><td colSpan={headers.length} className="p-8 text-center text-gray-500">Cargando datos...</td></tr>) 
                                     : ( sortedData.length > 0 ? sortedData.map((item) => (
                                         <tr key={item.id} className="hover:bg-blue-50">
-                                            {displayHeaders.map(header => {
+                                            {headers.map(header => {
                                                 const content = item[header];
                                                 
                                                 const lowerCaseHeader = header.toLowerCase();
@@ -401,7 +348,7 @@
                                                 );
                                             })}
                                         </tr>
-                                    )) : (<tr><td colSpan={displayHeaders.length} className="p-8 text-center text-gray-500">No se encontraron registros.</td></tr>)
+                                    )) : (<tr><td colSpan={headers.length} className="p-8 text-center text-gray-500">No se encontraron registros.</td></tr>)
                                     )}
                                 </tbody>
                             </table>
