@@ -249,6 +249,91 @@
             }
         };
 
+        const RUTA_PSW_SKU = 'pswsku.txt'; // Define the path to the password file
+
+        const validatePassword = async (password) => {
+            try {
+                const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_PSW_SKU}?t=${new Date().getTime()}`;
+                const response = await fetch(url, { cache: "no-store" });
+                if (!response.ok) throw new Error('No se pudo cargar el archivo de contraseña.');
+                const storedPassword = (await response.text()).trim();
+                return password === storedPassword;
+            } catch (error) {
+                console.error("Error al validar contraseña:", error);
+                showToast(`Error al validar contraseña: ${error.message}`, 'error');
+                return false;
+            }
+        };
+
+        const handleManualPalletUpdate = async () => {
+            const newPalletInput = prompt("Ingrese el nuevo número de pallet:");
+            if (newPalletInput === null) return; // User cancelled
+
+            const newPalletNum = parseInt(newPalletInput, 10);
+
+            if (isNaN(newPalletNum) || newPalletNum <= 0) {
+                showToast("El número de pallet debe ser un entero positivo.", 'error');
+                return;
+            }
+
+            // Get the current pallet number from the file to compare
+            let currentFilePalletNum = 0;
+            try {
+                const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_LOTE_LOGISTICO}?t=${new Date().getTime()}`;
+                const response = await fetch(url, { cache: "no-store" });
+                if (!response.ok) throw new Error('No se pudo verificar el Nº de pallet actual.');
+                const text = await response.text();
+                currentFilePalletNum = parseInt(text.trim(), 10);
+                if (isNaN(currentFilePalletNum)) throw new Error('El archivo de pallet está corrupto.');
+            } catch (error) {
+                console.error("Error al obtener el número de pallet del archivo:", error);
+                showToast(`Error al obtener el número de pallet del archivo: ${error.message}`, 'error');
+                return;
+            }
+
+            const currentDisplayedPalletNum = parseInt(numeroDePallet, 10);
+
+            if (newPalletNum <= currentFilePalletNum || newPalletNum <= currentDisplayedPalletNum) {
+                showToast(`El nuevo número de pallet (${newPalletNum}) debe ser mayor que el actual en archivo (${currentFilePalletNum}) y en pantalla (${currentDisplayedPalletNum}).`, 'error');
+                return;
+            }
+
+            const passwordInput = prompt("Ingrese la clave para actualizar el número de pallet:");
+            if (passwordInput === null) return; // User cancelled
+
+            const isPasswordValid = await validatePassword(passwordInput);
+            if (!isPasswordValid) {
+                showToast("Clave incorrecta. No se puede actualizar el número de pallet.", 'error');
+                return;
+            }
+
+            // Acquire lock before updating the file
+            const lock = await acquireLock('manualPalletUpdate');
+            if (!lock.success) {
+                showToast(`No se pudo actualizar. ${lock.error}. Intente de nuevo.`, 'error');
+                return;
+            }
+
+            try {
+                const updateSuccess = await updateLoteFile(newPalletNum);
+                if (updateSuccess) {
+                    setNumeroDePallet(newPalletNum + 1); // Set to next available number
+                    showToast(`Número de pallet actualizado manualmente a ${newPalletNum}.`, 'success');
+                    if (previewPdfUrl) {
+                        setPreviewPdfUrl(null);
+                        showToast('El Nº de pallet cambió. Por favor, genere una nueva vista previa.', 'info');
+                    }
+                } else {
+                    showToast("Fallo al actualizar el número de pallet manualmente.", 'error');
+                }
+            } catch (error) {
+                console.error("Error en handleManualPalletUpdate:", error);
+                showToast(`Error al actualizar el número de pallet: ${error.message}`, 'error');
+            } finally {
+                await releaseLock();
+            }
+        };
+
         useEffect(() => {
             const interval = setInterval(() => {
                 const now = new Date();
@@ -914,6 +999,15 @@
                                                 'text-blue-500'
                                             }`}></i>
                                             <span>Refrescar</span>
+                                        </button>
+                                        <button 
+                                            type="button"
+                                            onClick={handleManualPalletUpdate}
+                                            className="relative -ml-px inline-flex items-center space-x-2 rounded-r-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                                            title="Ingresar número de pallet manualmente"
+                                        >
+                                            <i className="fas fa-edit h-5 w-5 text-purple-500"></i>
+                                            <span>Manual</span>
                                         </button>
                                     </div>
                                 </div>
