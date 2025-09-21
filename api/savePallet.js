@@ -38,12 +38,7 @@ export default async function handler(req, res) {
 
       // 2. Insertar los datos del nuevo pallet en la colección 'pallets'
       // Esto reemplaza a detallelotes.csv
-      await palletsCollection.insertOne({ 
-        ...palletData,
-              creationDate: new Date().toLocaleDateString('es-AR'),
-      fechaProduccion: data.fechaProduccion,
-      legajo: data.legajo,
-      }, { session });
+      await palletsCollection.insertOne(palletData, { session });
 
       // 3. Actualizar el contador de pallets al nuevo número
       // Esto reemplaza a lotelogistica.txt
