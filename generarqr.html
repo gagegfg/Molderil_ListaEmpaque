@@ -401,7 +401,8 @@ Ingrese el número de pallet manualmente.`, 'error');
                     const response = await fetch(url, { cache: "no-store" });
                     if (!response.ok) throw new Error(`No se pudo cargar ${RUTA_ARTICULOS_CSV}`);
                     const text = await response.text();
-                    const rows = text.split('\n').slice(1);
+                    const rows = text.split('
+').slice(1);
                     const parsedArticulos = rows.map(row => {
                         const [tipo_articulo, codigo_articulo, descripcionLarga, descripcionCorta] = row.split(';');
                         return { 
