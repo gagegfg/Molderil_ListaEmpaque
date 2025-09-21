@@ -98,16 +98,13 @@
     // =================================================================
     const USUARIO_GITHUB = 'gagegfg';
     const REPO_NOMBRE = 'Molderil_ListaEmpaque';
-    const RUTA_LOTE_LOGISTICO = 'lotelogistica.txt';
     const RUTA_HISTORICO_CSV = 'detallelotes.csv';
     const RUTA_NOTAS_CSV = 'notasskulote.csv';
     const RUTA_ARTICULOS_CSV = 'articulos.csv';
     const RUTA_CLS_TXT = 'cls.txt';
     
-    // --- NUEVO: CONFIGURACIÓN DEL SISTEMA DE BLOQUEO ---
-    const LOCK_FILE_PATH = 'lock.json';
-    const LOCK_TIMEOUT = 45 * 1000; // 45 segundos
-    const SESSION_ID = Date.now().toString(36) + Math.random().toString(36).substr(2);
+    // --- NUEVO: CONFIGURACIÓN DE LA API DE PALLET (Vercel/MongoDB) ---
+    const URL_API_PALLET = 'https://molderillog.vercel.app/api/pallet';
     // =================================================================
 
     const Toast = ({ message, type, onHide }) => {
@@ -208,13 +205,12 @@
         const handleRefreshPalletNumber = async (isSilent = false) => {
             if (!isSilent) setRefreshState('loading');
             
-            const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_LOTE_LOGISTICO}?t=${new Date().getTime()}`;
             try {
-                const response = await fetch(url, { cache: "no-store" });
-                if (!response.ok) throw new Error('No se pudo verificar el Nº de pallet.');
-                const text = await response.text();
-                const numeroBase = parseInt(text.trim(), 10);
-                if (isNaN(numeroBase)) throw new Error('El archivo de pallet está corrupto.');
+                const response = await fetch(URL_API_PALLET, { cache: "no-store" });
+                if (!response.ok) throw new Error('No se pudo verificar el Nº de pallet desde la API.');
+                const data = await response.json();
+                const numeroBase = parseInt(data.sequence_value, 10);
+                if (isNaN(numeroBase)) throw new Error('La API de pallet devolvió un valor corrupto.');
                 
                 const proximoNumero = numeroBase + 1;
                 const numeroActual = parseInt(numeroDePallet, 10);
@@ -276,25 +272,24 @@
                 return;
             }
 
-            // Get the current pallet number from the file to compare
+            // Get the current pallet number from the API to compare
             let currentFilePalletNum = 0;
             try {
-                const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_LOTE_LOGISTICO}?t=${new Date().getTime()}`;
-                const response = await fetch(url, { cache: "no-store" });
-                if (!response.ok) throw new Error('No se pudo verificar el Nº de pallet actual.');
-                const text = await response.text();
-                currentFilePalletNum = parseInt(text.trim(), 10);
-                if (isNaN(currentFilePalletNum)) throw new Error('El archivo de pallet está corrupto.');
+                const response = await fetch(URL_API_PALLET, { cache: "no-store" });
+                if (!response.ok) throw new Error('No se pudo verificar el Nº de pallet actual desde la API.');
+                const data = await response.json();
+                currentFilePalletNum = parseInt(data.sequence_value, 10);
+                if (isNaN(currentFilePalletNum)) throw new Error('La API de pallet devolvió un valor corrupto.');
             } catch (error) {
-                console.error("Error al obtener el número de pallet del archivo:", error);
-                showToast(`Error al obtener el número de pallet del archivo: ${error.message}`, 'error');
+                console.error("Error al obtener el número de pallet de la API:", error);
+                showToast(`Error al obtener el número de pallet de la API: ${error.message}`, 'error');
                 return;
             }
 
             const currentDisplayedPalletNum = parseInt(numeroDePallet, 10);
 
             if (newPalletNum <= currentFilePalletNum || newPalletNum <= currentDisplayedPalletNum) {
-                showToast(`El nuevo número de pallet (${newPalletNum}) debe ser mayor que el actual en archivo (${currentFilePalletNum}) y en pantalla (${currentDisplayedPalletNum}).`, 'error');
+                showToast(`El nuevo número de pallet (${newPalletNum}) debe ser mayor que el actual en API (${currentFilePalletNum}) y en pantalla (${currentDisplayedPalletNum}).`, 'error');
                 return;
             }
 
@@ -304,13 +299,6 @@
             const isPasswordValid = await validatePassword(passwordInput);
             if (!isPasswordValid) {
                 showToast("Clave incorrecta. No se puede actualizar el número de pallet.", 'error');
-                return;
-            }
-
-            // Acquire lock before updating the file
-            const lock = await acquireLock('manualPalletUpdate');
-            if (!lock.success) {
-                showToast(`No se pudo actualizar. ${lock.error}. Intente de nuevo.`, 'error');
                 return;
             }
 
@@ -329,8 +317,6 @@
             } catch (error) {
                 console.error("Error en handleManualPalletUpdate:", error);
                 showToast(`Error al actualizar el número de pallet: ${error.message}`, 'error');
-            } finally {
-                await releaseLock();
             }
         };
 
@@ -348,90 +334,7 @@
         }, [numeroDePallet, previewPdfUrl]); // Dependencias para tener valores actualizados
 
 
-        const acquireLock = async (operationName) => {
-            const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${LOCK_FILE_PATH}`;
-            let currentSha = null;
-            try {
-                const response = await fetch(`${url}?t=${new Date().getTime()}`, {
-                    headers: { 'Authorization': `token ${apiToken}` }, cache: 'no-store'
-                });
-
-                if (response.ok) {
-                    const fileData = await response.json();
-                    currentSha = fileData.sha;
-                    const content = atob(fileData.content);
-
-                    if (content && content.trim()) {
-                        const lock = JSON.parse(content);
-                        const isLockedByOther = lock.sessionId && lock.sessionId !== SESSION_ID;
-                        const isExpired = Date.now() - lock.timestamp > LOCK_TIMEOUT;
-
-                        if (isLockedByOther && !isExpired) {
-                            return { success: false, error: `Sistema bloqueado por otra sesión. Operación en curso: ${lock.operation || 'N/A'}` };
-                        }
-                    }
-                } else if (response.status !== 404) {
-                    throw new Error(`Error al leer el archivo de bloqueo: ${response.statusText}`);
-                }
-
-                const lockContent = { sessionId: SESSION_ID, timestamp: Date.now(), operation: operationName };
-                const updateResponse = await fetch(url, {
-                    method: 'PUT',
-                    headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        message: `Locking for operation: ${operationName}`,
-                        content: btoa(JSON.stringify(lockContent)),
-                        sha: currentSha,
-                    }),
-                });
-
-                if (!updateResponse.ok) throw new Error(`No se pudo adquirir el bloqueo: ${updateResponse.statusText}`);
-                
-                return { success: true };
-
-            } catch (error) {
-                if (error instanceof SyntaxError) {
-                    console.warn("lock.json contenía JSON inválido, se procederá a sobreescribir.");
-                    return { success: true };
-                }
-                console.error("Error en acquireLock:", error);
-                return { success: false, error: error.message };
-            }
-        };
-
-        const releaseLock = async () => {
-            const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${LOCK_FILE_PATH}`;
-            try {
-                const response = await fetch(`${url}?t=${new Date().getTime()}`, {
-                    headers: { 'Authorization': `token ${apiToken}` }, cache: 'no-store'
-                });
         
-                if (response.ok) {
-                    const fileData = await response.json();
-                    const content = atob(fileData.content);
-                    if (content) {
-                        const lock = JSON.parse(content);
-                        if (lock.sessionId && lock.sessionId !== SESSION_ID) {
-                            console.warn("Intento de liberar un bloqueo que no pertenece a esta sesión. Se omite.");
-                            return;
-                        }
-                    }
-
-                    const updateResponse = await fetch(url, {
-                        method: 'PUT',
-                        headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            message: 'Releasing lock',
-                            content: btoa(''),
-                            sha: fileData.sha,
-                        }),
-                    });
-                    if (!updateResponse.ok) console.error("Error al liberar el bloqueo, puede expirar automáticamente.");
-                }
-            } catch (error) {
-                console.error("Error en releaseLock:", error);
-            }
-        };
 
         // --- MODIFICACIÓN: SINCRONIZAR HORA CON INTERNET ---
         useEffect(() => {
@@ -461,17 +364,17 @@
             const loaderProgress = document.getElementById('loader-progress');
 
             const fetchInitialData = async () => {
-                const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_LOTE_LOGISTICO}`;
                 try {
-                    const response = await fetch(url, { cache: "no-store" });
-                    if (!response.ok) throw new Error('No se pudo obtener el número de pallet desde GitHub.');
-                    const text = await response.text();
-                    const numeroBase = parseInt(text.trim(), 10);
-                    if (isNaN(numeroBase)) throw new Error('El contenido del archivo no es un número.');
+                    const response = await fetch(URL_API_PALLET, { cache: "no-store" });
+                    if (!response.ok) throw new Error('No se pudo obtener el número de pallet desde la API.');
+                    const data = await response.json();
+                    const numeroBase = parseInt(data.sequence_value, 10);
+                    if (isNaN(numeroBase)) throw new Error('La API de pallet devolvió un valor corrupto.');
                     setNumeroDePallet(numeroBase + 1);
                 } catch (error) {
                     console.error("Error al cargar número de pallet:", error);
-                    showToast(`Error: ${error.message}\nIngrese el número de pallet manualmente.`, 'error');
+                    showToast(`Error: ${error.message}
+Ingrese el número de pallet manualmente.`, 'error');
                     setNumeroDePallet('');
                     setIsPalletNumEditable(true);
                 }
@@ -554,22 +457,14 @@
         }, [lotesProduccion.length]);
 
         const updateLoteFile = async (nuevoContenido) => {
-            const url = `https://api.github.com/repos/${USUARIO_GITHUB}/${REPO_NOMBRE}/contents/${RUTA_LOTE_LOGISTICO}`;
             try {
-                const fileResponse = await fetch(url, { headers: { 'Authorization': `token ${apiToken}` } });
-                if (!fileResponse.ok) throw new Error(`Error ${fileResponse.status}: No se pudo obtener info del archivo de lotes.`);
-                const fileData = await fileResponse.json();
-                const putResponse = await fetch(url, {
-                    method: 'PUT',
-                    headers: { 'Authorization': `token ${apiToken}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        message: `Actualizando pallet a ${nuevoContenido}`,
-                        content: btoa(String(nuevoContenido)),
-                        sha: fileData.sha,
-                    }),
+                const response = await fetch(URL_API_PALLET, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sequence_value: nuevoContenido }),
                 });
-                if (!putResponse.ok) throw new Error(`Error ${putResponse.status} al guardar el número de pallet.`);
-                console.log(`Número de Pallet ${nuevoContenido} guardado correctamente en GitHub.`);
+                if (!response.ok) throw new Error(`Error ${response.status}: No se pudo actualizar el número de pallet en la API.`);
+                console.log(`Número de Pallet ${nuevoContenido} guardado correctamente en la API.`);
                 return true;
             } catch (error) {
                 console.error("Error en updateLoteFile:", error);
@@ -829,22 +724,14 @@
                 return;
             }
 
-            const lock = await acquireLock('generateLabel');
-            if (!lock.success) {
-                showToast(`No se pudo guardar. ${lock.error}. Intente de nuevo.`, 'error');
-                setIsSaving(false);
-                return;
-            }
-
             try {
-                const url = `https://raw.githubusercontent.com/${USUARIO_GITHUB}/${REPO_NOMBRE}/main/${RUTA_LOTE_LOGISTICO}?t=${new Date().getTime()}`;
-                const response = await fetch(url, { cache: "no-store" });
-                if (!response.ok) throw new Error('No se pudo verificar el último número de pallet.');
+                const response = await fetch(URL_API_PALLET, { cache: "no-store" });
+                if (!response.ok) throw new Error('No se pudo verificar el último número de pallet desde la API.');
                 
-                const text = await response.text();
-                const ultimoPalletGuardado = parseInt(text.trim(), 10);
+                const data = await response.json();
+                const ultimoPalletGuardado = parseInt(data.sequence_value, 10);
 
-                if (isNaN(ultimoPalletGuardado)) throw new Error('El contenido del archivo de pallet no es un número.');
+                if (isNaN(ultimoPalletGuardado)) throw new Error('La API de pallet devolvió un valor corrupto.');
 
                 if (palletNum <= ultimoPalletGuardado) {
                     const nuevoNumeroSugerido = ultimoPalletGuardado + 1;
