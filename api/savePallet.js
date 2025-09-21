@@ -40,7 +40,9 @@ export default async function handler(req, res) {
       // Esto reemplaza a detallelotes.csv
       await palletsCollection.insertOne({ 
         ...palletData,
-        createdAt: new Date()
+              creationDate: new Date().toLocaleDateString('es-AR'),
+      fechaProduccion: data.fechaProduccion,
+      legajo: data.legajo,
       }, { session });
 
       // 3. Actualizar el contador de pallets al nuevo número
