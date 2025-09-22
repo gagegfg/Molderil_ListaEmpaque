@@ -728,8 +728,8 @@ Ingrese el número de pallet manualmente.`, 'error');
                 const response = await fetch(URL_API_PALLET, { cache: "no-store" });
                 if (!response.ok) throw new Error('No se pudo verificar el último número de pallet desde la API.');
                 
-                const data = await response.json();
-                const ultimoPalletGuardado = parseInt(data.palletNumber, 10);
+                const apiResponseData = await response.json();
+                const ultimoPalletGuardado = parseInt(apiResponseData.palletNumber, 10);
 
                 if (isNaN(ultimoPalletGuardado)) throw new Error('La API de pallet devolvió un valor corrupto.');
 
