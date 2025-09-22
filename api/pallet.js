@@ -22,6 +22,17 @@ async function connectToDatabase() {
 }
 
 export default async function handler(req, res) {
+  // --- CORS Headers ---
+  res.setHeader('Access-Control-Allow-Origin', 'https://gagegfg.github.io'); // Permite peticiones desde tu dominio de GitHub Pages
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'); // Métodos permitidos
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type'); // Cabeceras permitidas
+
+  // Manejar la petición OPTIONS (preflight)
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  // --- Fin CORS Headers ---
+
   const { db } = await connectToDatabase();
   const countersCollection = db.collection('counters');
 
