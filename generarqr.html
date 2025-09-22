@@ -209,7 +209,7 @@
                 const response = await fetch(URL_API_PALLET, { cache: "no-store" });
                 if (!response.ok) throw new Error('No se pudo verificar el Nº de pallet desde la API.');
                 const data = await response.json();
-                const numeroBase = parseInt(data.sequence_value, 10);
+                const numeroBase = parseInt(data.palletNumber, 10);
                 if (isNaN(numeroBase)) throw new Error('La API de pallet devolvió un valor corrupto.');
                 
                 const proximoNumero = numeroBase + 1;
@@ -278,7 +278,7 @@
                 const response = await fetch(URL_API_PALLET, { cache: "no-store" });
                 if (!response.ok) throw new Error('No se pudo verificar el Nº de pallet actual desde la API.');
                 const data = await response.json();
-                currentFilePalletNum = parseInt(data.sequence_value, 10);
+                currentFilePalletNum = parseInt(data.palletNumber, 10);
                 if (isNaN(currentFilePalletNum)) throw new Error('La API de pallet devolvió un valor corrupto.');
             } catch (error) {
                 console.error("Error al obtener el número de pallet de la API:", error);
@@ -368,7 +368,7 @@
                     const response = await fetch(URL_API_PALLET, { cache: "no-store" });
                     if (!response.ok) throw new Error('No se pudo obtener el número de pallet desde la API.');
                     const data = await response.json();
-                    const numeroBase = parseInt(data.sequence_value, 10);
+                    const numeroBase = parseInt(data.palletNumber, 10);
                     if (isNaN(numeroBase)) throw new Error('La API de pallet devolvió un valor corrupto.');
                     setNumeroDePallet(numeroBase + 1);
                 } catch (error) {
@@ -729,7 +729,7 @@ Ingrese el número de pallet manualmente.`, 'error');
                 if (!response.ok) throw new Error('No se pudo verificar el último número de pallet desde la API.');
                 
                 const data = await response.json();
-                const ultimoPalletGuardado = parseInt(data.sequence_value, 10);
+                const ultimoPalletGuardado = parseInt(data.palletNumber, 10);
 
                 if (isNaN(ultimoPalletGuardado)) throw new Error('La API de pallet devolvió un valor corrupto.');
 
